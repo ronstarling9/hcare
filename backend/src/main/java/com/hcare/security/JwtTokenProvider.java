@@ -53,6 +53,19 @@ public class JwtTokenProvider {
         return parseClaims(token).get("role", String.class);
     }
 
+    /**
+     * Parses and validates the token in a single HMAC verification.
+     * Returns the Claims payload, or null if the token is invalid or expired.
+     * Use this instead of calling validateToken + getXxx separately.
+     */
+    public Claims parseAndValidate(String token) {
+        try {
+            return parseClaims(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private Claims parseClaims(String token) {
         return Jwts.parser()
             .verifyWith(signingKey)

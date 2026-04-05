@@ -71,4 +71,22 @@ class JwtTokenProviderTest {
         String token = provider.generateToken(UUID.randomUUID(), UUID.randomUUID(), "CAREGIVER");
         assertThat(provider.getRole(token)).isEqualTo("CAREGIVER");
     }
+
+    @Test
+    void parseAndValidate_returns_claims_for_valid_token() {
+        UUID userId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        String token = provider.generateToken(userId, agencyId, "ADMIN");
+        io.jsonwebtoken.Claims claims = provider.parseAndValidate(token);
+        assertThat(claims).isNotNull();
+        assertThat(claims.getSubject()).isEqualTo(userId.toString());
+        assertThat(claims.get("agencyId", String.class)).isEqualTo(agencyId.toString());
+        assertThat(claims.get("role", String.class)).isEqualTo("ADMIN");
+    }
+
+    @Test
+    void parseAndValidate_returns_null_for_invalid_token() {
+        io.jsonwebtoken.Claims claims = provider.parseAndValidate("not.a.valid.token");
+        assertThat(claims).isNull();
+    }
 }
