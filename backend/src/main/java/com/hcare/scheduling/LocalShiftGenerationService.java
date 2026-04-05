@@ -15,7 +15,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,7 +49,7 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
 
         if (start.isAfter(end)) return;
 
-        List<DayOfWeek> daysOfWeek = parseDaysOfWeek(pattern.getDaysOfWeek());
+        Set<DayOfWeek> daysOfWeek = parseDaysOfWeek(pattern.getDaysOfWeek());
         List<Shift> shifts = new ArrayList<>();
 
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
@@ -95,12 +97,13 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
      * Parses a JSON TEXT array of DayOfWeek names e.g. ["MONDAY","WEDNESDAY","FRIDAY"].
      * Package-private for unit testing without reflection.
      */
-    static List<DayOfWeek> parseDaysOfWeek(String json) {
+    static Set<DayOfWeek> parseDaysOfWeek(String json) {
+        if (json == null || json.isBlank()) return Set.of();
         try {
             return Arrays.stream(json.replaceAll("[\\[\\]\"\\s]", "").split(","))
                 .filter(s -> !s.isEmpty())
                 .map(DayOfWeek::valueOf)
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(DayOfWeek.class)));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                 "Invalid daysOfWeek JSON — expected array of DayOfWeek names, got: " + json, e);

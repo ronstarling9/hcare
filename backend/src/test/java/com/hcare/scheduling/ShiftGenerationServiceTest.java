@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -158,7 +159,7 @@ class ShiftGenerationServiceTest {
 
     @Test
     void parseDaysOfWeek_parses_multiple_days() {
-        List<DayOfWeek> result = LocalShiftGenerationService.parseDaysOfWeek(
+        Set<DayOfWeek> result = LocalShiftGenerationService.parseDaysOfWeek(
             "[\"MONDAY\",\"WEDNESDAY\",\"FRIDAY\"]"
         );
         assertThat(result).containsExactly(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY);
@@ -166,7 +167,35 @@ class ShiftGenerationServiceTest {
 
     @Test
     void parseDaysOfWeek_parses_single_day() {
-        List<DayOfWeek> result = LocalShiftGenerationService.parseDaysOfWeek("[\"SATURDAY\"]");
+        Set<DayOfWeek> result = LocalShiftGenerationService.parseDaysOfWeek("[\"SATURDAY\"]");
         assertThat(result).containsExactly(DayOfWeek.SATURDAY);
+    }
+
+    @Test
+    void generateForPattern_advances_frontier_even_when_no_shifts_generated() {
+        // Pattern is active and window is non-empty, but no days in the window match.
+        // Set generatedThrough to yesterday so the window [today, today+56d] is open.
+        // Use a single day-of-week that falls OUTSIDE today's date so no shift is created
+        // in the very first few days. Since we can't control the calendar in a unit test,
+        // verify the pattern is saved (frontier advanced) regardless of whether saveAll fires.
+        RecurrencePattern pattern = buildPattern("[\"MONDAY\",\"TUESDAY\",\"WEDNESDAY\",\"THURSDAY\",\"FRIDAY\",\"SATURDAY\",\"SUNDAY\"]",
+            LocalDate.now().minusDays(1));
+        // Override: use a window with end < start to get an empty window — but that triggers early return.
+        // Instead, use a zero-day window by setting generatedThrough to 56 days from now minus 1 day.
+        // The easiest approach: set generatedThrough to now+55d so start=now+56d, end=now+56d (1-day window).
+        // That 1-day window will include exactly 1 matching day (all days are in daysOfWeek), so saveAll IS called.
+        //
+        // The real scenario to test: shifts list is empty BUT frontier is still advanced.
+        // Use a pattern whose daysOfWeek is empty (after L1 fix, parseDaysOfWeek returns empty set for blank).
+        // With empty daysOfWeek, the loop runs but never adds a shift. Pattern should still be saved.
+        RecurrencePattern emptyDayPattern = buildPattern("[]", LocalDate.now().minusDays(1));
+
+        service.generateForPattern(emptyDayPattern);
+
+        // No shifts should be saved (empty daysOfWeek)
+        verify(shiftRepo, never()).saveAll(any());
+        // But the frontier MUST still be advanced — pattern is saved
+        verify(patternRepo).save(emptyDayPattern);
+        assertThat(emptyDayPattern.getGeneratedThrough()).isEqualTo(LocalDate.now().plusWeeks(8));
     }
 }
