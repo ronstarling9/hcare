@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
 class CarePlanDomainIT extends AbstractIntegrationTest {
@@ -96,6 +97,19 @@ class CarePlanDomainIT extends AbstractIntegrationTest {
             .isEqualTo("Improve independent ambulation to 50 feet without assistance");
         assertThat(loaded.getStatus()).isEqualTo(GoalStatus.ACTIVE);
         assertThat(loaded.getTargetDate()).isNull();
+    }
+
+    @Test
+    void review_sets_clinician_id_and_reviewed_at() {
+        CarePlan plan = carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 1));
+        UUID clinicianId = UUID.randomUUID();
+
+        plan.review(clinicianId);
+        carePlanRepo.save(plan);
+
+        CarePlan loaded = carePlanRepo.findById(plan.getId()).orElseThrow();
+        assertThat(loaded.getReviewedByClinicianId()).isEqualTo(clinicianId);
+        assertThat(loaded.getReviewedAt()).isNotNull();
     }
 
     @Test

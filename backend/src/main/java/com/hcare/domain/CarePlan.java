@@ -59,6 +59,13 @@ public class CarePlan {
         this.status = CarePlanStatus.SUPERSEDED;
     }
 
+    // HHCS (skilled nursing) plans require clinical review sign-off before activation.
+    // PCS plans leave reviewedByClinicianId and reviewedAt null.
+    public void review(UUID clinicianId) {
+        this.reviewedByClinicianId = clinicianId;
+        this.reviewedAt = LocalDateTime.now();
+    }
+
     public UUID getId() { return id; }
     public UUID getClientId() { return clientId; }
     public UUID getAgencyId() { return agencyId; }
