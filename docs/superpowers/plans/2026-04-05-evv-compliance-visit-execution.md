@@ -253,6 +253,14 @@ class EvvComplianceServiceTest {
             PayerType.MEDICAID, CLIENT_LAT, CLIENT_LNG))
             .isEqualTo(EvvComplianceStatus.GREEN);
     }
+
+    @Test
+    void hybrid_state_uses_same_quality_checks_as_open() {
+        // HYBRID states fall through to quality checks — same rules as OPEN
+        when(stateConfig.getSystemModel()).thenReturn(EvvSystemModel.HYBRID);
+        assertThat(service.compute(buildCompleteRecord(), stateConfig, buildShift(), null, CLIENT_LAT, CLIENT_LNG))
+            .isEqualTo(EvvComplianceStatus.GREEN);
+    }
 }
 ```
 
@@ -368,6 +376,9 @@ public class LocalEvvComplianceService implements EvvComplianceService {
 
         // All required elements present — evaluate quality conditions.
         // CLOSED state is handled first because it supersedes other checks.
+        // HYBRID states are treated identically to OPEN for compliance computation — aggregator
+        // selection at submission time handles payer-specific routing (PayerEvvRoutingConfig).
+        // HYBRID does not change the quality-check rules applied here.
         if (stateConfig.getSystemModel() == EvvSystemModel.CLOSED) {
             return stateConfig.isClosedSystemAcknowledgedByAgency()
                 ? EvvComplianceStatus.PORTAL_SUBMIT
@@ -441,7 +452,7 @@ cd /Users/ronstarling/repos/hcare/backend
 ./mvnw test -pl . -Dtest=EvvComplianceServiceTest -q 2>&1 | tail -10
 ```
 
-Expected: `BUILD SUCCESS`, 14 tests passing, 0 failures.
+Expected: `BUILD SUCCESS`, 15 tests passing, 0 failures.
 
 - [ ] **Step 7: Commit**
 
@@ -629,6 +640,36 @@ class VisitControllerIT extends AbstractIntegrationTest {
         ResponseEntity<String> resp = restTemplate.postForEntity(
             "/api/v1/shifts/" + shift.getId() + "/clock-in", req, String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void clockIn_on_open_shift_returns_409() {
+        // OPEN shift (caregiverId = null) — clock-in must be blocked; EVV would be missing caregiverId
+        Shift openShift = shiftRepo.save(new Shift(
+            agency.getId(), null, client.getId(), null,
+            serviceType.getId(), null,
+            LocalDateTime.now().plusDays(1).withHour(9).withMinute(0).withSecond(0).withNano(0),
+            LocalDateTime.now().plusDays(1).withHour(13).withMinute(0).withSecond(0).withNano(0)
+        ));
+        ClockInRequest req = new ClockInRequest(
+            new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
+            VerificationMethod.GPS, false, null
+        );
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/shifts/" + openShift.getId() + "/clock-in",
+            HttpMethod.POST, new HttpEntity<>(req, authHeaders()), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void getShiftDetail_returns_422_when_state_has_no_evv_config() {
+        // Client with a state code that has no EvvStateConfig row
+        client.setServiceState("ZZ");
+        clientRepo.save(client);
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/shifts/" + shift.getId(),
+            HttpMethod.GET, new HttpEntity<>(authHeaders()), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
     }
 
     @Test
@@ -981,9 +1022,9 @@ public class VisitService {
         Shift shift = shiftRepository.findById(shiftId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found"));
 
-        if (shift.getStatus() != ShiftStatus.ASSIGNED && shift.getStatus() != ShiftStatus.OPEN) {
+        if (shift.getStatus() != ShiftStatus.ASSIGNED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "Cannot clock in: shift status is " + shift.getStatus());
+                "Cannot clock in: shift must be ASSIGNED (current status: " + shift.getStatus() + ")");
         }
         if (evvRecordRepository.findByShiftId(shiftId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -1090,7 +1131,9 @@ public class VisitService {
 
         String stateCode = client.getServiceState() != null ? client.getServiceState() : agency.getState();
         EvvStateConfig stateConfig = evvStateConfigRepository.findByStateCode(stateCode)
-            .orElseThrow(() -> new IllegalStateException("No EVV config for state: " + stateCode));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "EVV configuration not found for state: " + stateCode +
+                ". Contact support to configure EVV for this state."));
 
         PayerType payerType = Optional.ofNullable(shift.getAuthorizationId())
             .flatMap(authorizationRepository::findById)
