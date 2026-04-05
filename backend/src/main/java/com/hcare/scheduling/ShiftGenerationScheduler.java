@@ -44,8 +44,8 @@ public class ShiftGenerationScheduler {
                 // Log and continue — one failed pattern must not block all others.
                 // ObjectOptimisticLockingFailureException is the expected concurrent-edit case;
                 // the pattern will be retried on the next nightly run.
-                log.error("Failed to generate shifts for pattern {} (agency {}): {}",
-                    pattern.getId(), pattern.getAgencyId(), e.getMessage());
+                log.error("Failed to generate shifts for pattern {} (agency {})",
+                    pattern.getId(), pattern.getAgencyId(), e);
             }
         }
     }
