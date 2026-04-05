@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: hcare-bff
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8081
+
+hcare:
+  core-api-url: ${CORE_API_URL:http://localhost:8080}
+  jwt:
+    secret: ${JWT_SECRET}

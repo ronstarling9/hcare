@@ -1,0 +1,4 @@
+hcare:
+  core-api-url: http://localhost:8080
+  jwt:
+    secret: dev-secret-key-change-in-prod-must-be-256-bits-minimum-length
