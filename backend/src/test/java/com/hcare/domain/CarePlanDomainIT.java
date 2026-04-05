@@ -97,4 +97,31 @@ class CarePlanDomainIT extends AbstractIntegrationTest {
         assertThat(loaded.getStatus()).isEqualTo(GoalStatus.ACTIVE);
         assertThat(loaded.getTargetDate()).isNull();
     }
+
+    @Test
+    void findByClientIdAndStatus_returns_only_active_plan() {
+        // Plan 6 (admin API) uses this query to enforce one-active-per-client and to
+        // retrieve the current plan for display. Verify it returns exactly the ACTIVE plan
+        // and not the SUPERSEDED one.
+        CarePlan v1 = carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 1));
+        v1.activate();
+        carePlanRepo.save(v1);
+
+        v1.supersede();
+        carePlanRepo.save(v1);
+
+        CarePlan v2 = carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 2));
+        v2.activate();
+        carePlanRepo.save(v2);
+
+        java.util.Optional<CarePlan> active =
+            carePlanRepo.findByClientIdAndStatus(client.getId(), CarePlanStatus.ACTIVE);
+        assertThat(active).isPresent();
+        assertThat(active.get().getId()).isEqualTo(v2.getId());
+        assertThat(active.get().getPlanVersion()).isEqualTo(2);
+
+        java.util.Optional<CarePlan> draft =
+            carePlanRepo.findByClientIdAndStatus(client.getId(), CarePlanStatus.DRAFT);
+        assertThat(draft).isEmpty();
+    }
 }

@@ -74,4 +74,17 @@ class CaregiverSubEntitiesIT extends AbstractIntegrationTest {
         assertThat(loaded.getCurrentWeekHours()).isEqualByComparingTo("0");
         assertThat(loaded.getCaregiverId()).isEqualTo(caregiver.getId());
     }
+
+    @Test
+    void scoring_profile_updateAfterShiftCompletion_accumulates_hours() {
+        CaregiverScoringProfile profile = scoringProfileRepo.save(
+            new CaregiverScoringProfile(caregiver.getId(), agency.getId()));
+
+        profile.updateAfterShiftCompletion(new java.math.BigDecimal("4.0"));
+        scoringProfileRepo.save(profile);
+
+        CaregiverScoringProfile loaded = scoringProfileRepo.findById(profile.getId()).orElseThrow();
+        assertThat(loaded.getCurrentWeekHours()).isEqualByComparingTo("4.0");
+        assertThat(loaded.getUpdatedAt()).isNotNull();
+    }
 }

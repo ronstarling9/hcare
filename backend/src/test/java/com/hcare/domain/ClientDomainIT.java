@@ -109,6 +109,23 @@ class ClientDomainIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void family_portal_user_recordLogin_persists_timestamp() {
+        Agency agency = agencyRepo.save(new Agency("FPU Login Agency", "TX"));
+        Client client = clientRepo.save(
+            new Client(agency.getId(), "Judy", "Moore", LocalDate.of(1958, 2, 14)));
+        FamilyPortalUser fpu = familyPortalUserRepo.save(
+            new FamilyPortalUser(client.getId(), agency.getId(), "judy-son@family.com"));
+
+        assertThat(fpu.getLastLoginAt()).isNull();
+
+        fpu.recordLogin();
+        familyPortalUserRepo.save(fpu);
+
+        FamilyPortalUser reloaded = familyPortalUserRepo.findById(fpu.getId()).orElseThrow();
+        assertThat(reloaded.getLastLoginAt()).isNotNull();
+    }
+
+    @Test
     void family_portal_user_can_be_found_by_agency_and_email() {
         Agency agencyA = agencyRepo.save(new Agency("FPU Lookup Agency A", "TX"));
         Agency agencyB = agencyRepo.save(new Agency("FPU Lookup Agency B", "CA"));

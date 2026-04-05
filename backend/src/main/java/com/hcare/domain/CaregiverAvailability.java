@@ -37,8 +37,14 @@ public class CaregiverAvailability {
 
     protected CaregiverAvailability() {}
 
+    // P1 scope: overnight slots (startTime > endTime) are not supported — the Plan 3
+    // scheduler assumes same-day windows. Overnight support is deferred to P2.
     public CaregiverAvailability(UUID caregiverId, UUID agencyId,
                                   DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime) {
+        if (!startTime.isBefore(endTime)) {
+            throw new IllegalArgumentException(
+                "startTime must be before endTime (overnight slots not supported in P1)");
+        }
         this.caregiverId = caregiverId;
         this.agencyId = agencyId;
         this.dayOfWeek = dayOfWeek;
