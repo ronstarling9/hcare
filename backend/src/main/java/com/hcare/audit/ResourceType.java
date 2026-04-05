@@ -1,0 +1,6 @@
+package com.hcare.audit;
+
+public enum ResourceType {
+    CLIENT, CAREPLAN, EVVRECORD, MEDICATION, CAREGIVER, DOCUMENT,
+    AUTHORIZATION, INCIDENT_REPORT, AGENCY_USER
+}
