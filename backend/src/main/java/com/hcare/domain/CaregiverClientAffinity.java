@@ -27,6 +27,13 @@ public class CaregiverClientAffinity {
     @Column(name = "visit_count", nullable = false)
     private int visitCount = 0;
 
+    // @Version guards against concurrent shift-completion threads both incrementing
+    // visitCount and silently overwriting each other. The losing thread catches
+    // ObjectOptimisticLockingFailureException and retries — same pattern as Authorization.
+    @Version
+    @Column(nullable = false)
+    private Long version = 0L;
+
     protected CaregiverClientAffinity() {}
 
     public CaregiverClientAffinity(UUID scoringProfileId, UUID clientId, UUID agencyId) {
@@ -42,4 +49,5 @@ public class CaregiverClientAffinity {
     public UUID getClientId() { return clientId; }
     public UUID getAgencyId() { return agencyId; }
     public int getVisitCount() { return visitCount; }
+    public Long getVersion() { return version; }
 }

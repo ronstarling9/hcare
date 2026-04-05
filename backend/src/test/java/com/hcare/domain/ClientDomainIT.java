@@ -109,14 +109,23 @@ class ClientDomainIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void family_portal_user_can_be_found_by_email() {
-        Agency agency = agencyRepo.save(new Agency("FPU Lookup Agency", "TX"));
-        Client client = clientRepo.save(
-            new Client(agency.getId(), "Ivan", "King", LocalDate.of(1940, 9, 3)));
-        familyPortalUserRepo.save(
-            new FamilyPortalUser(client.getId(), agency.getId(), "son@lookup.com"));
+    void family_portal_user_can_be_found_by_agency_and_email() {
+        Agency agencyA = agencyRepo.save(new Agency("FPU Lookup Agency A", "TX"));
+        Agency agencyB = agencyRepo.save(new Agency("FPU Lookup Agency B", "CA"));
+        Client clientA = clientRepo.save(
+            new Client(agencyA.getId(), "Ivan", "King", LocalDate.of(1940, 9, 3)));
+        Client clientB = clientRepo.save(
+            new Client(agencyB.getId(), "Ivan", "King", LocalDate.of(1940, 9, 3)));
 
-        assertThat(familyPortalUserRepo.findByEmail("son@lookup.com")).isPresent();
-        assertThat(familyPortalUserRepo.findByEmail("notexists@lookup.com")).isEmpty();
+        // Same email registered at two different agencies — now allowed
+        familyPortalUserRepo.save(
+            new FamilyPortalUser(clientA.getId(), agencyA.getId(), "son@lookup.com"));
+        familyPortalUserRepo.save(
+            new FamilyPortalUser(clientB.getId(), agencyB.getId(), "son@lookup.com"));
+
+        // Lookup scoped by agency — returns the correct record, not the other agency's
+        assertThat(familyPortalUserRepo.findByAgencyIdAndEmail(agencyA.getId(), "son@lookup.com")).isPresent();
+        assertThat(familyPortalUserRepo.findByAgencyIdAndEmail(agencyB.getId(), "son@lookup.com")).isPresent();
+        assertThat(familyPortalUserRepo.findByAgencyIdAndEmail(agencyA.getId(), "notexists@lookup.com")).isEmpty();
     }
 }

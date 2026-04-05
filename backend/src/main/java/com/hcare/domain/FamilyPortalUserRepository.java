@@ -6,6 +6,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface FamilyPortalUserRepository extends JpaRepository<FamilyPortalUser, UUID> {
-    Optional<FamilyPortalUser> findByEmail(String email);
+    Optional<FamilyPortalUser> findByAgencyIdAndEmail(UUID agencyId, String email);
     List<FamilyPortalUser> findByClientId(UUID clientId);
 }

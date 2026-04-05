@@ -24,7 +24,7 @@ public class FamilyPortalUser {
     @Column(name = "agency_id", nullable = false)
     private UUID agencyId;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String email;
 
     @Column(length = 255)
