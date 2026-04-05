@@ -14,10 +14,13 @@ import java.util.Optional;
 @Service
 public class AuthService {
 
-    // BCrypt hash of a dummy password — used on the user-not-found path to normalize
-    // response time and prevent email enumeration via timing differences.
-    private static final String DUMMY_HASH =
-        "$2a$10$dummyhashfortimingnormalizationXXXXXXXXXXXXXXXXXXXXXX";
+    // This must be a valid BCrypt hash string (exactly 60 chars, $2a$10$... format).
+    // BCryptPasswordEncoder.matches() short-circuits immediately without doing BCrypt work
+    // if the encoded string fails the regex check — silently breaking timing normalization.
+    // BCrypt with work factor 10 takes ~100ms, which normalizes response time between
+    // "email exists" and "email not found" paths to prevent timing-based enumeration.
+    static final String DUMMY_HASH_FOR_TEST =
+        "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
     private final AgencyUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -36,7 +39,7 @@ public class AuthService {
 
         if (userOpt.isEmpty()) {
             // Timing normalization: always run BCrypt to prevent email enumeration
-            passwordEncoder.matches(request.password(), DUMMY_HASH);
+            passwordEncoder.matches(request.password(), DUMMY_HASH_FOR_TEST);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
 
