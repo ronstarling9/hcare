@@ -1,0 +1,56 @@
+package com.hcare.domain;
+
+import jakarta.persistence.*;
+import org.hibernate.annotations.Filter;
+import java.time.DayOfWeek;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "caregiver_availability")
+@Filter(name = "agencyFilter", condition = "agency_id = :agencyId")
+public class CaregiverAvailability {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "caregiver_id", nullable = false)
+    private UUID caregiverId;
+
+    @Column(name = "agency_id", nullable = false)
+    private UUID agencyId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "day_of_week", nullable = false, length = 10)
+    private DayOfWeek dayOfWeek;
+
+    @Column(name = "start_time", nullable = false)
+    private LocalTime startTime;
+
+    @Column(name = "end_time", nullable = false)
+    private LocalTime endTime;
+
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    protected CaregiverAvailability() {}
+
+    public CaregiverAvailability(UUID caregiverId, UUID agencyId,
+                                  DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime) {
+        this.caregiverId = caregiverId;
+        this.agencyId = agencyId;
+        this.dayOfWeek = dayOfWeek;
+        this.startTime = startTime;
+        this.endTime = endTime;
+    }
+
+    public UUID getId() { return id; }
+    public UUID getCaregiverId() { return caregiverId; }
+    public UUID getAgencyId() { return agencyId; }
+    public DayOfWeek getDayOfWeek() { return dayOfWeek; }
+    public LocalTime getStartTime() { return startTime; }
+    public LocalTime getEndTime() { return endTime; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+}
