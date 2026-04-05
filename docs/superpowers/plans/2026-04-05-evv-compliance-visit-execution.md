@@ -19,6 +19,7 @@
 - `src/main/java/com/hcare/api/v1/visits/dto/ClockInRequest.java` — immutable record: lat, lon, verificationMethod, capturedOffline, deviceCapturedAt
 - `src/main/java/com/hcare/api/v1/visits/dto/ClockOutRequest.java` — immutable record: capturedOffline, deviceCapturedAt
 - `src/main/java/com/hcare/api/v1/visits/dto/ShiftDetailResponse.java` — immutable record with nested EvvSummary
+- `src/main/java/com/hcare/domain/AuthorizationUnitService.java` — isolated `@Transactional(REQUIRES_NEW)` service for authorization unit updates; each retry gets a fresh Hibernate session so OptimisticLockingFailureException cannot poison the session
 - `src/main/java/com/hcare/api/v1/visits/VisitService.java` — @Service with clockIn, clockOut, getShiftDetail
 - `src/main/java/com/hcare/api/v1/visits/VisitController.java` — @RestController at /api/v1/shifts
 - `src/test/java/com/hcare/evv/EvvComplianceServiceTest.java` — pure unit tests (no Spring context)
@@ -53,6 +54,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -61,7 +64,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+// LENIENT strictness: tests that exit early (null record → GREY, coResident → EXEMPT, etc.)
+// never exercise all @BeforeEach stateConfig stubs. Mockito 4+ (Spring Boot 3.x default:
+// STRICT_STUBS) would throw UnnecessaryStubbingException for those unused stubs.
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class EvvComplianceServiceTest {
 
     @Mock EvvStateConfig stateConfig;
@@ -829,7 +836,81 @@ public record ShiftDetailResponse(
 }
 ```
 
-- [ ] **Step 5: Create VisitService**
+- [ ] **Step 5: Create AuthorizationUnitService**
+
+The authorization unit update **must not** run inside the same Hibernate session as `clockOut`.
+After an `OptimisticLockingFailureException`, Hibernate marks the session rollback-only — retrying
+`authorizationRepository.findById()` on that session either returns the stale first-level cache or
+throws immediately. `Propagation.REQUIRES_NEW` suspends the outer transaction and opens a brand-new
+session for each attempt, so retries always load a fresh entity.
+
+Create `src/main/java/com/hcare/domain/AuthorizationUnitService.java`:
+
+```java
+package com.hcare.domain;
+
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
+import java.util.UUID;
+
+@Service
+public class AuthorizationUnitService {
+
+    private final AuthorizationRepository authorizationRepository;
+
+    public AuthorizationUnitService(AuthorizationRepository authorizationRepository) {
+        this.authorizationRepository = authorizationRepository;
+    }
+
+    /**
+     * Increments Authorization.usedUnits after a shift completes.
+     *
+     * Runs in its own transaction (REQUIRES_NEW) so each retry gets a fresh Hibernate session —
+     * OptimisticLockingFailureException from a prior attempt cannot poison the session.
+     * Called from VisitService.clockOut AFTER the outer transaction has saved shift + EVV record.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void addUnits(UUID authorizationId, LocalDateTime timeIn, LocalDateTime timeOut) {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                Optional<Authorization> authOpt = authorizationRepository.findById(authorizationId);
+                if (authOpt.isEmpty()) return; // authorization deleted — skip silently
+
+                Authorization auth = authOpt.get();
+                BigDecimal units;
+                if (auth.getUnitType() == UnitType.HOURS) {
+                    long minutes = Duration.between(timeIn, timeOut).toMinutes();
+                    units = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+                } else {
+                    // VISITS: each completed shift counts as 1 unit
+                    units = BigDecimal.ONE;
+                }
+                auth.addUsedUnits(units);
+                authorizationRepository.save(auth);
+                return;
+            } catch (OptimisticLockingFailureException e) {
+                if (attempt == 2) throw e; // exhausted retries — propagate to caller
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted during authorization unit retry", ie);
+                }
+            }
+        }
+    }
+}
+```
+
+- [ ] **Step 6: Create VisitService**
 
 Create `src/main/java/com/hcare/api/v1/visits/VisitService.java`:
 
@@ -839,20 +920,16 @@ package com.hcare.api.v1.visits;
 import com.hcare.api.v1.visits.dto.ClockInRequest;
 import com.hcare.api.v1.visits.dto.ClockOutRequest;
 import com.hcare.api.v1.visits.dto.ShiftDetailResponse;
-import com.hcare.audit.AuditAction;
 import com.hcare.audit.PhiAuditService;
 import com.hcare.audit.ResourceType;
 import com.hcare.domain.*;
 import com.hcare.evv.*;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -870,6 +947,7 @@ public class VisitService {
     private final EvvStateConfigRepository evvStateConfigRepository;
     private final EvvComplianceService evvComplianceService;
     private final PhiAuditService phiAuditService;
+    private final AuthorizationUnitService authorizationUnitService;
 
     public VisitService(ShiftRepository shiftRepository,
                         EvvRecordRepository evvRecordRepository,
@@ -879,7 +957,8 @@ public class VisitService {
                         PayerRepository payerRepository,
                         EvvStateConfigRepository evvStateConfigRepository,
                         EvvComplianceService evvComplianceService,
-                        PhiAuditService phiAuditService) {
+                        PhiAuditService phiAuditService,
+                        AuthorizationUnitService authorizationUnitService) {
         this.shiftRepository = shiftRepository;
         this.evvRecordRepository = evvRecordRepository;
         this.clientRepository = clientRepository;
@@ -889,6 +968,7 @@ public class VisitService {
         this.evvStateConfigRepository = evvStateConfigRepository;
         this.evvComplianceService = evvComplianceService;
         this.phiAuditService = phiAuditService;
+        this.authorizationUnitService = authorizationUnitService;
     }
 
     /**
@@ -967,7 +1047,10 @@ public class VisitService {
         shiftRepository.save(shift);
 
         if (shift.getAuthorizationId() != null) {
-            updateAuthorizationUnits(shift, record);
+            // Runs in its own REQUIRES_NEW transaction — safe to retry on OptimisticLockingFailureException.
+            // The outer transaction (shift + EVV record) has already been flushed above.
+            authorizationUnitService.addUnits(
+                shift.getAuthorizationId(), record.getTimeIn(), record.getTimeOut());
         }
 
         phiAuditService.logWrite(userId, shift.getAgencyId(), ResourceType.EVVRECORD,
@@ -1035,43 +1118,10 @@ public class VisitService {
         );
     }
 
-    /**
-     * Updates Authorization.usedUnits after clock-out. Retries up to 3 times on
-     * ObjectOptimisticLockingFailureException (concurrent shift completions against same auth).
-     * Per spec: Authorization carries @Version for exactly this scenario.
-     */
-    private void updateAuthorizationUnits(Shift shift, EvvRecord record) {
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                Optional<Authorization> authOpt = authorizationRepository.findById(shift.getAuthorizationId());
-                if (authOpt.isEmpty()) return; // authorization deleted — skip silently
-
-                Authorization auth = authOpt.get();
-                BigDecimal units;
-                if (auth.getUnitType() == UnitType.HOURS) {
-                    long minutes = Duration.between(record.getTimeIn(), record.getTimeOut()).toMinutes();
-                    units = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-                } else {
-                    // VISITS: each completed shift counts as 1 unit
-                    units = BigDecimal.ONE;
-                }
-                auth.addUsedUnits(units);
-                authorizationRepository.save(auth);
-                return;
-            } catch (OptimisticLockingFailureException e) {
-                if (attempt == 2) throw e; // exhausted retries
-                // brief pause before reload+retry
-                try { Thread.sleep(50); } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Interrupted during authorization unit retry", ie);
-                }
-            }
-        }
-    }
 }
 ```
 
-- [ ] **Step 6: Create VisitController**
+- [ ] **Step 7: Create VisitController**
 
 Create `src/main/java/com/hcare/api/v1/visits/VisitController.java`:
 
@@ -1131,7 +1181,7 @@ public class VisitController {
 }
 ```
 
-- [ ] **Step 7: Run all tests**
+- [ ] **Step 8: Run all tests**
 
 ```bash
 cd /Users/ronstarling/repos/hcare/backend
@@ -1140,7 +1190,7 @@ cd /Users/ronstarling/repos/hcare/backend
 
 Expected: `BUILD SUCCESS`. All tests pass. If VisitControllerIT fails due to a missing `AgencyUser.getId()` or constructor — check that `AgencyUser` has a public constructor matching `(UUID agencyId, String email, String passwordHash, UserRole role)` and look at `CaregiverDomainIT` or `AuthControllerIT` for the canonical seed pattern.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd /Users/ronstarling/repos/hcare/backend
@@ -1149,6 +1199,7 @@ git add \
   src/main/java/com/hcare/api/v1/visits/dto/ClockInRequest.java \
   src/main/java/com/hcare/api/v1/visits/dto/ClockOutRequest.java \
   src/main/java/com/hcare/api/v1/visits/dto/ShiftDetailResponse.java \
+  src/main/java/com/hcare/domain/AuthorizationUnitService.java \
   src/main/java/com/hcare/api/v1/visits/VisitService.java \
   src/main/java/com/hcare/api/v1/visits/VisitController.java \
   src/test/java/com/hcare/api/v1/visits/VisitControllerIT.java
