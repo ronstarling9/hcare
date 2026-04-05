@@ -101,6 +101,7 @@ CREATE TABLE recurrence_patterns (
 );
 CREATE INDEX idx_recurrence_patterns_agency_id ON recurrence_patterns(agency_id);
 CREATE INDEX idx_recurrence_patterns_client_id ON recurrence_patterns(client_id);
+CREATE INDEX idx_recurrence_patterns_active_frontier ON recurrence_patterns(is_active, generated_through);
 
 CREATE TABLE shifts (
     id                UUID        PRIMARY KEY,
@@ -190,7 +191,6 @@ CREATE TABLE communication_messages (
     subject         VARCHAR(255),
     body            TEXT        NOT NULL,
     sent_at         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_communication_messages_agency_id ON communication_messages(agency_id);
 ```
@@ -430,7 +430,7 @@ class RecurrencePatternDomainIT extends AbstractIntegrationTest {
         patternRepo.save(atHorizon);
 
         LocalDate horizon = LocalDate.now().plusWeeks(8);
-        List<RecurrencePattern> result = patternRepo.findActivePatternsBehindHorizon(horizon);
+        List<RecurrencePattern> result = patternRepo.findActivePatternsBehindHorizon(horizon, LocalDate.now());
 
         assertThat(result.stream().map(RecurrencePattern::getId).toList())
             .contains(behindHorizon.getId())
@@ -505,7 +505,7 @@ public class RecurrencePattern {
     private LocalDate generatedThrough;
 
     @Column(name = "is_active", nullable = false)
-    private boolean isActive = true;
+    private boolean active = true;
 
     // Incremented by Hibernate on every UPDATE. Concurrent saves (e.g. pattern edit + nightly
     // scheduler) throw ObjectOptimisticLockingFailureException — caller must retry.
@@ -534,7 +534,7 @@ public class RecurrencePattern {
     public void setCaregiverId(UUID caregiverId) { this.caregiverId = caregiverId; }
     public void setAuthorizationId(UUID authorizationId) { this.authorizationId = authorizationId; }
     public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
-    public void setActive(boolean active) { this.isActive = active; }
+    public void setActive(boolean active) { this.active = active; }
     public void setGeneratedThrough(LocalDate generatedThrough) { this.generatedThrough = generatedThrough; }
 
     public UUID getId() { return id; }
@@ -549,7 +549,7 @@ public class RecurrencePattern {
     public LocalDate getStartDate() { return startDate; }
     public LocalDate getEndDate() { return endDate; }
     public LocalDate getGeneratedThrough() { return generatedThrough; }
-    public boolean isActive() { return isActive; }
+    public boolean isActive() { return active; }
     public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }
@@ -569,12 +569,16 @@ import java.util.UUID;
 public interface RecurrencePatternRepository extends JpaRepository<RecurrencePattern, UUID> {
 
     /**
-     * Returns active patterns whose generatedThrough frontier is behind the given horizon.
+     * Returns active patterns whose generatedThrough frontier is behind the given horizon
+     * and whose endDate has not yet passed.
      * Called by the nightly scheduler — no TenantContext set, so the Hibernate @Filter is
      * not active. This is intentional: the nightly job processes all agencies.
      */
-    @Query("SELECT rp FROM RecurrencePattern rp WHERE rp.isActive = true AND rp.generatedThrough < :horizon")
-    List<RecurrencePattern> findActivePatternsBehindHorizon(@Param("horizon") LocalDate horizon);
+    @Query("SELECT rp FROM RecurrencePattern rp WHERE rp.active = true " +
+           "AND rp.generatedThrough < :horizon " +
+           "AND (rp.endDate IS NULL OR rp.endDate >= :today)")
+    List<RecurrencePattern> findActivePatternsBehindHorizon(@Param("horizon") LocalDate horizon,
+                                                             @Param("today") LocalDate today);
 }
 ```
 
@@ -742,6 +746,42 @@ class ShiftDomainIT extends AbstractIntegrationTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getScheduledStart()).isEqualTo(inWindow);
     }
+
+    @Test
+    void deleteUnstartedFutureShifts_leaves_completed_and_other_agency_shifts_intact() {
+        Agency agencyA = agencyRepo.save(new Agency("Delete Agency A", "TX"));
+        Agency agencyB = agencyRepo.save(new Agency("Delete Agency B", "CA"));
+        Client clientA = clientRepo.save(new Client(agencyA.getId(), "Del", "A", LocalDate.of(1960, 1, 1)));
+        Client clientB = clientRepo.save(new Client(agencyB.getId(), "Del", "B", LocalDate.of(1960, 1, 1)));
+        ServiceType stA = serviceTypeRepo.save(new ServiceType(agencyA.getId(), "PCS", "PCS-DEL-A", true, "[]"));
+        ServiceType stB = serviceTypeRepo.save(new ServiceType(agencyB.getId(), "PCS", "PCS-DEL-B", true, "[]"));
+
+        UUID patternId = UUID.randomUUID();
+        LocalDateTime future = LocalDateTime.now().plusDays(7);
+
+        // Should be deleted: agencyA OPEN shift in future
+        Shift toDelete = shiftRepo.save(new Shift(agencyA.getId(), patternId, clientA.getId(), null,
+            stA.getId(), null, future, future.plusHours(4)));
+
+        // Should survive: COMPLETED shift for same pattern
+        Shift completed = shiftRepo.save(new Shift(agencyA.getId(), patternId, clientA.getId(), null,
+            stA.getId(), null, future.plusDays(1), future.plusDays(1).plusHours(4)));
+        completed.setStatus(ShiftStatus.COMPLETED);
+        shiftRepo.save(completed);
+
+        // Should survive: agencyB's OPEN shift for the same patternId (different agency)
+        Shift otherAgency = shiftRepo.save(new Shift(agencyB.getId(), patternId, clientB.getId(), null,
+            stB.getId(), null, future, future.plusHours(4)));
+
+        shiftRepo.deleteUnstartedFutureShifts(
+            patternId, agencyA.getId(), LocalDateTime.now(),
+            List.of(ShiftStatus.OPEN, ShiftStatus.ASSIGNED)
+        );
+
+        assertThat(shiftRepo.findById(toDelete.getId())).isEmpty();
+        assertThat(shiftRepo.findById(completed.getId())).isPresent();
+        assertThat(shiftRepo.findById(otherAgency.getId())).isPresent();
+    }
 }
 ```
 
@@ -873,7 +913,7 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
      * Explicitly includes agencyId in the WHERE clause — Hibernate @Filter does not apply to
      * bulk JPQL DELETE statements.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("DELETE FROM Shift s WHERE s.sourcePatternId = :patternId " +
            "AND s.agencyId = :agencyId " +
            "AND s.scheduledStart > :cutoff " +
@@ -890,7 +930,7 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
 ```bash
 cd backend && ./mvnw test -Dtest=ShiftDomainIT 2>&1 | tail -5
 ```
-Expected: `BUILD SUCCESS` — 5 tests passing.
+Expected: `BUILD SUCCESS` — 6 tests passing.
 
 - [ ] **Step 5: Commit**
 
@@ -1785,11 +1825,10 @@ public class CommunicationMessage {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String body;
 
+    // sentAt is both the user-visible send time and the row creation time —
+    // messages are immutable so there is no useful distinction.
     @Column(name = "sent_at", nullable = false)
     private LocalDateTime sentAt = LocalDateTime.now();
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
 
     protected CommunicationMessage() {}
 
@@ -1814,7 +1853,6 @@ public class CommunicationMessage {
     public String getSubject() { return subject; }
     public String getBody() { return body; }
     public LocalDateTime getSentAt() { return sentAt; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
 }
 ```
 
@@ -2313,6 +2351,8 @@ package com.hcare.scheduling;
 
 import com.hcare.domain.RecurrencePattern;
 import com.hcare.domain.RecurrencePatternRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -2330,6 +2370,8 @@ import java.util.List;
 @Component
 public class ShiftGenerationScheduler {
 
+    private static final Logger log = LoggerFactory.getLogger(ShiftGenerationScheduler.class);
+
     private final RecurrencePatternRepository patternRepository;
     private final ShiftGenerationService shiftGenerationService;
 
@@ -2341,10 +2383,19 @@ public class ShiftGenerationScheduler {
 
     @Scheduled(cron = "${hcare.scheduling.shift-generation-cron:0 0 2 * * *}")
     public void advanceGenerationFrontier() {
-        LocalDate horizon = LocalDate.now().plusWeeks(LocalShiftGenerationService.HORIZON_WEEKS);
-        List<RecurrencePattern> patterns = patternRepository.findActivePatternsBehindHorizon(horizon);
+        LocalDate today = LocalDate.now();
+        LocalDate horizon = today.plusWeeks(LocalShiftGenerationService.HORIZON_WEEKS);
+        List<RecurrencePattern> patterns = patternRepository.findActivePatternsBehindHorizon(horizon, today);
         for (RecurrencePattern pattern : patterns) {
-            shiftGenerationService.generateForPattern(pattern);
+            try {
+                shiftGenerationService.generateForPattern(pattern);
+            } catch (Exception e) {
+                // Log and continue — one failed pattern must not block all others.
+                // ObjectOptimisticLockingFailureException is the expected concurrent-edit case;
+                // the pattern will be retried on the next nightly run.
+                log.error("Failed to generate shifts for pattern {} (agency {}): {}",
+                    pattern.getId(), pattern.getAgencyId(), e.getMessage());
+            }
         }
     }
 }
@@ -2414,4 +2465,5 @@ No TBD, TODO, "implement later", or vague "add error handling" instructions foun
 - `RecurrencePattern` (Task 2) → `Shift.sourcePatternId` UUID FK (Task 3), `generateForPattern(RecurrencePattern)` interface (Task 7) — consistent.
 - `ShiftRepository.deleteUnstartedFutureShifts(UUID, UUID, LocalDateTime, Collection<ShiftStatus>)` (Task 3) → called in `LocalShiftGenerationService.regenerateAfterEdit` as `shiftRepository.deleteUnstartedFutureShifts(pattern.getId(), pattern.getAgencyId(), LocalDateTime.now(), List.of(ShiftStatus.OPEN, ShiftStatus.ASSIGNED))` (Task 7) — consistent.
 - `LocalShiftGenerationService.HORIZON_WEEKS` is `static final int` → referenced in `ShiftGenerationScheduler` as `LocalShiftGenerationService.HORIZON_WEEKS` (Task 8) — consistent.
-- `RecurrencePatternRepository.findActivePatternsBehindHorizon(LocalDate)` (Task 2) → called in `ShiftGenerationScheduler.advanceGenerationFrontier()` (Task 8) — consistent.
+- `RecurrencePatternRepository.findActivePatternsBehindHorizon(LocalDate horizon, LocalDate today)` (Task 2) → called in `ShiftGenerationScheduler.advanceGenerationFrontier()` as `findActivePatternsBehindHorizon(horizon, today)` (Task 8) — consistent.
+- `RecurrencePattern.active` field (Task 2) → JPQL `rp.active = true` in `findActivePatternsBehindHorizon` (Task 2) → `pattern.isActive()` / `pattern.setActive()` in service and tests — consistent.
