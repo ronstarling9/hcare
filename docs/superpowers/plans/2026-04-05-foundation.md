@@ -24,7 +24,8 @@ backend/
     │   │   │   └── WebMvcConfig.java
     │   │   ├── multitenancy/
     │   │   │   ├── TenantContext.java          — ThreadLocal agencyId holder
-    │   │   │   └── TenantFilterInterceptor.java — enables Hibernate filter per request
+    │   │   │   ├── TenantFilterInterceptor.java — sets TenantContext from JWT per request
+    │   │   │   └── TenantFilterAspect.java     — enables Hibernate filter inside @Transactional
     │   │   ├── security/
     │   │   │   ├── JwtProperties.java          — @ConfigurationProperties for JWT config
     │   │   │   ├── UserPrincipal.java          — Spring Security principal carrying agencyId + role
@@ -223,6 +224,10 @@ Expected: FAIL — `backend/` directory and `pom.xml` do not exist yet.
       <groupId>org.testcontainers</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-aop</artifactId>
     </dependency>
   </dependencies>
 
@@ -1315,9 +1320,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import java.util.Optional;
 
 @Service
 public class AuthService {
+
+    // BCrypt hash of a dummy password — used on the user-not-found path to normalize
+    // response time and prevent email enumeration via timing differences.
+    private static final String DUMMY_HASH =
+        "$2a$10$dummyhashfortimingnormalizationXXXXXXXXXXXXXXXXXXXXXX";
 
     private final AgencyUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -1332,9 +1343,15 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
-        AgencyUser user = userRepository.findByEmail(request.email())
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+        Optional<AgencyUser> userOpt = userRepository.findByEmail(request.email());
 
+        if (userOpt.isEmpty()) {
+            // Timing normalization: always run BCrypt to prevent email enumeration
+            passwordEncoder.matches(request.password(), DUMMY_HASH);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
+        }
+
+        AgencyUser user = userOpt.get();
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
@@ -1399,6 +1416,7 @@ git commit -m "feat: POST /api/v1/auth/login — JWT issued on valid credentials
 **Files:**
 - Create: `backend/src/main/java/com/hcare/multitenancy/TenantContext.java`
 - Create: `backend/src/main/java/com/hcare/multitenancy/TenantFilterInterceptor.java`
+- Create: `backend/src/main/java/com/hcare/multitenancy/TenantFilterAspect.java`
 - Create: `backend/src/main/java/com/hcare/config/WebMvcConfig.java`
 - Test: `backend/src/test/java/com/hcare/multitenancy/TenantFilterIT.java`
 
@@ -1418,6 +1436,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import java.util.Arrays;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
@@ -1429,8 +1448,8 @@ class TenantFilterIT extends AbstractIntegrationTest {
     @Autowired private PasswordEncoder passwordEncoder;
 
     private String tokenA;
-    private UUID agencyAId;
-    private UUID agencyBId;
+    private UUID agencyAUserId;
+    private UUID agencyBUserId;
 
     @BeforeEach
     void setup() {
@@ -1439,13 +1458,14 @@ class TenantFilterIT extends AbstractIntegrationTest {
 
         Agency agencyA = agencyRepo.save(new Agency("Agency A", "TX"));
         Agency agencyB = agencyRepo.save(new Agency("Agency B", "CA"));
-        agencyAId = agencyA.getId();
-        agencyBId = agencyB.getId();
 
-        userRepo.save(new AgencyUser(agencyAId, "admin-a@test.com",
+        AgencyUser userA = userRepo.save(new AgencyUser(agencyA.getId(), "admin-a@test.com",
             passwordEncoder.encode("pass"), UserRole.ADMIN));
-        userRepo.save(new AgencyUser(agencyBId, "admin-b@test.com",
+        AgencyUser userB = userRepo.save(new AgencyUser(agencyB.getId(), "admin-b@test.com",
             passwordEncoder.encode("pass"), UserRole.ADMIN));
+
+        agencyAUserId = userA.getId();
+        agencyBUserId = userB.getId();
 
         // log in as agency A
         LoginResponse login = restTemplate.postForObject(
@@ -1465,11 +1485,12 @@ class TenantFilterIT extends AbstractIntegrationTest {
             new HttpEntity<>(headers), UUID[].class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        // Only agency A's user should be returned — not agency B's
         UUID[] userIds = response.getBody();
         assertThat(userIds).isNotNull();
-        // All returned users must belong to agency A
-        // (Verified by checking count: only 1 user exists in agency A)
+        // Agency A user is present
+        assertThat(Arrays.asList(userIds)).contains(agencyAUserId);
+        // Agency B user is NOT present — filter is working
+        assertThat(Arrays.asList(userIds)).doesNotContain(agencyBUserId);
         assertThat(userIds).hasSize(1);
     }
 }
@@ -1483,6 +1504,7 @@ package com.hcare.api.v1.users;
 
 import com.hcare.domain.AgencyUserRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
@@ -1497,7 +1519,12 @@ public class UserController {
         this.userRepository = userRepository;
     }
 
+    // @Transactional ensures an outer transaction is open before the repository is called,
+    // so TenantFilterAspect.@Before fires with the live Hibernate session already bound.
+    // Without this, TenantFilterAspect and Spring Data's TransactionInterceptor both apply
+    // to the repository proxy at the same @Order — execution order is undefined.
     @GetMapping
+    @Transactional(readOnly = true)
     public ResponseEntity<List<UUID>> listUsers() {
         List<UUID> ids = userRepository.findAll().stream()
             .map(u -> u.getId())
@@ -1544,16 +1571,15 @@ public final class TenantContext {
 
 - [ ] **Step 4: Create `TenantFilterInterceptor.java`**
 
+The interceptor is responsible only for populating `TenantContext` from the JWT. It must NOT attempt to touch the Hibernate session — sessions only exist inside `@Transactional` boundaries, and the interceptor runs before any transaction is open. The `TenantFilterAspect` (Step 4b below) handles session-level filter enablement inside the transaction.
+
 ```java
 // backend/src/main/java/com/hcare/multitenancy/TenantFilterInterceptor.java
 package com.hcare.multitenancy;
 
 import com.hcare.security.UserPrincipal;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.hibernate.Session;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -1562,9 +1588,6 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Component
 public class TenantFilterInterceptor implements HandlerInterceptor {
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
     @Override
     public boolean preHandle(HttpServletRequest request,
                              HttpServletResponse response,
@@ -1572,9 +1595,6 @@ public class TenantFilterInterceptor implements HandlerInterceptor {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof UserPrincipal principal) {
             TenantContext.set(principal.getAgencyId());
-            entityManager.unwrap(Session.class)
-                .enableFilter("agencyFilter")
-                .setParameter("agencyId", principal.getAgencyId());
         }
         return true;
     }
@@ -1585,6 +1605,44 @@ public class TenantFilterInterceptor implements HandlerInterceptor {
                                 Object handler,
                                 Exception ex) {
         TenantContext.clear();
+    }
+}
+```
+
+- [ ] **Step 4b: Create `TenantFilterAspect.java`**
+
+This aspect enables the Hibernate filter at the repository layer, where a `@Transactional` session is already open. It reads the `agencyId` from `TenantContext` (populated by the interceptor above) and applies it to the current Hibernate session before any query executes.
+
+```java
+// backend/src/main/java/com/hcare/multitenancy/TenantFilterAspect.java
+package com.hcare.multitenancy;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Before;
+import org.hibernate.Session;
+import org.springframework.stereotype.Component;
+import java.util.UUID;
+
+@Aspect
+@Component
+public class TenantFilterAspect {
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    // Runs before any Spring Data repository method.
+    // At this point the @Transactional session opened by the service layer is active,
+    // so entityManager.unwrap(Session.class) returns the live session.
+    @Before("@within(org.springframework.stereotype.Repository)")
+    public void enableAgencyFilter() {
+        UUID agencyId = TenantContext.get();
+        if (agencyId != null) {
+            entityManager.unwrap(Session.class)
+                .enableFilter("agencyFilter")
+                .setParameter("agencyId", agencyId);
+        }
     }
 }
 ```
@@ -1630,7 +1688,7 @@ git add src/main/java/com/hcare/multitenancy/ \
         src/main/java/com/hcare/config/WebMvcConfig.java \
         src/main/java/com/hcare/api/v1/users/ \
         src/test/java/com/hcare/multitenancy/
-git commit -m "feat: Hibernate agencyFilter interceptor — cross-tenant isolation enforced at persistence layer"
+git commit -m "feat: Hibernate agencyFilter — TenantContext interceptor + TenantFilterAspect enforce cross-tenant isolation at repository layer"
 ```
 
 ---
@@ -1736,14 +1794,14 @@ package com.hcare.audit;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+// @FilterDef is NOT repeated here — it is declared globally in domain/package-info.java
+// and Hibernate registers it for the entire persistence unit regardless of Java package.
+// Declaring it a second time with the same name causes a DuplicateMappingException at startup.
 @Entity
 @Table(name = "phi_audit_logs")
-@FilterDef(name = "agencyFilter", parameters = @ParamDef(name = "agencyId", type = UUID.class))
 @Filter(name = "agencyFilter", condition = "agency_id = :agencyId")
 public class PhiAuditLog {
 
@@ -2500,7 +2558,8 @@ git commit -m "feat: BFF JWT validation filter — stateless, validates Core API
 | HikariCP pool tuned for virtual threads | Task 1 — application-prod.yml (maximum-pool-size: 20) |
 | JWT stateless auth | Tasks 4–6 |
 | Multi-tenancy via Hibernate @Filter | Task 7 |
-| Filter set from JWT in HandlerInterceptor | Task 7 — TenantFilterInterceptor |
+| Filter set from JWT in HandlerInterceptor | Task 7 — TenantFilterInterceptor (sets TenantContext) |
+| Filter enabled inside transaction | Task 7 — TenantFilterAspect (@Before repository calls) |
 | PhiAuditLog append-only entity | Task 8 |
 | H2 dev / PostgreSQL prod | Task 1 — application-dev/prod.yml |
 | Flyway migrations | Tasks 3 & 9 |
