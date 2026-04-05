@@ -180,8 +180,7 @@ class EvvComplianceServiceTest {
 
     @Test
     void manual_verification_method_returns_yellow() {
-        EvvRecord r = buildCompleteRecord();
-        // EvvRecord with MANUAL: re-create since verificationMethod is set in constructor
+        // verificationMethod is set in constructor so re-create with MANUAL directly
         EvvRecord manual = new EvvRecord(UUID.randomUUID(), UUID.randomUUID(), VerificationMethod.MANUAL);
         manual.setClientMedicaidId("TX12345");
         manual.setLocationLat(CLIENT_LAT);
@@ -674,18 +673,23 @@ class VisitControllerIT extends AbstractIntegrationTest {
 
     @Test
     void clockOut_after_clockIn_sets_completed_and_computes_green() {
-        // Clock in first
+        // Shift scheduled to start 10 minutes ago — clock-in is within the 30-min anomaly window → GREEN
+        LocalDateTime start = LocalDateTime.now().minusMinutes(10).withSecond(0).withNano(0);
+        Shift onTimeShift = shiftRepo.save(new Shift(
+            agency.getId(), null, client.getId(), adminUser.getId(),
+            serviceType.getId(), null, start, start.plusHours(4)
+        ));
+
         ClockInRequest clockInReq = new ClockInRequest(
             new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
             VerificationMethod.GPS, false, null
         );
-        restTemplate.exchange("/api/v1/shifts/" + shift.getId() + "/clock-in",
+        restTemplate.exchange("/api/v1/shifts/" + onTimeShift.getId() + "/clock-in",
             HttpMethod.POST, new HttpEntity<>(clockInReq, authHeaders()), ShiftDetailResponse.class);
 
-        // Clock out
         ClockOutRequest clockOutReq = new ClockOutRequest(false, null);
         ResponseEntity<ShiftDetailResponse> resp = restTemplate.exchange(
-            "/api/v1/shifts/" + shift.getId() + "/clock-out",
+            "/api/v1/shifts/" + onTimeShift.getId() + "/clock-out",
             HttpMethod.POST,
             new HttpEntity<>(clockOutReq, authHeaders()),
             ShiftDetailResponse.class
@@ -695,12 +699,22 @@ class VisitControllerIT extends AbstractIntegrationTest {
         ShiftDetailResponse body = resp.getBody();
         assertThat(body.status()).isEqualTo("COMPLETED");
         assertThat(body.evv().timeOut()).isNotNull();
-        // TX is OPEN, GPS matches client, method=GPS allowed, timeIn within 30 min of scheduled start
-        // (shift is tomorrow 09:00; timeIn was just now via LocalDateTime.now() but scheduled is tomorrow,
-        // so anomaly check: |now - tomorrow 9am| > 30 min → YELLOW. Use a shift scheduled for "now" instead.)
-        // Note: complianceStatus may be YELLOW due to time anomaly (clock-in is "now", scheduled is tomorrow).
-        // That is correct behavior — the test verifies the response shape and COMPLETED status.
-        assertThat(body.evv().complianceStatus()).isIn("GREEN", "YELLOW");
+        // TX is OPEN, GPS matches client, method=GPS allowed, clock-in within 30 min of start → GREEN
+        assertThat(body.evv().complianceStatus()).isEqualTo("GREEN");
+    }
+
+    @Test
+    void clockIn_on_completed_shift_returns_409() {
+        shift.setStatus(ShiftStatus.COMPLETED);
+        shiftRepo.save(shift);
+        ClockInRequest req = new ClockInRequest(
+            new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
+            VerificationMethod.GPS, false, null
+        );
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/shifts/" + shift.getId() + "/clock-in",
+            HttpMethod.POST, new HttpEntity<>(req, authHeaders()), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     @Test
@@ -739,6 +753,24 @@ class VisitControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void clockIn_offline_uses_device_captured_at_as_time_in() {
+        LocalDateTime deviceTime = LocalDateTime.now().minusMinutes(5).withSecond(0).withNano(0);
+        ClockInRequest req = new ClockInRequest(
+            new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
+            VerificationMethod.GPS, true, deviceTime
+        );
+        ResponseEntity<ShiftDetailResponse> resp = restTemplate.exchange(
+            "/api/v1/shifts/" + shift.getId() + "/clock-in",
+            HttpMethod.POST, new HttpEntity<>(req, authHeaders()), ShiftDetailResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        ShiftDetailResponse body = resp.getBody();
+        assertThat(body.evv().capturedOffline()).isTrue();
+        // timeIn must be the device timestamp, not the server receipt time
+        assertThat(body.evv().timeIn()).isEqualTo(deviceTime);
+    }
+
+    @Test
     void clockOut_updates_authorization_used_units_for_hours_payer() {
         // Set up an authorization linked to the shift
         Payer payer = payerRepo.save(new Payer(agency.getId(), "Medicaid TX", PayerType.MEDICAID, "TX"));
@@ -770,6 +802,36 @@ class VisitControllerIT extends AbstractIntegrationTest {
         // Verify authorization used units increased
         Authorization updated = authorizationRepo.findById(auth.getId()).orElseThrow();
         assertThat(updated.getUsedUnits()).isGreaterThan(BigDecimal.ZERO);
+    }
+
+    @Test
+    void clockOut_updates_authorization_used_units_for_visits_payer() {
+        Payer payer = payerRepo.save(new Payer(agency.getId(), "Medicaid TX Visits", PayerType.MEDICAID, "TX"));
+        Authorization auth = authorizationRepo.save(new Authorization(
+            client.getId(), payer.getId(), serviceType.getId(), agency.getId(),
+            "AUTH-VISITS-001", new BigDecimal("100.00"), UnitType.VISITS,
+            LocalDate.now(), LocalDate.now().plusMonths(6)
+        ));
+        LocalDateTime start = LocalDateTime.now().minusMinutes(1);
+        Shift authShift = shiftRepo.save(new Shift(
+            agency.getId(), null, client.getId(), adminUser.getId(),
+            serviceType.getId(), auth.getId(), start, start.plusHours(2)
+        ));
+
+        ClockInRequest clockIn = new ClockInRequest(
+            new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
+            VerificationMethod.GPS, false, null
+        );
+        restTemplate.exchange("/api/v1/shifts/" + authShift.getId() + "/clock-in",
+            HttpMethod.POST, new HttpEntity<>(clockIn, authHeaders()), ShiftDetailResponse.class);
+
+        restTemplate.exchange("/api/v1/shifts/" + authShift.getId() + "/clock-out",
+            HttpMethod.POST, new HttpEntity<>(new ClockOutRequest(false, null), authHeaders()),
+            ShiftDetailResponse.class);
+
+        Authorization updated = authorizationRepo.findById(auth.getId()).orElseThrow();
+        // VISITS unit type: each completed shift adds exactly 1.00
+        assertThat(updated.getUsedUnits()).isEqualByComparingTo(new BigDecimal("1.00"));
     }
 }
 ```
@@ -1053,7 +1115,7 @@ public class VisitService {
         phiAuditService.logWrite(userId, shift.getAgencyId(), ResourceType.EVVRECORD,
             record.getId(), ipAddress);
 
-        return buildShiftDetail(shift, record);
+        return buildShiftDetail(shift, record, client);
     }
 
     /**
@@ -1097,7 +1159,9 @@ public class VisitService {
         phiAuditService.logWrite(userId, shift.getAgencyId(), ResourceType.EVVRECORD,
             record.getId(), ipAddress);
 
-        return buildShiftDetail(shift, record);
+        Client client = clientRepository.findById(shift.getClientId())
+            .orElseThrow(() -> new IllegalStateException("Client not found: " + shift.getClientId()));
+        return buildShiftDetail(shift, record, client);
     }
 
     /**
@@ -1116,16 +1180,17 @@ public class VisitService {
                 record.getId(), ipAddress);
         }
 
-        return buildShiftDetail(shift, record);
+        Client client = clientRepository.findById(shift.getClientId())
+            .orElseThrow(() -> new IllegalStateException("Client not found: " + shift.getClientId()));
+        return buildShiftDetail(shift, record, client);
     }
 
     /**
      * Builds a ShiftDetailResponse by computing EVV compliance status from pre-loaded objects.
-     * Loads Client and Agency (for state resolution) within the current transaction.
+     * Caller is responsible for loading Client — avoids a duplicate query in clockIn which
+     * already fetches the client for medicaidId.
      */
-    private ShiftDetailResponse buildShiftDetail(Shift shift, EvvRecord record) {
-        Client client = clientRepository.findById(shift.getClientId())
-            .orElseThrow(() -> new IllegalStateException("Client not found: " + shift.getClientId()));
+    private ShiftDetailResponse buildShiftDetail(Shift shift, EvvRecord record, Client client) {
         Agency agency = agencyRepository.findById(shift.getAgencyId())
             .orElseThrow(() -> new IllegalStateException("Agency not found: " + shift.getAgencyId()));
 
@@ -1306,7 +1371,7 @@ If no fix was needed, skip this step.
 | GPS tolerance via `EvvStateConfig.gpsToleranceMiles` (NE/KY/AR) | Task 1 — haversine check with null guard |
 | State code resolution: `client.serviceState` || `agency.state` | Task 2 — `buildShiftDetail()` stateCode resolution |
 | `EvvRecord.clientMedicaidId` populated at clock-in from `Client.medicaidId` | Task 2 — `clockIn()` sets it |
-| `capturedOffline` + `deviceCapturedAt` handling | Task 2 — both clock-in and clock-out handle offline path |
+| `capturedOffline` + `deviceCapturedAt` handling | Task 2 — both clock-in and clock-out handle offline path; integration test verifies device timestamp used as timeIn |
 | `Authorization.usedUnits` updated on clock-out | Task 2 — `updateAuthorizationUnits()` |
 | Retry on `OptimisticLockingFailureException` for authorization update | Task 2 — 3-attempt loop |
 | PHI audit log on EVVRecord reads and writes | Task 2 — `phiAuditService.logWrite/logRead()` |
