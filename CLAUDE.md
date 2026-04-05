@@ -1,16 +1,58 @@
 # CLAUDE.md
 
-This file guides Claude Code when working in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-TODO: Add project overview
+**hcare** is a home care agency management SaaS platform targeting small agencies (1–25 caregivers). Core features: scheduling with AI-assisted caregiver matching, EVV (Electronic Visit Verification) compliance tracking, caregiver mobile app, client/care plan management, and family portal.
 
 ```
-/frontend        # React (web + mobile-responsive)
-/backend         # Java 25, Spring Boot
+/backend         # Core API — Spring Boot 3.x, Java 25 (system of record)
+/bff             # Mobile BFF — Spring Boot 3.x, Java 25 (stateless adapter for React Native)
+/frontend        # React (TypeScript) — web admin app
+/mobile          # React Native — caregiver mobile app
 /infra           # IaC / deployment configs
 ```
+
+Primary packages under `com.hcare`:
+- `domain/` — JPA entities and repositories
+- `api/v1/` — REST controllers and DTOs
+- `multitenancy/` — Hibernate `@Filter` tenant isolation
+- `scoring/` — AI caregiver match engine (isolated module)
+- `evv/` — EVV compliance rules and aggregator connectors
+- `audit/` — `PhiAuditLog` append-only PHI access log
+- `security/` — JWT provider, auth filter, `UserPrincipal`
+
+---
+
+## Domain Model Summary
+
+All entities carry an implicit `agencyId` (row-level multi-tenancy). Key relationships:
+- `Agency` → `AgencyUser` (roles: ADMIN | SCHEDULER), `Caregiver`, `Client`, `Payer`, `ServiceType`
+- `Client` → `CarePlan` (versioned), `Authorization` (payer + authorized hours, real-time utilization), `Diagnoses`, `Medications`, `FamilyPortalUser`
+- `Caregiver` → `Credentials` (with expiry), `BackgroundChecks`, `Availability`, `CaregiverScoringProfile`
+- `RecurrencePattern` → generates `Shift` instances on a rolling 8-week horizon (nightly job advances frontier)
+- `Shift` → `EVVRecord` (6 federal elements + compliance status computed on read), `ShiftOffers`, `ADLTaskCompletions`
+- `EvvStateConfig` — global (no agencyId), one row per US state, Flyway-seeded in `V2__evv_state_config_seed.sql`
+- `PhiAuditLog` — append-only, stored in a separate schema partition
+
+### Multi-tenancy
+
+Enforced at the persistence layer via Hibernate `@FilterDef` named `agencyFilter` (declared in `domain/package-info.java`). A `TenantFilterInterceptor` sets `TenantContext` (ThreadLocal) from the JWT before any repository call; `TenantFilterAspect` enables the Hibernate session filter inside `@Transactional`. **Never** enforce tenant isolation at the service layer — the framework prevents cross-agency leakage.
+
+### Core API vs Mobile BFF
+
+**Core API** owns all business logic, data, and EVV compliance status computation. It is the system of record.
+
+**Mobile BFF** (`/bff`) is a stateless thin adapter with no database. Its responsibilities are limited to: push notification dispatch, offline sync reconciliation (`POST /sync/visits`), mobile-optimized payload shaping. The BFF **never** computes EVV compliance status independently — it calls Core API and forwards the result.
+
+### EVV Compliance
+
+Compliance status (`GREEN/YELLOW/RED/EXEMPT/PORTAL_SUBMIT/GREY`) is computed on read by Core API from `EVVRecord` + `EvvStateConfig`. It is **never stored** and **never pre-computed in the BFF**. Rules are DB-driven — updating `EvvStateConfig` rows instantly re-evaluates all history without reprocessing jobs.
+
+### AI Scoring Module
+
+All scoring logic lives in `com.hcare.scoring`. The public interface is `ScoringService` — nothing outside this package queries scoring tables. `CaregiverScoringProfile` is pre-computed asynchronously via Spring events (on shift completion/cancellation), never on the request path.
 
 ---
 
@@ -25,6 +67,15 @@ TODO: Add project overview
 
 ## Frontend (React)
 
+### Common Commands
+```bash
+cd frontend
+npm run dev             # start dev server
+npm run build           # production build
+npm run test            # Vitest unit tests
+npm run test:e2e        # Playwright e2e tests
+npm run lint --fix      # ESLint + Prettier fix (run before committing)
+```
 
 ### Conventions
 - Components live in `frontend/src/components/` and are co-located with their test and story files.
@@ -33,6 +84,16 @@ TODO: Add project overview
 - Prefer named exports over default exports.
 - Mobile breakpoints first (`sm:`, `md:`, `lg:`) — never desktop-first overrides.
 
+
+---
+
+## Mobile BFF (Java 25 / Spring Boot)
+
+```bash
+cd bff
+./mvnw spring-boot:run          # start BFF (http://localhost:8081)
+./mvnw test
+```
 
 ---
 
@@ -113,3 +174,7 @@ VITE_FEATURE_FLAGS_URL=...
 - Do not fetch data directly in React components — use a custom hook wrapping React Query.
 - Do not bypass the DTO layer or return raw entity objects from APIs.
 - Do not introduce new dependencies without a brief note in the PR explaining why.
+- Do not compute EVV compliance status in the BFF or store it — Core API is the single authority.
+- Do not enforce multi-tenancy at the service layer — the Hibernate `agencyFilter` handles it.
+- Do not include PHI in push notification payloads — payloads carry only `shiftId`/event type codes.
+- Do not load real PHI into local H2 development environments — use synthetic/test data only.
