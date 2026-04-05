@@ -26,7 +26,7 @@ class CaregiverDomainIT extends AbstractIntegrationTest {
         assertThat(loaded.getLastName()).isEqualTo("Smith");
         assertThat(loaded.getEmail()).isEqualTo("alice@test.com");
         assertThat(loaded.getStatus()).isEqualTo(CaregiverStatus.ACTIVE);
-        assertThat(loaded.isHasPet()).isFalse();
+        assertThat(loaded.hasPet()).isFalse();
         assertThat(loaded.getLanguages()).isEqualTo("[]");
         assertThat(loaded.getAgencyId()).isEqualTo(agency.getId());
     }

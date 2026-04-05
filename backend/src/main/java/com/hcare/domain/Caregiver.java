@@ -86,7 +86,7 @@ public class Caregiver {
     public BigDecimal getHomeLng() { return homeLng; }
     public LocalDate getHireDate() { return hireDate; }
     public CaregiverStatus getStatus() { return status; }
-    public boolean isHasPet() { return hasPet; }
+    public boolean hasPet() { return hasPet; }
     public String getLanguages() { return languages; }
     public String getFcmToken() { return fcmToken; }
     public LocalDateTime getCreatedAt() { return createdAt; }
