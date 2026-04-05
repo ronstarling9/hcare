@@ -19,7 +19,7 @@
 - `src/main/java/com/hcare/api/v1/visits/dto/ClockInRequest.java` — immutable record: lat, lon, verificationMethod, capturedOffline, deviceCapturedAt
 - `src/main/java/com/hcare/api/v1/visits/dto/ClockOutRequest.java` — immutable record: capturedOffline, deviceCapturedAt
 - `src/main/java/com/hcare/api/v1/visits/dto/ShiftDetailResponse.java` — immutable record with nested EvvSummary
-- `src/main/java/com/hcare/domain/AuthorizationUnitService.java` — isolated `@Transactional(REQUIRES_NEW)` service for authorization unit updates; each retry gets a fresh Hibernate session so OptimisticLockingFailureException cannot poison the session
+- `src/main/java/com/hcare/domain/AuthorizationUnitService.java` — single-attempt `@Transactional(REQUIRES_NEW)` method; called repeatedly from a `TransactionSynchronization.afterCommit` hook in VisitService so each retry is a fresh transaction AND the clock-out commit cannot be rolled back by a failed auth update
 - `src/main/java/com/hcare/api/v1/visits/VisitService.java` — @Service with clockIn, clockOut, getShiftDetail
 - `src/main/java/com/hcare/api/v1/visits/VisitController.java` — @RestController at /api/v1/shifts
 - `src/test/java/com/hcare/evv/EvvComplianceServiceTest.java` — pure unit tests (no Spring context)
@@ -941,18 +941,17 @@ public record ShiftDetailResponse(
 
 - [ ] **Step 5: Create AuthorizationUnitService**
 
-The authorization unit update **must not** run inside the same Hibernate session as `clockOut`.
-After an `OptimisticLockingFailureException`, Hibernate marks the session rollback-only — retrying
-`authorizationRepository.findById()` on that session either returns the stale first-level cache or
-throws immediately. `Propagation.REQUIRES_NEW` suspends the outer transaction and opens a brand-new
-session for each attempt, so retries always load a fresh entity.
+Two correctness requirements drive the design here:
+
+1. **Each retry needs a fresh Hibernate session.** `REQUIRES_NEW` creates one new transaction per *method invocation*, not per loop iteration. A retry loop inside a single `@Transactional(REQUIRES_NEW)` method still runs on one poisoned session after the first `OptimisticLockingFailureException`. The fix is to make `addUnits` a single-attempt method and call it multiple times from outside any transaction.
+
+2. **A failed auth update must not roll back the clock-out.** `VisitService.clockOut` is `@Transactional`. If the auth update throws inside that transaction, Spring rolls back everything — including the EVV record and shift status. The fix is to invoke the retry loop inside a `TransactionSynchronization.afterCommit` hook, which runs after the outer `clockOut` transaction has already committed durably.
 
 Create `src/main/java/com/hcare/domain/AuthorizationUnitService.java`:
 
 ```java
 package com.hcare.domain;
 
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -974,41 +973,30 @@ public class AuthorizationUnitService {
     }
 
     /**
-     * Increments Authorization.usedUnits after a shift completes.
+     * Single-attempt increment of Authorization.usedUnits.
      *
-     * Runs in its own transaction (REQUIRES_NEW) so each retry gets a fresh Hibernate session —
-     * OptimisticLockingFailureException from a prior attempt cannot poison the session.
-     * Called from VisitService.clockOut AFTER the outer transaction has saved shift + EVV record.
+     * Runs in its own transaction (REQUIRES_NEW) so it can be called repeatedly — each call
+     * gets a completely fresh Hibernate session. Never call this in a loop inside a @Transactional
+     * context; the retry loop belongs in VisitService's afterCommit hook (outside any transaction).
+     *
+     * @throws OptimisticLockingFailureException if the authorization row was concurrently updated
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void addUnits(UUID authorizationId, LocalDateTime timeIn, LocalDateTime timeOut) {
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                Optional<Authorization> authOpt = authorizationRepository.findById(authorizationId);
-                if (authOpt.isEmpty()) return; // authorization deleted — skip silently
+        Optional<Authorization> authOpt = authorizationRepository.findById(authorizationId);
+        if (authOpt.isEmpty()) return; // authorization deleted — skip silently
 
-                Authorization auth = authOpt.get();
-                BigDecimal units;
-                if (auth.getUnitType() == UnitType.HOURS) {
-                    long minutes = Duration.between(timeIn, timeOut).toMinutes();
-                    units = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-                } else {
-                    // VISITS: each completed shift counts as 1 unit
-                    units = BigDecimal.ONE;
-                }
-                auth.addUsedUnits(units);
-                authorizationRepository.save(auth);
-                return;
-            } catch (OptimisticLockingFailureException e) {
-                if (attempt == 2) throw e; // exhausted retries — propagate to caller
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Interrupted during authorization unit retry", ie);
-                }
-            }
+        Authorization auth = authOpt.get();
+        BigDecimal units;
+        if (auth.getUnitType() == UnitType.HOURS) {
+            long minutes = Duration.between(timeIn, timeOut).toMinutes();
+            units = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+        } else {
+            // VISITS: each completed shift counts as 1 unit
+            units = BigDecimal.ONE;
         }
+        auth.addUsedUnits(units);
+        authorizationRepository.save(auth);
     }
 }
 ```
@@ -1027,9 +1015,14 @@ import com.hcare.audit.PhiAuditService;
 import com.hcare.audit.ResourceType;
 import com.hcare.domain.*;
 import com.hcare.evv.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -1040,6 +1033,8 @@ import java.util.UUID;
 
 @Service
 public class VisitService {
+
+    private static final Logger log = LoggerFactory.getLogger(VisitService.class);
 
     private final ShiftRepository shiftRepository;
     private final EvvRecordRepository evvRecordRepository;
@@ -1150,10 +1145,36 @@ public class VisitService {
         shiftRepository.save(shift);
 
         if (shift.getAuthorizationId() != null) {
-            // Runs in its own REQUIRES_NEW transaction — safe to retry on OptimisticLockingFailureException.
-            // The outer transaction (shift + EVV record) has already been flushed above.
-            authorizationUnitService.addUnits(
-                shift.getAuthorizationId(), record.getTimeIn(), record.getTimeOut());
+            // Schedule the authorization update to run AFTER this transaction commits.
+            // This guarantees two things:
+            //   1. A failed auth update cannot roll back the clock-out (shift + EVV already committed).
+            //   2. Each retry calls authorizationUnitService.addUnits() as a separate REQUIRES_NEW
+            //      invocation, giving each attempt a completely fresh Hibernate session — no
+            //      rollback-only session pollution between retries.
+            final UUID authorizationId = shift.getAuthorizationId();
+            final LocalDateTime timeIn = record.getTimeIn();
+            final LocalDateTime timeOut = record.getTimeOut();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    for (int attempt = 0; attempt < 3; attempt++) {
+                        try {
+                            authorizationUnitService.addUnits(authorizationId, timeIn, timeOut);
+                            return;
+                        } catch (OptimisticLockingFailureException e) {
+                            if (attempt == 2) {
+                                log.error("Failed to update authorization units after 3 attempts " +
+                                    "for authorization {} — shift clock-out is committed", authorizationId, e);
+                                return; // Do not rethrow — clock-out is already durable
+                            }
+                            try { Thread.sleep(50); } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         phiAuditService.logWrite(userId, shift.getAgencyId(), ResourceType.EVVRECORD,
