@@ -51,6 +51,9 @@ public class Document {
         this.filePath = filePath;
     }
 
+    public void setDocumentType(String documentType) { this.documentType = documentType; }
+    public void setUploadedBy(UUID uploadedBy) { this.uploadedBy = uploadedBy; }
+
     public UUID getId() { return id; }
     public UUID getAgencyId() { return agencyId; }
     public DocumentOwnerType getOwnerType() { return ownerType; }

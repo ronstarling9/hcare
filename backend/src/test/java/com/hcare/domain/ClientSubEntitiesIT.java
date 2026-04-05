@@ -70,4 +70,19 @@ class ClientSubEntitiesIT extends AbstractIntegrationTest {
         assertThat(loaded.getOwnerId()).isEqualTo(client.getId());
         assertThat(loaded.getFileName()).isEqualTo("care_plan_v1.pdf");
     }
+
+    @Test
+    void document_type_and_uploaded_by_can_be_set() {
+        java.util.UUID adminId = java.util.UUID.randomUUID();
+        Document doc = new Document(
+            agency.getId(), DocumentOwnerType.CLIENT, client.getId(),
+            "consent_form.pdf", "/storage/agency-123/consent_form.pdf");
+        doc.setDocumentType("CONSENT_FORM");
+        doc.setUploadedBy(adminId);
+        documentRepo.save(doc);
+
+        Document loaded = documentRepo.findById(doc.getId()).orElseThrow();
+        assertThat(loaded.getDocumentType()).isEqualTo("CONSENT_FORM");
+        assertThat(loaded.getUploadedBy()).isEqualTo(adminId);
+    }
 }
