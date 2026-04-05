@@ -20,13 +20,14 @@
 - `src/main/java/com/hcare/api/v1/visits/dto/ClockOutRequest.java` — immutable record: capturedOffline, deviceCapturedAt
 - `src/main/java/com/hcare/api/v1/visits/dto/ShiftDetailResponse.java` — immutable record with nested EvvSummary
 - `src/main/java/com/hcare/domain/AuthorizationUnitService.java` — single-attempt `@Transactional(REQUIRES_NEW)` method; called repeatedly from a `TransactionSynchronization.afterCommit` hook in VisitService so each retry is a fresh transaction AND the clock-out commit cannot be rolled back by a failed auth update
+- `src/main/java/com/hcare/domain/AuthorizationUnitFailedEvent.java` — Spring application event published when all 3 authorization unit retries are exhausted; consumed by a reconciliation listener (P2)
 - `src/main/java/com/hcare/api/v1/visits/VisitService.java` — @Service with clockIn, clockOut, getShiftDetail
 - `src/main/java/com/hcare/api/v1/visits/VisitController.java` — @RestController at /api/v1/shifts
 - `src/test/java/com/hcare/evv/EvvComplianceServiceTest.java` — pure unit tests (no Spring context)
 - `src/test/java/com/hcare/api/v1/visits/VisitControllerIT.java` — Testcontainers integration tests
 
 **Modify:**
-- `src/main/java/com/hcare/audit/ResourceType.java` — add SHIFT (for audit log on shift reads)
+- `src/main/java/com/hcare/audit/ResourceType.java` — no changes needed; EVVRECORD already covers all audit log writes in this plan
 
 ---
 
@@ -339,6 +340,9 @@ import com.hcare.domain.PayerType;
 import com.hcare.domain.Shift;
 import org.springframework.stereotype.Service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Arrays;
@@ -348,6 +352,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class LocalEvvComplianceService implements EvvComplianceService {
+
+    private static final Logger log = LoggerFactory.getLogger(LocalEvvComplianceService.class);
 
     /** Clock-in more than this many minutes from scheduled start is a YELLOW time anomaly. */
     static final long TIME_ANOMALY_THRESHOLD_MINUTES = 30;
@@ -416,13 +422,22 @@ public class LocalEvvComplianceService implements EvvComplianceService {
 
     /**
      * Parses a JSON TEXT array of VerificationMethod names e.g. ["GPS","TELEPHONY_LANDLINE"].
+     * Unknown names (e.g., a new enum value seeded in DB before the code deploys) are skipped
+     * with a warning rather than throwing — fail-open keeps compliant visits GREEN.
      * Package-private for direct test access.
      */
     static Set<VerificationMethod> parseAllowedMethods(String json) {
         if (json == null || json.isBlank()) return Set.of();
         return Arrays.stream(json.replaceAll("[\\[\\]\"\\s]", "").split(","))
             .filter(s -> !s.isEmpty())
-            .map(VerificationMethod::valueOf)
+            .flatMap(s -> {
+                try {
+                    return java.util.stream.Stream.of(VerificationMethod.valueOf(s));
+                } catch (IllegalArgumentException e) {
+                    log.warn("Unknown VerificationMethod '{}' in EvvStateConfig — skipping", s);
+                    return java.util.stream.Stream.empty();
+                }
+            })
             .collect(Collectors.toCollection(() -> EnumSet.noneOf(VerificationMethod.class)));
     }
 
@@ -497,6 +512,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
+import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.jdbc.Sql.ExecutionPhase;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -505,6 +522,12 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+// TRUNCATE CASCADE before each test avoids FK-ordered deleteAll() fragility — if any earlier
+// deleteAll() throws, subsequent deletes are skipped and dirty state leaks into the next test.
+@Sql(statements = """
+    TRUNCATE TABLE evv_records, shifts, authorizations, payers, service_types,
+                   clients, agency_users, agencies RESTART IDENTITY CASCADE
+    """, executionPhase = ExecutionPhase.BEFORE_TEST_METHOD)
 class VisitControllerIT extends AbstractIntegrationTest {
 
     @Autowired TestRestTemplate restTemplate;
@@ -527,16 +550,7 @@ class VisitControllerIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void seed() {
-        // Clean up in dependency order
-        evvRecordRepo.deleteAll();
-        shiftRepo.deleteAll();
-        authorizationRepo.deleteAll();
-        payerRepo.deleteAll();
-        serviceTypeRepo.deleteAll();
-        clientRepo.deleteAll();
-        userRepo.deleteAll();
-        agencyRepo.deleteAll();
-
+        // Cleanup handled by @Sql TRUNCATE CASCADE above — just seed fresh data here.
         agency = agencyRepo.save(new Agency("Visit Test Agency", "TX"));
         adminUser = userRepo.save(new AgencyUser(
             agency.getId(), "admin@visit.test",
@@ -754,6 +768,8 @@ class VisitControllerIT extends AbstractIntegrationTest {
 
     @Test
     void clockIn_offline_uses_device_captured_at_as_time_in() {
+        // withNano(0) zeroes sub-second precision so LocalDateTime equality survives JSON round-trip
+        // (Jackson ISO serialization "2026-04-05T09:00:00" has no nanosecond component).
         LocalDateTime deviceTime = LocalDateTime.now().minusMinutes(5).withSecond(0).withNano(0);
         ClockInRequest req = new ClockInRequest(
             new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
@@ -845,9 +861,12 @@ cd /Users/ronstarling/repos/hcare/backend
 
 Expected: compilation errors — `ClockInRequest`, `ClockOutRequest`, `ShiftDetailResponse`, `VisitController` do not exist.
 
-- [ ] **Step 3: Add SHIFT to ResourceType enum**
+- [ ] **Step 3: Verify ResourceType enum (no change needed)**
 
-Edit `src/main/java/com/hcare/audit/ResourceType.java`. Current content:
+`ResourceType.EVVRECORD` already covers all audit log entries written by this plan.
+`ResourceType.SHIFT` is intentionally not added — YAGNI; a future shift-list endpoint can add it then.
+
+Confirm `src/main/java/com/hcare/audit/ResourceType.java` contains `EVVRECORD` (it does per V1):
 ```java
 package com.hcare.audit;
 
@@ -857,15 +876,7 @@ public enum ResourceType {
 }
 ```
 
-New content (add SHIFT):
-```java
-package com.hcare.audit;
-
-public enum ResourceType {
-    CLIENT, CAREPLAN, EVVRECORD, SHIFT, MEDICATION, CAREGIVER, DOCUMENT,
-    AUTHORIZATION, INCIDENT_REPORT, AGENCY_USER
-}
-```
+No edit required — move on.
 
 - [ ] **Step 4: Create DTOs**
 
@@ -983,6 +994,12 @@ public class AuthorizationUnitService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void addUnits(UUID authorizationId, LocalDateTime timeIn, LocalDateTime timeOut) {
+        if (timeIn == null || timeOut == null) {
+            // Defensive guard: should not happen in normal flow, but protects against partially
+            // saved EVV records (e.g., data migration inconsistency).
+            throw new IllegalArgumentException(
+                "timeIn and timeOut must both be non-null for authorization unit update");
+        }
         Optional<Authorization> authOpt = authorizationRepository.findById(authorizationId);
         if (authOpt.isEmpty()) return; // authorization deleted — skip silently
 
@@ -1001,6 +1018,37 @@ public class AuthorizationUnitService {
 }
 ```
 
+- [ ] **Step 5b: Create AuthorizationUnitFailedEvent**
+
+When all 3 retries are exhausted, the clock-out is already committed but `Authorization.usedUnits`
+is under-reported. Silently swallowing this leaves no recovery path. Publishing a Spring
+`ApplicationEvent` decouples the reconciliation concern from this plan — a P2 listener can write
+to a `failed_authorization_unit_updates` table or trigger a Slack alert without touching this code.
+
+Create `src/main/java/com/hcare/domain/AuthorizationUnitFailedEvent.java`:
+
+```java
+package com.hcare.domain;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+/**
+ * Published when all retries to update Authorization.usedUnits after clock-out are exhausted.
+ * The clock-out itself is already committed — this event exists so a P2 reconciliation listener
+ * can detect and repair the under-reported unit count without losing the visit.
+ *
+ * TODO(P2): Add AuthorizationUnitFailedEventListener that writes to failed_authorization_unit_updates
+ * table for nightly reconciliation job.
+ */
+public record AuthorizationUnitFailedEvent(
+    UUID authorizationId,
+    UUID shiftId,
+    LocalDateTime timeIn,
+    LocalDateTime timeOut
+) {}
+```
+
 - [ ] **Step 6: Create VisitService**
 
 Create `src/main/java/com/hcare/api/v1/visits/VisitService.java`:
@@ -1017,6 +1065,7 @@ import com.hcare.domain.*;
 import com.hcare.evv.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -1046,7 +1095,10 @@ public class VisitService {
     private final EvvComplianceService evvComplianceService;
     private final PhiAuditService phiAuditService;
     private final AuthorizationUnitService authorizationUnitService;
+    private final ApplicationEventPublisher eventPublisher;
 
+    // TODO(P2): 11 constructor parameters — consider splitting VisitService into
+    // ClockInService / ClockOutService / ShiftReadService if complexity grows further.
     public VisitService(ShiftRepository shiftRepository,
                         EvvRecordRepository evvRecordRepository,
                         ClientRepository clientRepository,
@@ -1056,7 +1108,8 @@ public class VisitService {
                         EvvStateConfigRepository evvStateConfigRepository,
                         EvvComplianceService evvComplianceService,
                         PhiAuditService phiAuditService,
-                        AuthorizationUnitService authorizationUnitService) {
+                        AuthorizationUnitService authorizationUnitService,
+                        ApplicationEventPublisher eventPublisher) {
         this.shiftRepository = shiftRepository;
         this.evvRecordRepository = evvRecordRepository;
         this.clientRepository = clientRepository;
@@ -1067,6 +1120,7 @@ public class VisitService {
         this.evvComplianceService = evvComplianceService;
         this.phiAuditService = phiAuditService;
         this.authorizationUnitService = authorizationUnitService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -1152,6 +1206,7 @@ public class VisitService {
             //      invocation, giving each attempt a completely fresh Hibernate session — no
             //      rollback-only session pollution between retries.
             final UUID authorizationId = shift.getAuthorizationId();
+            final UUID capturedShiftId = shiftId;
             final LocalDateTime timeIn = record.getTimeIn();
             final LocalDateTime timeOut = record.getTimeOut();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -1163,8 +1218,12 @@ public class VisitService {
                             return;
                         } catch (OptimisticLockingFailureException e) {
                             if (attempt == 2) {
-                                log.error("Failed to update authorization units after 3 attempts " +
-                                    "for authorization {} — shift clock-out is committed", authorizationId, e);
+                                log.error("Exhausted retries updating authorization units for " +
+                                    "authorization={} shift={} — clock-out is committed, units under-reported",
+                                    authorizationId, capturedShiftId, e);
+                                // Publish event so a P2 reconciliation listener can detect and repair.
+                                eventPublisher.publishEvent(new AuthorizationUnitFailedEvent(
+                                    authorizationId, capturedShiftId, timeIn, timeOut));
                                 return; // Do not rethrow — clock-out is already durable
                             }
                             try { Thread.sleep(50); } catch (InterruptedException ie) {
@@ -1324,11 +1383,11 @@ Expected: `BUILD SUCCESS`. All tests pass. If VisitControllerIT fails due to a m
 ```bash
 cd /Users/ronstarling/repos/hcare/backend
 git add \
-  src/main/java/com/hcare/audit/ResourceType.java \
   src/main/java/com/hcare/api/v1/visits/dto/ClockInRequest.java \
   src/main/java/com/hcare/api/v1/visits/dto/ClockOutRequest.java \
   src/main/java/com/hcare/api/v1/visits/dto/ShiftDetailResponse.java \
   src/main/java/com/hcare/domain/AuthorizationUnitService.java \
+  src/main/java/com/hcare/domain/AuthorizationUnitFailedEvent.java \
   src/main/java/com/hcare/api/v1/visits/VisitService.java \
   src/main/java/com/hcare/api/v1/visits/VisitController.java \
   src/test/java/com/hcare/api/v1/visits/VisitControllerIT.java
