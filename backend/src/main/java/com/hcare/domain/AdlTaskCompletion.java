@@ -30,6 +30,14 @@ public class AdlTaskCompletion {
     @Column(name = "caregiver_notes", columnDefinition = "TEXT")
     private String caregiverNotes;
 
+    // True when completion was recorded offline and synced later.
+    // deviceCapturedAt is authoritative; completedAt (server time) is only a receipt timestamp.
+    @Column(name = "captured_offline", nullable = false)
+    private boolean capturedOffline = false;
+
+    @Column(name = "device_captured_at")
+    private LocalDateTime deviceCapturedAt;
+
     protected AdlTaskCompletion() {}
 
     public AdlTaskCompletion(UUID shiftId, UUID adlTaskId, UUID agencyId) {
@@ -40,6 +48,8 @@ public class AdlTaskCompletion {
     }
 
     public void setCaregiverNotes(String caregiverNotes) { this.caregiverNotes = caregiverNotes; }
+    public void setCapturedOffline(boolean capturedOffline) { this.capturedOffline = capturedOffline; }
+    public void setDeviceCapturedAt(LocalDateTime deviceCapturedAt) { this.deviceCapturedAt = deviceCapturedAt; }
 
     public UUID getId() { return id; }
     public UUID getShiftId() { return shiftId; }
@@ -47,4 +57,6 @@ public class AdlTaskCompletion {
     public UUID getAgencyId() { return agencyId; }
     public LocalDateTime getCompletedAt() { return completedAt; }
     public String getCaregiverNotes() { return caregiverNotes; }
+    public boolean isCapturedOffline() { return capturedOffline; }
+    public LocalDateTime getDeviceCapturedAt() { return deviceCapturedAt; }
 }
