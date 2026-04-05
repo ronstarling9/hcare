@@ -1,3 +1,7 @@
 spring:
   jpa:
     show-sql: false
+
+hcare:
+  scheduling:
+    shift-generation-cron: "-"
