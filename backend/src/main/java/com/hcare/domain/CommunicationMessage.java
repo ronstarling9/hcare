@@ -18,14 +18,16 @@ public class CommunicationMessage {
     private UUID agencyId;
 
     // Polymorphic participant types: AGENCY_USER | CAREGIVER | FAMILY_PORTAL_USER — no FK constraint
+    @Enumerated(EnumType.STRING)
     @Column(name = "sender_type", nullable = false, length = 30)
-    private String senderType;
+    private ParticipantType senderType;
 
     @Column(name = "sender_id", nullable = false)
     private UUID senderId;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "recipient_type", nullable = false, length = 30)
-    private String recipientType;
+    private ParticipantType recipientType;
 
     @Column(name = "recipient_id", nullable = false)
     private UUID recipientId;
@@ -43,8 +45,8 @@ public class CommunicationMessage {
 
     protected CommunicationMessage() {}
 
-    public CommunicationMessage(UUID agencyId, String senderType, UUID senderId,
-                                 String recipientType, UUID recipientId, String body) {
+    public CommunicationMessage(UUID agencyId, ParticipantType senderType, UUID senderId,
+                                 ParticipantType recipientType, UUID recipientId, String body) {
         this.agencyId = agencyId;
         this.senderType = senderType;
         this.senderId = senderId;
@@ -57,9 +59,9 @@ public class CommunicationMessage {
 
     public UUID getId() { return id; }
     public UUID getAgencyId() { return agencyId; }
-    public String getSenderType() { return senderType; }
+    public ParticipantType getSenderType() { return senderType; }
     public UUID getSenderId() { return senderId; }
-    public String getRecipientType() { return recipientType; }
+    public ParticipantType getRecipientType() { return recipientType; }
     public UUID getRecipientId() { return recipientId; }
     public String getSubject() { return subject; }
     public String getBody() { return body; }

@@ -22,8 +22,9 @@ public class IncidentReport {
     private UUID shiftId;
 
     // Polymorphic: AGENCY_USER or CAREGIVER — no FK constraint
+    @Enumerated(EnumType.STRING)
     @Column(name = "reported_by_type", nullable = false, length = 30)
-    private String reportedByType;
+    private ParticipantType reportedByType;
 
     @Column(name = "reported_by_id", nullable = false)
     private UUID reportedById;
@@ -43,7 +44,7 @@ public class IncidentReport {
 
     protected IncidentReport() {}
 
-    public IncidentReport(UUID agencyId, String reportedByType, UUID reportedById,
+    public IncidentReport(UUID agencyId, ParticipantType reportedByType, UUID reportedById,
                           String description, IncidentSeverity severity, LocalDateTime occurredAt) {
         this.agencyId = agencyId;
         this.reportedByType = reportedByType;
@@ -58,7 +59,7 @@ public class IncidentReport {
     public UUID getId() { return id; }
     public UUID getAgencyId() { return agencyId; }
     public UUID getShiftId() { return shiftId; }
-    public String getReportedByType() { return reportedByType; }
+    public ParticipantType getReportedByType() { return reportedByType; }
     public UUID getReportedById() { return reportedById; }
     public String getDescription() { return description; }
     public IncidentSeverity getSeverity() { return severity; }

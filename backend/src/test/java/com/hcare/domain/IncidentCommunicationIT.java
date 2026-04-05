@@ -11,6 +11,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static com.hcare.domain.ParticipantType.*;
+
 import static org.assertj.core.api.Assertions.*;
 
 class IncidentCommunicationIT extends AbstractIntegrationTest {
@@ -35,7 +37,7 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
         Shift shift = shiftRepo.save(new Shift(agency.getId(), null, client.getId(), null, st.getId(), null, start, start.plusHours(4)));
 
         IncidentReport report = new IncidentReport(
-            agency.getId(), "AGENCY_USER", REPORTER_ID,
+            agency.getId(), AGENCY_USER, REPORTER_ID,
             "Client reported fall in bathroom", IncidentSeverity.HIGH,
             LocalDateTime.of(2026, 4, 23, 11, 30)
         );
@@ -47,7 +49,7 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
         assertThat(loaded.getAgencyId()).isEqualTo(agency.getId());
         assertThat(loaded.getSeverity()).isEqualTo(IncidentSeverity.HIGH);
         assertThat(loaded.getDescription()).isEqualTo("Client reported fall in bathroom");
-        assertThat(loaded.getReportedByType()).isEqualTo("AGENCY_USER");
+        assertThat(loaded.getReportedByType()).isEqualTo(AGENCY_USER);
     }
 
     @Test
@@ -55,7 +57,7 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
         Agency agency = agencyRepo.save(new Agency("Incident No-Shift Agency", "TX"));
 
         IncidentReport report = new IncidentReport(
-            agency.getId(), "AGENCY_USER", REPORTER_ID,
+            agency.getId(), AGENCY_USER, REPORTER_ID,
             "Staffing complaint from family", IncidentSeverity.LOW,
             LocalDateTime.of(2026, 4, 23, 14, 0)
         );
@@ -70,11 +72,11 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
         Agency agencyB = agencyRepo.save(new Agency("Inc Agency B", "CA"));
 
         IncidentReport reportA = incidentRepo.save(new IncidentReport(
-            agencyA.getId(), "AGENCY_USER", REPORTER_ID,
+            agencyA.getId(), AGENCY_USER, REPORTER_ID,
             "Agency A incident", IncidentSeverity.MEDIUM, LocalDateTime.now()
         ));
         incidentRepo.save(new IncidentReport(
-            agencyB.getId(), "AGENCY_USER", REPORTER_ID,
+            agencyB.getId(), AGENCY_USER, REPORTER_ID,
             "Agency B incident", IncidentSeverity.MEDIUM, LocalDateTime.now()
         ));
 
@@ -98,8 +100,8 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
         UUID recipientId = UUID.randomUUID();
 
         CommunicationMessage msg = new CommunicationMessage(
-            agency.getId(), "AGENCY_USER", senderId,
-            "CAREGIVER", recipientId,
+            agency.getId(), AGENCY_USER, senderId,
+            CAREGIVER, recipientId,
             "Please confirm availability for Thursday"
         );
         msg.setSubject("Schedule Confirmation");
@@ -107,8 +109,8 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
 
         CommunicationMessage loaded = messageRepo.findById(msg.getId()).orElseThrow();
         assertThat(loaded.getAgencyId()).isEqualTo(agency.getId());
-        assertThat(loaded.getSenderType()).isEqualTo("AGENCY_USER");
-        assertThat(loaded.getRecipientType()).isEqualTo("CAREGIVER");
+        assertThat(loaded.getSenderType()).isEqualTo(AGENCY_USER);
+        assertThat(loaded.getRecipientType()).isEqualTo(CAREGIVER);
         assertThat(loaded.getBody()).isEqualTo("Please confirm availability for Thursday");
         assertThat(loaded.getSubject()).isEqualTo("Schedule Confirmation");
         assertThat(loaded.getSentAt()).isNotNull();
@@ -121,10 +123,10 @@ class IncidentCommunicationIT extends AbstractIntegrationTest {
         UUID uid = UUID.randomUUID();
 
         CommunicationMessage msgA = messageRepo.save(new CommunicationMessage(
-            agencyA.getId(), "AGENCY_USER", uid, "CAREGIVER", uid, "Agency A message"
+            agencyA.getId(), AGENCY_USER, uid, CAREGIVER, uid, "Agency A message"
         ));
         messageRepo.save(new CommunicationMessage(
-            agencyB.getId(), "AGENCY_USER", uid, "CAREGIVER", uid, "Agency B message"
+            agencyB.getId(), AGENCY_USER, uid, CAREGIVER, uid, "Agency B message"
         ));
 
         TenantContext.set(agencyA.getId());
