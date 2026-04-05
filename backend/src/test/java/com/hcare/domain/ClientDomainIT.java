@@ -18,6 +18,7 @@ class ClientDomainIT extends AbstractIntegrationTest {
     @Autowired private CaregiverScoringProfileRepository scoringProfileRepo;
     @Autowired private CaregiverRepository caregiverRepo;
     @Autowired private TransactionTemplate transactionTemplate;
+    @Autowired private FamilyPortalUserRepository familyPortalUserRepo;
 
     @Test
     void client_can_be_saved_and_retrieved() {
@@ -89,5 +90,33 @@ class ClientDomainIT extends AbstractIntegrationTest {
         assertThat(loaded.getVisitCount()).isEqualTo(1);
         assertThat(loaded.getClientId()).isEqualTo(client.getId());
         assertThat(loaded.getScoringProfileId()).isEqualTo(profile.getId());
+    }
+
+    @Test
+    void family_portal_user_is_scoped_to_a_single_client() {
+        Agency agency = agencyRepo.save(new Agency("FPU Agency", "TX"));
+        Client client = clientRepo.save(
+            new Client(agency.getId(), "Grace", "Hall", LocalDate.of(1952, 4, 7)));
+
+        FamilyPortalUser fpu = familyPortalUserRepo.save(
+            new FamilyPortalUser(client.getId(), agency.getId(), "daughter@family.com"));
+
+        FamilyPortalUser loaded = familyPortalUserRepo.findById(fpu.getId()).orElseThrow();
+        assertThat(loaded.getEmail()).isEqualTo("daughter@family.com");
+        assertThat(loaded.getClientId()).isEqualTo(client.getId());
+        assertThat(loaded.getAgencyId()).isEqualTo(agency.getId());
+        assertThat(loaded.getLastLoginAt()).isNull();
+    }
+
+    @Test
+    void family_portal_user_can_be_found_by_email() {
+        Agency agency = agencyRepo.save(new Agency("FPU Lookup Agency", "TX"));
+        Client client = clientRepo.save(
+            new Client(agency.getId(), "Ivan", "King", LocalDate.of(1940, 9, 3)));
+        familyPortalUserRepo.save(
+            new FamilyPortalUser(client.getId(), agency.getId(), "son@lookup.com"));
+
+        assertThat(familyPortalUserRepo.findByEmail("son@lookup.com")).isPresent();
+        assertThat(familyPortalUserRepo.findByEmail("notexists@lookup.com")).isEmpty();
     }
 }
