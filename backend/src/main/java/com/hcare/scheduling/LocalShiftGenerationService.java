@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -84,7 +85,7 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
         shiftRepository.deleteUnstartedFutureShifts(
             pattern.getId(),
             pattern.getAgencyId(),
-            LocalDateTime.now(),
+            LocalDateTime.now(ZoneOffset.UTC),
             List.of(ShiftStatus.OPEN, ShiftStatus.ASSIGNED)
         );
         // Reset to today so generateForPattern starts from tomorrow — avoids creating

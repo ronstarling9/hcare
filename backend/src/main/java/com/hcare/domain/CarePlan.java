@@ -3,6 +3,7 @@ package com.hcare.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -29,7 +30,7 @@ public class CarePlan {
     private CarePlanStatus status = CarePlanStatus.DRAFT;
 
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
     @Column(name = "activated_at")
     private LocalDateTime activatedAt;
@@ -52,7 +53,7 @@ public class CarePlan {
 
     public void activate() {
         this.status = CarePlanStatus.ACTIVE;
-        this.activatedAt = LocalDateTime.now();
+        this.activatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public void supersede() {
@@ -63,7 +64,7 @@ public class CarePlan {
     // PCS plans leave reviewedByClinicianId and reviewedAt null.
     public void review(UUID clinicianId) {
         this.reviewedByClinicianId = clinicianId;
-        this.reviewedAt = LocalDateTime.now();
+        this.reviewedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public UUID getId() { return id; }

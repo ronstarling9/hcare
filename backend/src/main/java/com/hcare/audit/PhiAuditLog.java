@@ -3,6 +3,7 @@ package com.hcare.audit;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 // @FilterDef is NOT repeated here — it is declared globally in domain/package-info.java
@@ -41,7 +42,7 @@ public class PhiAuditLog {
     private AuditAction action;
 
     @Column(name = "occurred_at", nullable = false, updatable = false)
-    private LocalDateTime occurredAt = LocalDateTime.now();
+    private LocalDateTime occurredAt = LocalDateTime.now(ZoneOffset.UTC);
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;

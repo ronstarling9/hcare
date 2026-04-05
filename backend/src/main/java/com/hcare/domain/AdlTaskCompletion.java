@@ -3,6 +3,7 @@ package com.hcare.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -44,7 +45,7 @@ public class AdlTaskCompletion {
         this.shiftId = shiftId;
         this.adlTaskId = adlTaskId;
         this.agencyId = agencyId;
-        this.completedAt = LocalDateTime.now();
+        this.completedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public void setCaregiverNotes(String caregiverNotes) { this.caregiverNotes = caregiverNotes; }

@@ -3,6 +3,7 @@ package com.hcare.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -38,7 +39,7 @@ public class Document {
     private UUID uploadedBy;
 
     @Column(name = "uploaded_at", nullable = false, updatable = false)
-    private LocalDateTime uploadedAt = LocalDateTime.now();
+    private LocalDateTime uploadedAt = LocalDateTime.now(ZoneOffset.UTC);
 
     protected Document() {}
 

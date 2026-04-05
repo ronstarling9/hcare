@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -38,7 +39,7 @@ public class CaregiverCredential {
     private UUID verifiedBy;
 
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
     protected CaregiverCredential() {}
 

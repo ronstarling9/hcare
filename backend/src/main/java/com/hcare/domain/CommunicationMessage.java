@@ -3,6 +3,7 @@ package com.hcare.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -41,7 +42,7 @@ public class CommunicationMessage {
     // sentAt is both the user-visible send time and the row creation time —
     // messages are immutable so there is no useful distinction.
     @Column(name = "sent_at", nullable = false)
-    private LocalDateTime sentAt = LocalDateTime.now();
+    private LocalDateTime sentAt = LocalDateTime.now(ZoneOffset.UTC);
 
     protected CommunicationMessage() {}
 

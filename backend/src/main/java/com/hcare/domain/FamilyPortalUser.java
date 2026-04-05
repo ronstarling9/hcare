@@ -3,6 +3,7 @@ package com.hcare.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 // Authentication model: magic link via email — no password stored.
@@ -34,7 +35,7 @@ public class FamilyPortalUser {
     private LocalDateTime lastLoginAt;
 
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
     protected FamilyPortalUser() {}
 
@@ -45,7 +46,7 @@ public class FamilyPortalUser {
     }
 
     public void recordLogin() {
-        this.lastLoginAt = LocalDateTime.now();
+        this.lastLoginAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public UUID getId() { return id; }

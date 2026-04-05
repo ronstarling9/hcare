@@ -3,6 +3,7 @@ package com.hcare.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
@@ -40,12 +41,12 @@ public class ShiftOffer {
         this.shiftId = shiftId;
         this.caregiverId = caregiverId;
         this.agencyId = agencyId;
-        this.offeredAt = LocalDateTime.now();
+        this.offeredAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public void respond(ShiftOfferResponse response) {
         this.response = response;
-        this.respondedAt = LocalDateTime.now();
+        this.respondedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public UUID getId() { return id; }

@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 // Pre-computed scoring signals. Updated asynchronously via Spring events when shifts
@@ -30,7 +31,7 @@ public class CaregiverScoringProfile {
     private BigDecimal currentWeekHours = BigDecimal.ZERO;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    private LocalDateTime updatedAt = LocalDateTime.now(ZoneOffset.UTC);
 
     protected CaregiverScoringProfile() {}
 
@@ -41,7 +42,7 @@ public class CaregiverScoringProfile {
 
     public void updateAfterShiftCompletion(BigDecimal hoursWorked) {
         this.currentWeekHours = this.currentWeekHours.add(hoursWorked);
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public UUID getId() { return id; }
