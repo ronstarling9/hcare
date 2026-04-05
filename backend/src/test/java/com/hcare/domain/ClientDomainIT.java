@@ -8,6 +8,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
 class ClientDomainIT extends AbstractIntegrationTest {
@@ -90,6 +91,13 @@ class ClientDomainIT extends AbstractIntegrationTest {
         assertThat(loaded.getVisitCount()).isEqualTo(1);
         assertThat(loaded.getClientId()).isEqualTo(client.getId());
         assertThat(loaded.getScoringProfileId()).isEqualTo(profile.getId());
+
+        // Plan 5's primary lookup — find or create an affinity row for a caregiver+client pair
+        assertThat(affinityRepo.findByScoringProfileIdAndClientId(profile.getId(), client.getId()))
+            .isPresent()
+            .hasValueSatisfying(a -> assertThat(a.getVisitCount()).isEqualTo(1));
+        assertThat(affinityRepo.findByScoringProfileIdAndClientId(profile.getId(), UUID.randomUUID()))
+            .isEmpty();
     }
 
     @Test

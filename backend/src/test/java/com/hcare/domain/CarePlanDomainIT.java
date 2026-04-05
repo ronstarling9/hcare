@@ -62,7 +62,7 @@ class CarePlanDomainIT extends AbstractIntegrationTest {
         v2.activate();
         carePlanRepo.save(v2);
 
-        List<CarePlan> plans = carePlanRepo.findByClientId(client.getId());
+        List<CarePlan> plans = carePlanRepo.findByClientIdOrderByPlanVersionAsc(client.getId());
         assertThat(plans).hasSize(2);
 
         CarePlan loadedV1 = carePlanRepo.findById(v1.getId()).orElseThrow();

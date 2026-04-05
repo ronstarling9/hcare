@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
 class CaregiverSubEntitiesIT extends AbstractIntegrationTest {
@@ -73,6 +74,20 @@ class CaregiverSubEntitiesIT extends AbstractIntegrationTest {
         assertThat(loaded.getCancelRateLast90Days()).isEqualByComparingTo("0");
         assertThat(loaded.getCurrentWeekHours()).isEqualByComparingTo("0");
         assertThat(loaded.getCaregiverId()).isEqualTo(caregiver.getId());
+    }
+
+    @Test
+    void credential_verify_sets_verified_flag_and_verifier() {
+        UUID adminId = UUID.randomUUID();
+        CaregiverCredential cred = credentialRepo.save(new CaregiverCredential(
+            caregiver.getId(), agency.getId(), CredentialType.CPR, null, null));
+
+        cred.verify(adminId);
+        credentialRepo.save(cred);
+
+        CaregiverCredential loaded = credentialRepo.findById(cred.getId()).orElseThrow();
+        assertThat(loaded.isVerified()).isTrue();
+        assertThat(loaded.getVerifiedBy()).isEqualTo(adminId);
     }
 
     @Test

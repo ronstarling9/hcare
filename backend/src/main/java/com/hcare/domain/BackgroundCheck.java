@@ -49,6 +49,8 @@ public class BackgroundCheck {
         this.checkedAt = checkedAt;
     }
 
+    public void setRenewalDueDate(LocalDate renewalDueDate) { this.renewalDueDate = renewalDueDate; }
+
     public UUID getId() { return id; }
     public UUID getCaregiverId() { return caregiverId; }
     public UUID getAgencyId() { return agencyId; }

@@ -8,7 +8,13 @@ import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "caregiver_availability")
+@Table(
+    name = "caregiver_availability",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uq_caregiver_availability",
+        columnNames = {"caregiver_id", "day_of_week", "start_time", "end_time"}
+    )
+)
 @Filter(name = "agencyFilter", condition = "agency_id = :agencyId")
 public class CaregiverAvailability {
 

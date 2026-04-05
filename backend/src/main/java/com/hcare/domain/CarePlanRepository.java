@@ -6,6 +6,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface CarePlanRepository extends JpaRepository<CarePlan, UUID> {
-    List<CarePlan> findByClientId(UUID clientId);
+    List<CarePlan> findByClientIdOrderByPlanVersionAsc(UUID clientId);
     Optional<CarePlan> findByClientIdAndStatus(UUID clientId, CarePlanStatus status);
 }
