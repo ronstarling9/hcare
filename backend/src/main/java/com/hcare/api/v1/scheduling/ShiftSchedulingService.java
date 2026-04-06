@@ -23,6 +23,8 @@ import com.hcare.scoring.ShiftMatchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,14 +64,9 @@ public class ShiftSchedulingService {
     }
 
     @Transactional(readOnly = true)
-    public List<ShiftSummaryResponse> listShifts(UUID agencyId, LocalDateTime start, LocalDateTime end) {
-        if (!end.isAfter(start)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "end must be after start");
-        }
-        return shiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end)
-            .stream()
-            .map(this::toSummary)
-            .toList();
+    public Page<ShiftSummaryResponse> listShifts(UUID agencyId, LocalDateTime start, LocalDateTime end, Pageable pageable) {
+        return shiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end, pageable)
+            .map(this::toSummary);
     }
 
     @Transactional

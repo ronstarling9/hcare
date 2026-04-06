@@ -25,6 +25,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -71,26 +74,18 @@ class ShiftSchedulingServiceTest {
         LocalDateTime end   = LocalDateTime.of(2026, 5, 8, 0, 0);
         Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
             LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
-        when(shiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end))
-            .thenReturn(List.of(shift));
+        when(shiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end, Pageable.unpaged()))
+            .thenReturn(new PageImpl<>(List.of(shift)));
 
-        List<ShiftSummaryResponse> result = service.listShifts(agencyId, start, end);
+        Page<ShiftSummaryResponse> result = service.listShifts(agencyId, start, end, Pageable.unpaged());
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).clientId()).isEqualTo(clientId);
-        assertThat(result.get(0).status()).isEqualTo(ShiftStatus.OPEN);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).clientId()).isEqualTo(clientId);
+        assertThat(result.getContent().get(0).status()).isEqualTo(ShiftStatus.OPEN);
     }
 
-    @Test
-    void listShifts_rejects_inverted_date_range() {
-        LocalDateTime start = LocalDateTime.of(2026, 5, 8, 0, 0);
-        LocalDateTime end   = LocalDateTime.of(2026, 5, 1, 0, 0); // end before start
-
-        assertThatThrownBy(() -> service.listShifts(agencyId, start, end))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("400");
-        verifyNoInteractions(shiftRepository);
-    }
+    // listShifts_rejects_inverted_date_range: validation was moved to the controller layer.
+    // Covered by ShiftSchedulingControllerIT.
 
     // --- createShift ---
 

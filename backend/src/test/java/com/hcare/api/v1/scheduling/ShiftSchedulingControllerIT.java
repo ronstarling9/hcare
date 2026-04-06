@@ -1,5 +1,6 @@
 package com.hcare.api.v1.scheduling;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.AbstractIntegrationTest;
 import com.hcare.api.v1.auth.dto.LoginRequest;
 import com.hcare.api.v1.auth.dto.LoginResponse;
@@ -24,6 +25,7 @@ import org.springframework.test.context.jdbc.Sql;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +39,7 @@ class ShiftSchedulingControllerIT extends AbstractIntegrationTest {
     private static final String TEST_PASSWORD = "correcthorsebatterystaple";
 
     @Autowired private TestRestTemplate restTemplate;
+    @Autowired private ObjectMapper objectMapper;
     @Autowired private AgencyRepository agencyRepo;
     @Autowired private AgencyUserRepository userRepo;
     @Autowired private ClientRepository clientRepo;
@@ -83,14 +86,16 @@ class ShiftSchedulingControllerIT extends AbstractIntegrationTest {
             serviceType.getId(), null,
             LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0)));
 
-        ResponseEntity<List<ShiftSummaryResponse>> resp = restTemplate.exchange(
+        ResponseEntity<Map<String, Object>> resp = restTemplate.exchange(
             "/api/v1/shifts?start=2026-05-01T00:00:00&end=2026-05-08T00:00:00",
             HttpMethod.GET, new HttpEntity<>(auth()),
             new ParameterizedTypeReference<>() {});
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(resp.getBody()).hasSize(1);
-        assertThat(resp.getBody().get(0).clientId()).isEqualTo(client.getId());
+        List<?> content = (List<?>) resp.getBody().get("content");
+        assertThat(content).hasSize(1);
+        Map<?, ?> first = (Map<?, ?>) content.get(0);
+        assertThat(first.get("clientId")).isEqualTo(client.getId().toString());
     }
 
     @Test
@@ -111,13 +116,14 @@ class ShiftSchedulingControllerIT extends AbstractIntegrationTest {
         shiftRepo.save(new Shift(other.getId(), null, otherClient.getId(), null, otherSt.getId(), null,
             LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0)));
 
-        ResponseEntity<List<ShiftSummaryResponse>> resp = restTemplate.exchange(
+        ResponseEntity<Map<String, Object>> resp = restTemplate.exchange(
             "/api/v1/shifts?start=2026-05-01T00:00:00&end=2026-05-08T00:00:00",
             HttpMethod.GET, new HttpEntity<>(auth()),
             new ParameterizedTypeReference<>() {});
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(resp.getBody()).isEmpty();
+        List<?> content = (List<?>) resp.getBody().get("content");
+        assertThat(content).isEmpty();
     }
 
     // --- POST /shifts ---

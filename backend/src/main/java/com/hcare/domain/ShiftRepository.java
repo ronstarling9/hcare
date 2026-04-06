@@ -1,6 +1,8 @@
 package com.hcare.domain;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -14,9 +16,10 @@ import java.util.UUID;
 
 public interface ShiftRepository extends JpaRepository<Shift, UUID> {
 
-    List<Shift> findByAgencyIdAndScheduledStartBetween(UUID agencyId,
+    Page<Shift> findByAgencyIdAndScheduledStartBetween(UUID agencyId,
                                                         LocalDateTime start,
-                                                        LocalDateTime end);
+                                                        LocalDateTime end,
+                                                        Pageable pageable);
 
     List<Shift> findByClientIdAndScheduledStartBetween(UUID clientId,
                                                         LocalDateTime start,

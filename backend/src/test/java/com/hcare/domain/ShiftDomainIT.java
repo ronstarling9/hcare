@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -157,11 +160,11 @@ class ShiftDomainIT extends AbstractIntegrationTest {
         shiftRepo.save(new Shift(agencyB.getId(), null, clientB.getId(), null,
             stB.getId(), null, LocalDateTime.of(2026, 5, 4, 9, 0), LocalDateTime.of(2026, 5, 4, 13, 0)));
 
-        List<Shift> results = shiftRepo.findByAgencyIdAndScheduledStartBetween(
-            agencyA.getId(), windowStart, windowEnd);
+        Page<Shift> results = shiftRepo.findByAgencyIdAndScheduledStartBetween(
+            agencyA.getId(), windowStart, windowEnd, Pageable.unpaged());
 
-        assertThat(results).hasSize(1);
-        assertThat(results.get(0).getAgencyId()).isEqualTo(agencyA.getId());
+        assertThat(results.getContent()).hasSize(1);
+        assertThat(results.getContent().get(0).getAgencyId()).isEqualTo(agencyA.getId());
     }
 
     @Test
