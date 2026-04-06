@@ -27,6 +27,8 @@ public class LocalEvvComplianceService implements EvvComplianceService {
         this.objectMapper = objectMapper;
     }
 
+    private static final double EARTH_RADIUS_MILES = 3958.8;
+
     /** Clock-in more than this many minutes from scheduled start is a YELLOW time anomaly. */
     static final long TIME_ANOMALY_THRESHOLD_MINUTES = 30;
 
@@ -128,7 +130,6 @@ public class LocalEvvComplianceService implements EvvComplianceService {
      */
     static double haversineDistanceMiles(BigDecimal lat1, BigDecimal lon1,
                                           BigDecimal lat2, BigDecimal lon2) {
-        final double EARTH_RADIUS_MILES = 3958.8;
         double dLat = Math.toRadians(lat2.doubleValue() - lat1.doubleValue());
         double dLon = Math.toRadians(lon2.doubleValue() - lon1.doubleValue());
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
