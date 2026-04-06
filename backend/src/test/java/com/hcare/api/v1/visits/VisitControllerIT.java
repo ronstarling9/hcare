@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.jdbc.Sql;
 
 import java.math.BigDecimal;
@@ -400,9 +399,6 @@ class VisitControllerIT extends AbstractIntegrationTest {
             ShiftDetailResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        // Wait a moment for afterCommit to fire
-        try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-
         Authorization updated = authorizationRepo.findById(auth.getId()).orElseThrow();
         assertThat(updated.getUsedUnits()).isGreaterThan(BigDecimal.ZERO);
     }
@@ -438,9 +434,6 @@ class VisitControllerIT extends AbstractIntegrationTest {
             HttpMethod.POST, new HttpEntity<>(clockOutReq, authHeaders(token)),
             ShiftDetailResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        // Wait for afterCommit hook to complete
-        try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
 
         Authorization updated = authorizationRepo.findById(auth.getId()).orElseThrow();
         assertThat(updated.getUsedUnits()).isEqualByComparingTo(new BigDecimal("1.00"));
