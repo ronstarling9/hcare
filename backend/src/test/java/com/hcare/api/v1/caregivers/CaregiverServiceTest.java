@@ -155,6 +155,7 @@ class CaregiverServiceTest {
             new AddCredentialRequest(CredentialType.CPR, LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1)));
 
         assertThat(result.credentialType()).isEqualTo(CredentialType.CPR);
+        assertThat(result.expiryDate()).isEqualTo(LocalDate.of(2027, 1, 1));
         verify(credentialRepository).save(any(CaregiverCredential.class));
     }
 
@@ -170,6 +171,7 @@ class CaregiverServiceTest {
         List<CredentialResponse> result = service.listCredentials(agencyId, caregiverId);
 
         assertThat(result).hasSize(1);
+        assertThat(result.get(0).credentialType()).isEqualTo(CredentialType.CPR);
     }
 
     @Test
