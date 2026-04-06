@@ -1,9 +1,18 @@
 package com.hcare.api.v1.clients;
 
+import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
+import com.hcare.api.v1.clients.dto.AddMedicationRequest;
 import com.hcare.api.v1.clients.dto.ClientResponse;
 import com.hcare.api.v1.clients.dto.CreateClientRequest;
+import com.hcare.api.v1.clients.dto.DiagnosisResponse;
+import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
+import com.hcare.api.v1.clients.dto.UpdateMedicationRequest;
 import com.hcare.domain.Client;
+import com.hcare.domain.ClientDiagnosis;
+import com.hcare.domain.ClientDiagnosisRepository;
+import com.hcare.domain.ClientMedication;
+import com.hcare.domain.ClientMedicationRepository;
 import com.hcare.domain.ClientRepository;
 import com.hcare.domain.ClientStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +36,8 @@ import static org.mockito.Mockito.*;
 class ClientServiceTest {
 
     @Mock ClientRepository clientRepository;
+    @Mock ClientDiagnosisRepository diagnosisRepository;
+    @Mock ClientMedicationRepository medicationRepository;
 
     ClientService service;
 
@@ -35,7 +46,7 @@ class ClientServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ClientService(clientRepository);
+        service = new ClientService(clientRepository, diagnosisRepository, medicationRepository);
     }
 
     private Client makeClient() {
@@ -134,5 +145,104 @@ class ClientServiceTest {
         service.updateClient(agencyId, clientId, req);
 
         assertThat(client.getStatus()).isEqualTo(ClientStatus.DISCHARGED);
+    }
+
+    // --- diagnoses ---
+
+    @Test
+    void addDiagnosis_saves_and_returns_response() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientDiagnosis saved = new ClientDiagnosis(clientId, agencyId, "E11.9");
+        when(diagnosisRepository.save(any())).thenReturn(saved);
+
+        DiagnosisResponse result = service.addDiagnosis(agencyId, clientId,
+            new AddDiagnosisRequest("E11.9", "Type 2 Diabetes", null));
+
+        assertThat(result.icd10Code()).isEqualTo("E11.9");
+        verify(diagnosisRepository).save(any(ClientDiagnosis.class));
+    }
+
+    @Test
+    void listDiagnoses_returns_all_for_client() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, "E11.9");
+        when(diagnosisRepository.findByClientId(clientId)).thenReturn(List.of(diag));
+
+        List<DiagnosisResponse> result = service.listDiagnoses(agencyId, clientId);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void deleteDiagnosis_removes_when_belongs_to_client() {
+        UUID diagId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, "E11.9");
+        when(diagnosisRepository.findById(diagId)).thenReturn(Optional.of(diag));
+
+        service.deleteDiagnosis(agencyId, clientId, diagId);
+
+        verify(diagnosisRepository).delete(diag);
+    }
+
+    @Test
+    void deleteDiagnosis_throws_404_when_belongs_to_other_client() {
+        UUID diagId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientDiagnosis diag = new ClientDiagnosis(UUID.randomUUID(), agencyId, "E11.9");
+        when(diagnosisRepository.findById(diagId)).thenReturn(Optional.of(diag));
+
+        assertThatThrownBy(() -> service.deleteDiagnosis(agencyId, clientId, diagId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
+    }
+
+    // --- medications ---
+
+    @Test
+    void addMedication_saves_and_returns_response() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientMedication saved = new ClientMedication(clientId, agencyId, "Metformin");
+        when(medicationRepository.save(any())).thenReturn(saved);
+
+        MedicationResponse result = service.addMedication(agencyId, clientId,
+            new AddMedicationRequest("Metformin", "500mg", "oral", "twice daily", "Dr. Brown"));
+
+        assertThat(result.name()).isEqualTo("Metformin");
+        verify(medicationRepository).save(any(ClientMedication.class));
+    }
+
+    @Test
+    void updateMedication_applies_non_null_fields() {
+        UUID medId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientMedication med = new ClientMedication(clientId, agencyId, "Metformin");
+        when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
+        when(medicationRepository.save(med)).thenReturn(med);
+
+        service.updateMedication(agencyId, clientId, medId,
+            new UpdateMedicationRequest(null, "1000mg", null, null, null));
+
+        assertThat(med.getDosage()).isEqualTo("1000mg");
+        assertThat(med.getName()).isEqualTo("Metformin"); // unchanged
+    }
+
+    @Test
+    void deleteMedication_removes_when_belongs_to_client() {
+        UUID medId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        ClientMedication med = new ClientMedication(clientId, agencyId, "Metformin");
+        when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
+
+        service.deleteMedication(agencyId, clientId, medId);
+
+        verify(medicationRepository).delete(med);
     }
 }

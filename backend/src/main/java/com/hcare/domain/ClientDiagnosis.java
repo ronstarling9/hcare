@@ -49,4 +49,7 @@ public class ClientDiagnosis {
     public String getDescription() { return description; }
     public LocalDate getOnsetDate() { return onsetDate; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void setDescription(String description) { this.description = description; }
+    public void setOnsetDate(LocalDate onsetDate) { this.onsetDate = onsetDate; }
 }
