@@ -56,13 +56,13 @@ public class RecurrencePatternService {
     }
 
     @Transactional(readOnly = true)
-    public RecurrencePatternResponse getPattern(UUID patternId) {
-        return toResponse(requirePattern(patternId));
+    public RecurrencePatternResponse getPattern(UUID agencyId, UUID patternId) {
+        return toResponse(requirePattern(patternId, agencyId));
     }
 
     @Transactional
-    public RecurrencePatternResponse updatePattern(UUID patternId, UpdateRecurrencePatternRequest req) {
-        RecurrencePattern pattern = requirePattern(patternId);
+    public RecurrencePatternResponse updatePattern(UUID agencyId, UUID patternId, UpdateRecurrencePatternRequest req) {
+        RecurrencePattern pattern = requirePattern(patternId, agencyId);
 
         boolean needsRegeneration = req.scheduledStartTime() != null
             || req.scheduledDurationMinutes() != null
@@ -90,8 +90,8 @@ public class RecurrencePatternService {
     }
 
     @Transactional
-    public void deactivatePattern(UUID patternId) {
-        RecurrencePattern pattern = requirePattern(patternId);
+    public void deactivatePattern(UUID agencyId, UUID patternId) {
+        RecurrencePattern pattern = requirePattern(patternId, agencyId);
         pattern.setActive(false);
         shiftRepository.deleteUnstartedFutureShifts(
             patternId, pattern.getAgencyId(),
@@ -102,10 +102,14 @@ public class RecurrencePatternService {
 
     // --- helpers ---
 
-    private RecurrencePattern requirePattern(UUID patternId) {
-        return patternRepository.findById(patternId)
+    private RecurrencePattern requirePattern(UUID patternId, UUID agencyId) {
+        RecurrencePattern pattern = patternRepository.findById(patternId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                 "RecurrencePattern not found"));
+        if (!pattern.getAgencyId().equals(agencyId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "RecurrencePattern not found");
+        }
+        return pattern;
     }
 
     private RecurrencePatternResponse toResponse(RecurrencePattern p) {

@@ -42,22 +42,27 @@ public class RecurrencePatternController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<RecurrencePatternResponse> getPattern(@PathVariable UUID id) {
-        return ResponseEntity.ok(recurrencePatternService.getPattern(id));
+    public ResponseEntity<RecurrencePatternResponse> getPattern(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(recurrencePatternService.getPattern(principal.getAgencyId(), id));
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<RecurrencePatternResponse> updatePattern(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateRecurrencePatternRequest request) {
-        return ResponseEntity.ok(recurrencePatternService.updatePattern(id, request));
+        return ResponseEntity.ok(recurrencePatternService.updatePattern(principal.getAgencyId(), id, request));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deletePattern(@PathVariable UUID id) {
-        recurrencePatternService.deactivatePattern(id);
+    public ResponseEntity<Void> deletePattern(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        recurrencePatternService.deactivatePattern(principal.getAgencyId(), id);
         return ResponseEntity.noContent().build();
     }
 }

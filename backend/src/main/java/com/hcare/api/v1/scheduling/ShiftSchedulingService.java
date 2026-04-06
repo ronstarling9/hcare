@@ -101,8 +101,8 @@ public class ShiftSchedulingService {
     }
 
     @Transactional
-    public ShiftSummaryResponse assignCaregiver(UUID shiftId, AssignCaregiverRequest req) {
-        Shift shift = requireShift(shiftId);
+    public ShiftSummaryResponse assignCaregiver(UUID agencyId, UUID shiftId, AssignCaregiverRequest req) {
+        Shift shift = requireShift(shiftId, agencyId);
         if (shift.getStatus() != ShiftStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Shift must be OPEN to assign a caregiver (current status: " + shift.getStatus() + ")");
@@ -117,8 +117,8 @@ public class ShiftSchedulingService {
     }
 
     @Transactional
-    public ShiftSummaryResponse unassignCaregiver(UUID shiftId) {
-        Shift shift = requireShift(shiftId);
+    public ShiftSummaryResponse unassignCaregiver(UUID agencyId, UUID shiftId) {
+        Shift shift = requireShift(shiftId, agencyId);
         if (shift.getStatus() != ShiftStatus.ASSIGNED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Shift must be ASSIGNED to unassign caregiver (current status: " + shift.getStatus() + ")");
@@ -129,8 +129,8 @@ public class ShiftSchedulingService {
     }
 
     @Transactional
-    public ShiftSummaryResponse cancelShift(UUID shiftId, CancelShiftRequest req) {
-        Shift shift = requireShift(shiftId);
+    public ShiftSummaryResponse cancelShift(UUID agencyId, UUID shiftId, CancelShiftRequest req) {
+        Shift shift = requireShift(shiftId, agencyId);
         if (shift.getStatus() != ShiftStatus.OPEN && shift.getStatus() != ShiftStatus.ASSIGNED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Only OPEN or ASSIGNED shifts can be cancelled (current status: " + shift.getStatus() + ")");
@@ -148,8 +148,8 @@ public class ShiftSchedulingService {
     }
 
     @Transactional(readOnly = true)
-    public List<RankedCaregiverResponse> getCandidates(UUID shiftId) {
-        Shift shift = requireShift(shiftId);
+    public List<RankedCaregiverResponse> getCandidates(UUID agencyId, UUID shiftId) {
+        Shift shift = requireShift(shiftId, agencyId);
         List<RankedCaregiver> ranked = scoringService.rankCandidates(new ShiftMatchRequest(
             shift.getAgencyId(), shift.getClientId(), shift.getServiceTypeId(),
             shift.getAuthorizationId(), shift.getScheduledStart(), shift.getScheduledEnd()));
@@ -159,8 +159,8 @@ public class ShiftSchedulingService {
     }
 
     @Transactional
-    public List<ShiftOfferSummary> broadcastShift(UUID shiftId) {
-        Shift shift = requireShift(shiftId);
+    public List<ShiftOfferSummary> broadcastShift(UUID agencyId, UUID shiftId) {
+        Shift shift = requireShift(shiftId, agencyId);
         if (shift.getStatus() != ShiftStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Only OPEN shifts can be broadcast (current status: " + shift.getStatus() + ")");
@@ -177,15 +177,15 @@ public class ShiftSchedulingService {
     }
 
     @Transactional(readOnly = true)
-    public List<ShiftOfferSummary> listOffers(UUID shiftId) {
-        requireShift(shiftId);
+    public List<ShiftOfferSummary> listOffers(UUID agencyId, UUID shiftId) {
+        requireShift(shiftId, agencyId);
         return shiftOfferRepository.findByShiftId(shiftId).stream()
             .map(this::toOfferSummary)
             .toList();
     }
 
     @Transactional
-    public ShiftOfferSummary respondToOffer(UUID shiftId, UUID offerId, RespondToOfferRequest req) {
+    public ShiftOfferSummary respondToOffer(UUID agencyId, UUID shiftId, UUID offerId, RespondToOfferRequest req) {
         if (req.response() == ShiftOfferResponse.NO_RESPONSE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "Response must be ACCEPTED or DECLINED");
@@ -229,9 +229,13 @@ public class ShiftSchedulingService {
 
     // --- helpers ---
 
-    private Shift requireShift(UUID shiftId) {
-        return shiftRepository.findById(shiftId)
+    private Shift requireShift(UUID shiftId, UUID agencyId) {
+        Shift shift = shiftRepository.findById(shiftId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found"));
+        if (!shift.getAgencyId().equals(agencyId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found");
+        }
+        return shift;
     }
 
     private ShiftSummaryResponse toSummary(Shift shift) {

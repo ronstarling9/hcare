@@ -89,7 +89,7 @@ class RecurrencePatternServiceTest {
             LocalTime.of(9, 0), 120, "[\"MONDAY\"]", LocalDate.of(2026, 5, 4));
         when(patternRepository.findById(patternId)).thenReturn(Optional.of(pattern));
 
-        RecurrencePatternResponse result = service.getPattern(patternId);
+        RecurrencePatternResponse result = service.getPattern(agencyId, patternId);
 
         assertThat(result.scheduledDurationMinutes()).isEqualTo(120);
     }
@@ -99,7 +99,20 @@ class RecurrencePatternServiceTest {
         UUID patternId = UUID.randomUUID();
         when(patternRepository.findById(patternId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getPattern(patternId))
+        assertThatThrownBy(() -> service.getPattern(agencyId, patternId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
+    }
+
+    @Test
+    void getPattern_belonging_to_other_agency_throws_404() {
+        UUID patternId = UUID.randomUUID();
+        UUID otherAgencyId = UUID.randomUUID();
+        RecurrencePattern pattern = new RecurrencePattern(otherAgencyId, clientId, serviceTypeId,
+            LocalTime.of(9, 0), 120, "[\"MONDAY\"]", LocalDate.of(2026, 5, 4));
+        when(patternRepository.findById(patternId)).thenReturn(Optional.of(pattern));
+
+        assertThatThrownBy(() -> service.getPattern(agencyId, patternId))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("404");
     }
@@ -117,7 +130,7 @@ class RecurrencePatternServiceTest {
         UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
             LocalTime.of(14, 0), null, null, null, null, null);
 
-        service.updatePattern(patternId, req);
+        service.updatePattern(agencyId, patternId, req);
 
         verify(shiftGenerationService).regenerateAfterEdit(pattern);
         verifyNoMoreInteractions(shiftGenerationService);
@@ -134,7 +147,7 @@ class RecurrencePatternServiceTest {
         UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
             null, 180, null, null, null, null);
 
-        service.updatePattern(patternId, req);
+        service.updatePattern(agencyId, patternId, req);
 
         verify(shiftGenerationService).regenerateAfterEdit(pattern);
     }
@@ -150,7 +163,7 @@ class RecurrencePatternServiceTest {
         UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
             null, null, "[\"WEDNESDAY\",\"FRIDAY\"]", null, null, null);
 
-        service.updatePattern(patternId, req);
+        service.updatePattern(agencyId, patternId, req);
 
         verify(shiftGenerationService).regenerateAfterEdit(pattern);
     }
@@ -167,7 +180,7 @@ class RecurrencePatternServiceTest {
         UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
             null, null, null, caregiverId, null, null);
 
-        service.updatePattern(patternId, req);
+        service.updatePattern(agencyId, patternId, req);
 
         verifyNoInteractions(shiftGenerationService);
         verify(patternRepository).save(pattern);
@@ -186,7 +199,7 @@ class RecurrencePatternServiceTest {
         UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
             null, null, null, null, null, newEndDate);
 
-        service.updatePattern(patternId, req);
+        service.updatePattern(agencyId, patternId, req);
 
         verifyNoInteractions(shiftGenerationService);
         assertThat(pattern.getEndDate()).isEqualTo(newEndDate);
@@ -202,7 +215,7 @@ class RecurrencePatternServiceTest {
         UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
             null, null, null, null, null, null);
 
-        service.updatePattern(patternId, req);
+        service.updatePattern(agencyId, patternId, req);
 
         verify(patternRepository, never()).save(any());
         verifyNoInteractions(shiftGenerationService);
@@ -218,7 +231,7 @@ class RecurrencePatternServiceTest {
         when(patternRepository.findById(patternId)).thenReturn(Optional.of(pattern));
         when(patternRepository.save(pattern)).thenReturn(pattern);
 
-        service.deactivatePattern(patternId);
+        service.deactivatePattern(agencyId, patternId);
 
         assertThat(pattern.isActive()).isFalse();
         verify(shiftRepository).deleteUnstartedFutureShifts(

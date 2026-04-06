@@ -153,7 +153,7 @@ class ShiftSchedulingServiceTest {
         when(caregiverRepository.existsByIdAndAgencyId(caregiverId, agencyId)).thenReturn(true);
         when(shiftRepository.save(shift)).thenReturn(shift);
 
-        ShiftSummaryResponse result = service.assignCaregiver(shiftId, new AssignCaregiverRequest(caregiverId));
+        ShiftSummaryResponse result = service.assignCaregiver(agencyId, shiftId, new AssignCaregiverRequest(caregiverId));
 
         assertThat(result.status()).isEqualTo(ShiftStatus.ASSIGNED);
         assertThat(result.caregiverId()).isEqualTo(caregiverId);
@@ -166,7 +166,7 @@ class ShiftSchedulingServiceTest {
             LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
 
-        assertThatThrownBy(() -> service.assignCaregiver(shiftId, new AssignCaregiverRequest(UUID.randomUUID())))
+        assertThatThrownBy(() -> service.assignCaregiver(agencyId, shiftId, new AssignCaregiverRequest(UUID.randomUUID())))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
     }
@@ -176,9 +176,23 @@ class ShiftSchedulingServiceTest {
         UUID shiftId = UUID.randomUUID();
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.assignCaregiver(shiftId, new AssignCaregiverRequest(UUID.randomUUID())))
+        assertThatThrownBy(() -> service.assignCaregiver(agencyId, shiftId, new AssignCaregiverRequest(UUID.randomUUID())))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("404");
+    }
+
+    @Test
+    void assignCaregiver_on_shift_belonging_to_other_agency_throws_404() {
+        UUID shiftId = UUID.randomUUID();
+        UUID otherAgencyId = UUID.randomUUID();
+        Shift shift = new Shift(otherAgencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+
+        assertThatThrownBy(() -> service.assignCaregiver(agencyId, shiftId, new AssignCaregiverRequest(UUID.randomUUID())))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
+        verify(shiftRepository, never()).save(any());
     }
 
     @Test
@@ -190,7 +204,7 @@ class ShiftSchedulingServiceTest {
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
         when(caregiverRepository.existsByIdAndAgencyId(foreignCaregiverId, agencyId)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.assignCaregiver(shiftId, new AssignCaregiverRequest(foreignCaregiverId)))
+        assertThatThrownBy(() -> service.assignCaregiver(agencyId, shiftId, new AssignCaregiverRequest(foreignCaregiverId)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("422");
         verify(shiftRepository, never()).save(any());
@@ -207,7 +221,7 @@ class ShiftSchedulingServiceTest {
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
         when(shiftRepository.save(shift)).thenReturn(shift);
 
-        ShiftSummaryResponse result = service.unassignCaregiver(shiftId);
+        ShiftSummaryResponse result = service.unassignCaregiver(agencyId, shiftId);
 
         assertThat(result.status()).isEqualTo(ShiftStatus.OPEN);
         assertThat(result.caregiverId()).isNull();
@@ -220,7 +234,7 @@ class ShiftSchedulingServiceTest {
             LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
 
-        assertThatThrownBy(() -> service.unassignCaregiver(shiftId))
+        assertThatThrownBy(() -> service.unassignCaregiver(agencyId, shiftId))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
     }
@@ -235,7 +249,7 @@ class ShiftSchedulingServiceTest {
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
         when(shiftRepository.save(shift)).thenReturn(shift);
 
-        ShiftSummaryResponse result = service.cancelShift(shiftId, new CancelShiftRequest(null));
+        ShiftSummaryResponse result = service.cancelShift(agencyId, shiftId, new CancelShiftRequest(null));
 
         assertThat(result.status()).isEqualTo(ShiftStatus.CANCELLED);
         verifyNoInteractions(eventPublisher);
@@ -250,7 +264,7 @@ class ShiftSchedulingServiceTest {
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
         when(shiftRepository.save(shift)).thenReturn(shift);
 
-        service.cancelShift(shiftId, new CancelShiftRequest("Client no-show"));
+        service.cancelShift(agencyId, shiftId, new CancelShiftRequest("Client no-show"));
 
         ArgumentCaptor<ShiftCancelledEvent> captor = ArgumentCaptor.forClass(ShiftCancelledEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
@@ -266,7 +280,7 @@ class ShiftSchedulingServiceTest {
         shift.setStatus(ShiftStatus.IN_PROGRESS);
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
 
-        assertThatThrownBy(() -> service.cancelShift(shiftId, new CancelShiftRequest(null)))
+        assertThatThrownBy(() -> service.cancelShift(agencyId, shiftId, new CancelShiftRequest(null)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
     }
@@ -279,7 +293,7 @@ class ShiftSchedulingServiceTest {
         shift.setStatus(ShiftStatus.COMPLETED);
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
 
-        assertThatThrownBy(() -> service.cancelShift(shiftId, new CancelShiftRequest(null)))
+        assertThatThrownBy(() -> service.cancelShift(agencyId, shiftId, new CancelShiftRequest(null)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
     }
@@ -296,7 +310,7 @@ class ShiftSchedulingServiceTest {
         when(scoringService.rankCandidates(any())).thenReturn(
             List.of(new com.hcare.scoring.RankedCaregiver(caregiverId, 0.85, "Good match")));
 
-        List<RankedCaregiverResponse> result = service.getCandidates(shiftId);
+        List<RankedCaregiverResponse> result = service.getCandidates(agencyId, shiftId);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).caregiverId()).isEqualTo(caregiverId);
@@ -313,7 +327,7 @@ class ShiftSchedulingServiceTest {
             LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
 
-        assertThatThrownBy(() -> service.broadcastShift(shiftId))
+        assertThatThrownBy(() -> service.broadcastShift(agencyId, shiftId))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
         verifyNoInteractions(shiftOfferRepository);
@@ -334,7 +348,7 @@ class ShiftSchedulingServiceTest {
             new ShiftOffer(shiftId, cg1, agencyId),
             new ShiftOffer(shiftId, cg2, agencyId)));
 
-        List<ShiftOfferSummary> result = service.broadcastShift(shiftId);
+        List<ShiftOfferSummary> result = service.broadcastShift(agencyId, shiftId);
 
         assertThat(result).hasSize(2);
         verify(offerCreationService).createOfferIfAbsent(shiftId, cg1, agencyId);
@@ -349,7 +363,7 @@ class ShiftSchedulingServiceTest {
         UUID shiftId = UUID.randomUUID();
         when(shiftRepository.findById(shiftId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.listOffers(shiftId))
+        assertThatThrownBy(() -> service.listOffers(agencyId, shiftId))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("404");
         verifyNoInteractions(shiftOfferRepository);
@@ -365,7 +379,7 @@ class ShiftSchedulingServiceTest {
         when(shiftOfferRepository.findByShiftId(shiftId)).thenReturn(
             List.of(new ShiftOffer(shiftId, caregiverId, agencyId)));
 
-        List<ShiftOfferSummary> result = service.listOffers(shiftId);
+        List<ShiftOfferSummary> result = service.listOffers(agencyId, shiftId);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).caregiverId()).isEqualTo(caregiverId);
@@ -379,7 +393,7 @@ class ShiftSchedulingServiceTest {
         UUID shiftId = UUID.randomUUID();
         UUID offerId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> service.respondToOffer(shiftId, offerId,
+        assertThatThrownBy(() -> service.respondToOffer(agencyId, shiftId, offerId,
                 new RespondToOfferRequest(ShiftOfferResponse.NO_RESPONSE)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("400");
@@ -395,7 +409,7 @@ class ShiftSchedulingServiceTest {
         offer.respond(ShiftOfferResponse.DECLINED);
         when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
 
-        assertThatThrownBy(() -> service.respondToOffer(shiftId, offerId,
+        assertThatThrownBy(() -> service.respondToOffer(agencyId, shiftId, offerId,
                 new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
@@ -419,7 +433,7 @@ class ShiftSchedulingServiceTest {
         when(shiftOfferRepository.findByShiftId(shiftId)).thenReturn(List.of(offer, otherOffer));
         when(shiftOfferRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.respondToOffer(shiftId, offerId,
+        service.respondToOffer(agencyId, shiftId, offerId,
             new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED));
 
         assertThat(shift.getStatus()).isEqualTo(ShiftStatus.ASSIGNED);
@@ -439,7 +453,7 @@ class ShiftSchedulingServiceTest {
         when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
         when(shiftRepository.findByIdForUpdate(shiftId)).thenReturn(Optional.of(shift));
 
-        assertThatThrownBy(() -> service.respondToOffer(shiftId, offerId,
+        assertThatThrownBy(() -> service.respondToOffer(agencyId, shiftId, offerId,
                 new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
@@ -459,7 +473,7 @@ class ShiftSchedulingServiceTest {
         when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
         when(shiftOfferRepository.save(any())).thenReturn(offer);
 
-        service.respondToOffer(shiftId, offerId,
+        service.respondToOffer(agencyId, shiftId, offerId,
             new RespondToOfferRequest(ShiftOfferResponse.DECLINED));
 
         assertThat(offer.getResponse()).isEqualTo(ShiftOfferResponse.DECLINED);

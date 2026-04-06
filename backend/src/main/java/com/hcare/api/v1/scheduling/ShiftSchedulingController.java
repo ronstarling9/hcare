@@ -51,50 +51,61 @@ public class ShiftSchedulingController {
     @PatchMapping("/{id}/assign")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftSummaryResponse> assignCaregiver(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody AssignCaregiverRequest request) {
-        return ResponseEntity.ok(shiftSchedulingService.assignCaregiver(id, request));
+        return ResponseEntity.ok(shiftSchedulingService.assignCaregiver(principal.getAgencyId(), id, request));
     }
 
     @PatchMapping("/{id}/unassign")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<ShiftSummaryResponse> unassignCaregiver(@PathVariable UUID id) {
-        return ResponseEntity.ok(shiftSchedulingService.unassignCaregiver(id));
+    public ResponseEntity<ShiftSummaryResponse> unassignCaregiver(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.unassignCaregiver(principal.getAgencyId(), id));
     }
 
     @PatchMapping("/{id}/cancel")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftSummaryResponse> cancelShift(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @RequestBody(required = false) CancelShiftRequest request) {
-        return ResponseEntity.ok(shiftSchedulingService.cancelShift(id,
+        return ResponseEntity.ok(shiftSchedulingService.cancelShift(principal.getAgencyId(), id,
             request != null ? request : new CancelShiftRequest(null)));
     }
 
     @GetMapping("/{id}/candidates")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<RankedCaregiverResponse>> getCandidates(@PathVariable UUID id) {
-        return ResponseEntity.ok(shiftSchedulingService.getCandidates(id));
+    public ResponseEntity<List<RankedCaregiverResponse>> getCandidates(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.getCandidates(principal.getAgencyId(), id));
     }
 
     @PostMapping("/{id}/broadcast")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<ShiftOfferSummary>> broadcastShift(@PathVariable UUID id) {
-        return ResponseEntity.ok(shiftSchedulingService.broadcastShift(id));
+    public ResponseEntity<List<ShiftOfferSummary>> broadcastShift(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.broadcastShift(principal.getAgencyId(), id));
     }
 
     @GetMapping("/{id}/offers")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<ShiftOfferSummary>> listOffers(@PathVariable UUID id) {
-        return ResponseEntity.ok(shiftSchedulingService.listOffers(id));
+    public ResponseEntity<List<ShiftOfferSummary>> listOffers(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.listOffers(principal.getAgencyId(), id));
     }
 
     @PostMapping("/{id}/offers/{offerId}/respond")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftOfferSummary> respondToOffer(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID offerId,
             @Valid @RequestBody RespondToOfferRequest request) {
-        return ResponseEntity.ok(shiftSchedulingService.respondToOffer(id, offerId, request));
+        return ResponseEntity.ok(shiftSchedulingService.respondToOffer(principal.getAgencyId(), id, offerId, request));
     }
 }
