@@ -476,4 +476,22 @@ class ShiftSchedulingServiceTest {
         verify(shiftRepository, never()).findByIdForUpdate(any());
         verify(shiftRepository, never()).save(any());
     }
+
+    @Test
+    void respondToOffer_on_offer_belonging_to_other_agency_throws_404() {
+        UUID shiftId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        UUID otherAgencyId = UUID.randomUUID();
+        ShiftOffer offer = new ShiftOffer(shiftId, caregiverId, otherAgencyId);
+
+        when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
+
+        assertThatThrownBy(() -> service.respondToOffer(agencyId, shiftId, offerId,
+                new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED)))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
+        verify(shiftRepository, never()).findByIdForUpdate(any());
+        verify(shiftRepository, never()).save(any());
+    }
 }

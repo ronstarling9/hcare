@@ -188,6 +188,9 @@ public class ShiftSchedulingService {
         if (!offer.getShiftId().equals(shiftId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Offer does not belong to this shift");
         }
+        if (!offer.getAgencyId().equals(agencyId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Offer not found");
+        }
         if (offer.getResponse() != ShiftOfferResponse.NO_RESPONSE) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Offer already has a response: " + offer.getResponse());
@@ -196,6 +199,9 @@ public class ShiftSchedulingService {
         if (req.response() == ShiftOfferResponse.ACCEPTED) {
             Shift shift = shiftRepository.findByIdForUpdate(shiftId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found"));
+            if (!shift.getAgencyId().equals(agencyId)) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found");
+            }
             if (shift.getStatus() != ShiftStatus.OPEN) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Cannot accept offer: shift is no longer OPEN (status: " + shift.getStatus() + ")");
