@@ -34,12 +34,16 @@ public class LocalEvvComplianceService implements EvvComplianceService {
         if (record.isCoResident() || payerType == PayerType.PRIVATE_PAY) {
             return EvvComplianceStatus.EXEMPT;
         }
-        // RED: any of the 6 federal elements missing, or no clock-out
-        if (record.getClientMedicaidId() == null
-                || record.getLocationLat() == null
+        // RED: any of the 6 federal elements missing or no clock-out
+        // Element 1 (serviceType) and 3 (dateOfService) are always derivable from Shift — not null-checked.
+        // Element 5 (caregiverId): null when shift is OPEN; clockIn guard prevents this in production,
+        // but compliance engine is authoritative for all 6 elements.
+        if (record.getClientMedicaidId() == null    // element 2
+                || record.getLocationLat() == null   // element 4 (GPS)
                 || record.getLocationLon() == null
-                || record.getTimeIn() == null
-                || record.getTimeOut() == null) {
+                || record.getTimeIn() == null        // element 6 (timeIn)
+                || record.getTimeOut() == null       // element 6 (timeOut)
+                || shift.getCaregiverId() == null) { // element 5
             return EvvComplianceStatus.RED;
         }
 

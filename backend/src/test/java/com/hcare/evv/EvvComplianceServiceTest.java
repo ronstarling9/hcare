@@ -215,4 +215,15 @@ class EvvComplianceServiceTest {
         assertThat(service.compute(buildCompleteRecord(), stateConfig, buildShift(), null, CLIENT_LAT, CLIENT_LNG))
             .isEqualTo(EvvComplianceStatus.GREEN);
     }
+
+    @Test
+    void missing_caregiver_id_returns_red() {
+        // Shift with null caregiverId (OPEN shift) — missing federal element 5
+        Shift openShift = new Shift(
+            UUID.randomUUID(), null, UUID.randomUUID(), null, // null caregiverId
+            UUID.randomUUID(), null, SCHEDULED_START, SCHEDULED_END
+        );
+        assertThat(service.compute(buildCompleteRecord(), stateConfig, openShift, null, CLIENT_LAT, CLIENT_LNG))
+            .isEqualTo(EvvComplianceStatus.RED);
+    }
 }

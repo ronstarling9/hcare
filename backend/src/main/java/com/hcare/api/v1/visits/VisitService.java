@@ -5,8 +5,26 @@ import com.hcare.api.v1.visits.dto.ClockOutRequest;
 import com.hcare.api.v1.visits.dto.ShiftDetailResponse;
 import com.hcare.audit.PhiAuditService;
 import com.hcare.audit.ResourceType;
-import com.hcare.domain.*;
-import com.hcare.evv.*;
+import com.hcare.domain.Agency;
+import com.hcare.domain.AgencyRepository;
+import com.hcare.domain.Authorization;
+import com.hcare.domain.AuthorizationRepository;
+import com.hcare.domain.AuthorizationUnitFailedEvent;
+import com.hcare.domain.AuthorizationUnitService;
+import com.hcare.domain.Client;
+import com.hcare.domain.ClientRepository;
+import com.hcare.domain.EvvRecord;
+import com.hcare.domain.EvvRecordRepository;
+import com.hcare.domain.Payer;
+import com.hcare.domain.PayerRepository;
+import com.hcare.domain.PayerType;
+import com.hcare.domain.Shift;
+import com.hcare.domain.ShiftRepository;
+import com.hcare.domain.ShiftStatus;
+import com.hcare.evv.EvvComplianceService;
+import com.hcare.evv.EvvComplianceStatus;
+import com.hcare.evv.EvvStateConfig;
+import com.hcare.evv.EvvStateConfigRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -141,6 +159,10 @@ public class VisitService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    // This callback runs synchronously on the clockOut request thread after the outer
+                    // transaction commits. Up to 2 retries × 50 ms = 100 ms of latency may be added
+                    // to the clockOut HTTP response in the contended case.
+                    // TODO(P2): Move to @Async @TransactionalEventListener to remove from response path.
                     for (int attempt = 0; attempt < 3; attempt++) {
                         try {
                             authorizationUnitService.addUnits(authorizationId, timeIn, timeOut);
