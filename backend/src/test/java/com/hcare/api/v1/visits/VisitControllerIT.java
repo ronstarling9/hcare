@@ -7,6 +7,7 @@ import com.hcare.api.v1.visits.dto.ClockInRequest;
 import com.hcare.api.v1.visits.dto.ClockOutRequest;
 import com.hcare.api.v1.visits.dto.ShiftDetailResponse;
 import com.hcare.domain.*;
+import com.hcare.evv.EvvComplianceStatus;
 import com.hcare.evv.VerificationMethod;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -107,12 +108,12 @@ class VisitControllerIT extends AbstractIntegrationTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         ShiftDetailResponse body = resp.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.status()).isEqualTo("IN_PROGRESS");
+        assertThat(body.status()).isEqualTo(ShiftStatus.IN_PROGRESS);
         assertThat(body.evv()).isNotNull();
         assertThat(body.evv().timeIn()).isNotNull();
         assertThat(body.evv().timeOut()).isNull();
         // No timeOut yet → RED (missing timeOut is a RED condition)
-        assertThat(body.evv().complianceStatus()).isEqualTo("RED");
+        assertThat(body.evv().complianceStatus()).isEqualTo(EvvComplianceStatus.RED);
         assertThat(body.evv().evvRecordId()).isNotNull();
     }
 
@@ -256,7 +257,7 @@ class VisitControllerIT extends AbstractIntegrationTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         ShiftDetailResponse body = resp.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.evv().complianceStatus()).isEqualTo("GREY");
+        assertThat(body.evv().complianceStatus()).isEqualTo(EvvComplianceStatus.GREY);
         assertThat(body.evv().evvRecordId()).isNull();
         assertThat(body.evv().timeIn()).isNull();
     }
@@ -308,9 +309,9 @@ class VisitControllerIT extends AbstractIntegrationTest {
         assertThat(clockOutResp.getStatusCode()).isEqualTo(HttpStatus.OK);
         ShiftDetailResponse body = clockOutResp.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.status()).isEqualTo("COMPLETED");
+        assertThat(body.status()).isEqualTo(ShiftStatus.COMPLETED);
         assertThat(body.evv().timeOut()).isNotNull();
-        assertThat(body.evv().complianceStatus()).isEqualTo("GREEN");
+        assertThat(body.evv().complianceStatus()).isEqualTo(EvvComplianceStatus.GREEN);
     }
 
     @Test
@@ -439,7 +440,9 @@ class VisitControllerIT extends AbstractIntegrationTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         Authorization updated = authorizationRepo.findById(auth.getId()).orElseThrow();
-        assertThat(updated.getUsedUnits()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(updated.getUsedUnits())
+            .isGreaterThan(BigDecimal.ZERO)
+            .isLessThan(new BigDecimal("0.25"));  // shift is ~5 min; any reasonable clock result is < 15 min
     }
 
     @Test

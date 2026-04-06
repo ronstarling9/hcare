@@ -233,10 +233,10 @@ public class VisitService {
 
         ShiftDetailResponse.EvvSummary evvSummary = new ShiftDetailResponse.EvvSummary(
             record != null ? record.getId() : null,
-            status.name(),
+            status,
             record != null ? record.getTimeIn() : null,
             record != null ? record.getTimeOut() : null,
-            record != null ? record.getVerificationMethod().name() : null,
+            record != null ? record.getVerificationMethod() : null,
             record != null && record.isCapturedOffline()
         );
 
@@ -244,7 +244,7 @@ public class VisitService {
             shift.getId(), shift.getAgencyId(), shift.getClientId(),
             shift.getCaregiverId(), shift.getServiceTypeId(), shift.getAuthorizationId(),
             shift.getSourcePatternId(), shift.getScheduledStart(), shift.getScheduledEnd(),
-            shift.getStatus().name(), shift.getNotes(), evvSummary
+            shift.getStatus(), shift.getNotes(), evvSummary
         );
     }
 }

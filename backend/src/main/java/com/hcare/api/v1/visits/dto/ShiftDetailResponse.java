@@ -1,5 +1,8 @@
 package com.hcare.api.v1.visits.dto;
 
+import com.hcare.domain.ShiftStatus;
+import com.hcare.evv.EvvComplianceStatus;
+import com.hcare.evv.VerificationMethod;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -13,16 +16,16 @@ public record ShiftDetailResponse(
     UUID sourcePatternId,
     LocalDateTime scheduledStart,
     LocalDateTime scheduledEnd,
-    String status,
+    ShiftStatus status,
     String notes,
     EvvSummary evv
 ) {
     public record EvvSummary(
         UUID evvRecordId,
-        String complianceStatus,
+        EvvComplianceStatus complianceStatus,
         LocalDateTime timeIn,
         LocalDateTime timeOut,
-        String verificationMethod,
+        VerificationMethod verificationMethod,
         boolean capturedOffline
     ) {}
 }
