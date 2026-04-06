@@ -2,14 +2,18 @@ package com.hcare.api.v1.clients;
 
 import com.hcare.api.v1.clients.dto.AddAdlTaskRequest;
 import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
+import com.hcare.api.v1.clients.dto.AddFamilyPortalUserRequest;
 import com.hcare.api.v1.clients.dto.AddGoalRequest;
 import com.hcare.api.v1.clients.dto.AddMedicationRequest;
 import com.hcare.api.v1.clients.dto.AdlTaskResponse;
+import com.hcare.api.v1.clients.dto.AuthorizationResponse;
 import com.hcare.api.v1.clients.dto.CarePlanResponse;
 import com.hcare.api.v1.clients.dto.ClientResponse;
+import com.hcare.api.v1.clients.dto.CreateAuthorizationRequest;
 import com.hcare.api.v1.clients.dto.CreateCarePlanRequest;
 import com.hcare.api.v1.clients.dto.CreateClientRequest;
 import com.hcare.api.v1.clients.dto.DiagnosisResponse;
+import com.hcare.api.v1.clients.dto.FamilyPortalUserResponse;
 import com.hcare.api.v1.clients.dto.GoalResponse;
 import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
@@ -244,6 +248,56 @@ public class ClientController {
             @PathVariable UUID planId,
             @PathVariable UUID goalId) {
         clientService.deleteGoal(principal.getAgencyId(), id, planId, goalId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Authorizations ---
+
+    @GetMapping("/{id}/authorizations")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<AuthorizationResponse>> listAuthorizations(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(clientService.listAuthorizations(principal.getAgencyId(), id));
+    }
+
+    @PostMapping("/{id}/authorizations")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<AuthorizationResponse> createAuthorization(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateAuthorizationRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(clientService.createAuthorization(principal.getAgencyId(), id, request));
+    }
+
+    // --- Family Portal Users ---
+
+    @GetMapping("/{id}/family-portal-users")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<FamilyPortalUserResponse>> listFamilyPortalUsers(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(clientService.listFamilyPortalUsers(principal.getAgencyId(), id));
+    }
+
+    @PostMapping("/{id}/family-portal-users")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<FamilyPortalUserResponse> addFamilyPortalUser(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody AddFamilyPortalUserRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(clientService.addFamilyPortalUser(principal.getAgencyId(), id, request));
+    }
+
+    @DeleteMapping("/{id}/family-portal-users/{fpuId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<Void> removeFamilyPortalUser(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID fpuId) {
+        clientService.removeFamilyPortalUser(principal.getAgencyId(), id, fpuId);
         return ResponseEntity.noContent().build();
     }
 }

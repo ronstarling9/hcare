@@ -2,14 +2,18 @@ package com.hcare.api.v1.clients;
 
 import com.hcare.api.v1.clients.dto.AddAdlTaskRequest;
 import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
+import com.hcare.api.v1.clients.dto.AddFamilyPortalUserRequest;
 import com.hcare.api.v1.clients.dto.AddGoalRequest;
 import com.hcare.api.v1.clients.dto.AddMedicationRequest;
 import com.hcare.api.v1.clients.dto.AdlTaskResponse;
+import com.hcare.api.v1.clients.dto.AuthorizationResponse;
 import com.hcare.api.v1.clients.dto.CarePlanResponse;
 import com.hcare.api.v1.clients.dto.ClientResponse;
+import com.hcare.api.v1.clients.dto.CreateAuthorizationRequest;
 import com.hcare.api.v1.clients.dto.CreateCarePlanRequest;
 import com.hcare.api.v1.clients.dto.CreateClientRequest;
 import com.hcare.api.v1.clients.dto.DiagnosisResponse;
+import com.hcare.api.v1.clients.dto.FamilyPortalUserResponse;
 import com.hcare.api.v1.clients.dto.GoalResponse;
 import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
@@ -17,6 +21,8 @@ import com.hcare.api.v1.clients.dto.UpdateGoalRequest;
 import com.hcare.api.v1.clients.dto.UpdateMedicationRequest;
 import com.hcare.domain.AdlTask;
 import com.hcare.domain.AdlTaskRepository;
+import com.hcare.domain.Authorization;
+import com.hcare.domain.AuthorizationRepository;
 import com.hcare.domain.CarePlan;
 import com.hcare.domain.CarePlanRepository;
 import com.hcare.domain.CarePlanStatus;
@@ -26,6 +32,8 @@ import com.hcare.domain.ClientDiagnosisRepository;
 import com.hcare.domain.ClientMedication;
 import com.hcare.domain.ClientMedicationRepository;
 import com.hcare.domain.ClientRepository;
+import com.hcare.domain.FamilyPortalUser;
+import com.hcare.domain.FamilyPortalUserRepository;
 import com.hcare.domain.Goal;
 import com.hcare.domain.GoalRepository;
 import org.springframework.http.HttpStatus;
@@ -45,19 +53,25 @@ public class ClientService {
     private final CarePlanRepository carePlanRepository;
     private final AdlTaskRepository adlTaskRepository;
     private final GoalRepository goalRepository;
+    private final AuthorizationRepository authorizationRepository;
+    private final FamilyPortalUserRepository familyPortalUserRepository;
 
     public ClientService(ClientRepository clientRepository,
                          ClientDiagnosisRepository diagnosisRepository,
                          ClientMedicationRepository medicationRepository,
                          CarePlanRepository carePlanRepository,
                          AdlTaskRepository adlTaskRepository,
-                         GoalRepository goalRepository) {
+                         GoalRepository goalRepository,
+                         AuthorizationRepository authorizationRepository,
+                         FamilyPortalUserRepository familyPortalUserRepository) {
         this.clientRepository = clientRepository;
         this.diagnosisRepository = diagnosisRepository;
         this.medicationRepository = medicationRepository;
         this.carePlanRepository = carePlanRepository;
         this.adlTaskRepository = adlTaskRepository;
         this.goalRepository = goalRepository;
+        this.authorizationRepository = authorizationRepository;
+        this.familyPortalUserRepository = familyPortalUserRepository;
     }
 
     @Transactional(readOnly = true)
@@ -296,6 +310,58 @@ public class ClientService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found");
         }
         goalRepository.delete(goal);
+    }
+
+    // --- authorizations ---
+
+    @Transactional(readOnly = true)
+    public List<AuthorizationResponse> listAuthorizations(UUID agencyId, UUID clientId) {
+        requireClient(clientId);
+        return authorizationRepository.findByClientId(clientId).stream()
+            .map(AuthorizationResponse::from)
+            .toList();
+    }
+
+    @Transactional
+    public AuthorizationResponse createAuthorization(UUID agencyId, UUID clientId,
+                                                      CreateAuthorizationRequest req) {
+        requireClient(clientId);
+        Authorization auth = new Authorization(
+            clientId, req.payerId(), req.serviceTypeId(), agencyId,
+            req.authNumber(), req.authorizedUnits(), req.unitType(),
+            req.startDate(), req.endDate());
+        return AuthorizationResponse.from(authorizationRepository.save(auth));
+    }
+
+    // --- family portal users ---
+
+    @Transactional(readOnly = true)
+    public List<FamilyPortalUserResponse> listFamilyPortalUsers(UUID agencyId, UUID clientId) {
+        requireClient(clientId);
+        return familyPortalUserRepository.findByClientId(clientId).stream()
+            .map(FamilyPortalUserResponse::from)
+            .toList();
+    }
+
+    @Transactional
+    public FamilyPortalUserResponse addFamilyPortalUser(UUID agencyId, UUID clientId,
+                                                         AddFamilyPortalUserRequest req) {
+        requireClient(clientId);
+        FamilyPortalUser fpu = new FamilyPortalUser(clientId, agencyId, req.email());
+        if (req.name() != null) fpu.setName(req.name());
+        return FamilyPortalUserResponse.from(familyPortalUserRepository.save(fpu));
+    }
+
+    @Transactional
+    public void removeFamilyPortalUser(UUID agencyId, UUID clientId, UUID fpuId) {
+        requireClient(clientId);
+        FamilyPortalUser fpu = familyPortalUserRepository.findById(fpuId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Family portal user not found"));
+        if (!fpu.getClientId().equals(clientId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Family portal user not found");
+        }
+        familyPortalUserRepository.delete(fpu);
     }
 
     // --- helpers (package-private for subclasses/tests in same package) ---

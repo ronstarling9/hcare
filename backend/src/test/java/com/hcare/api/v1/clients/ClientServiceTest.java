@@ -2,14 +2,18 @@ package com.hcare.api.v1.clients;
 
 import com.hcare.api.v1.clients.dto.AddAdlTaskRequest;
 import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
+import com.hcare.api.v1.clients.dto.AddFamilyPortalUserRequest;
 import com.hcare.api.v1.clients.dto.AddGoalRequest;
 import com.hcare.api.v1.clients.dto.AddMedicationRequest;
 import com.hcare.api.v1.clients.dto.AdlTaskResponse;
+import com.hcare.api.v1.clients.dto.AuthorizationResponse;
 import com.hcare.api.v1.clients.dto.CarePlanResponse;
 import com.hcare.api.v1.clients.dto.ClientResponse;
+import com.hcare.api.v1.clients.dto.CreateAuthorizationRequest;
 import com.hcare.api.v1.clients.dto.CreateCarePlanRequest;
 import com.hcare.api.v1.clients.dto.CreateClientRequest;
 import com.hcare.api.v1.clients.dto.DiagnosisResponse;
+import com.hcare.api.v1.clients.dto.FamilyPortalUserResponse;
 import com.hcare.api.v1.clients.dto.GoalResponse;
 import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
@@ -18,6 +22,8 @@ import com.hcare.api.v1.clients.dto.UpdateMedicationRequest;
 import com.hcare.domain.AdlTask;
 import com.hcare.domain.AdlTaskRepository;
 import com.hcare.domain.AssistanceLevel;
+import com.hcare.domain.Authorization;
+import com.hcare.domain.AuthorizationRepository;
 import com.hcare.domain.CarePlan;
 import com.hcare.domain.CarePlanRepository;
 import com.hcare.domain.CarePlanStatus;
@@ -28,9 +34,12 @@ import com.hcare.domain.ClientMedication;
 import com.hcare.domain.ClientMedicationRepository;
 import com.hcare.domain.ClientRepository;
 import com.hcare.domain.ClientStatus;
+import com.hcare.domain.FamilyPortalUser;
+import com.hcare.domain.FamilyPortalUserRepository;
 import com.hcare.domain.Goal;
 import com.hcare.domain.GoalRepository;
 import com.hcare.domain.GoalStatus;
+import com.hcare.domain.UnitType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +47,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -57,6 +67,8 @@ class ClientServiceTest {
     @Mock CarePlanRepository carePlanRepository;
     @Mock AdlTaskRepository adlTaskRepository;
     @Mock GoalRepository goalRepository;
+    @Mock AuthorizationRepository authorizationRepository;
+    @Mock FamilyPortalUserRepository familyPortalUserRepository;
 
     ClientService service;
 
@@ -66,7 +78,8 @@ class ClientServiceTest {
     @BeforeEach
     void setUp() {
         service = new ClientService(clientRepository, diagnosisRepository, medicationRepository,
-            carePlanRepository, adlTaskRepository, goalRepository);
+            carePlanRepository, adlTaskRepository, goalRepository,
+            authorizationRepository, familyPortalUserRepository);
     }
 
     private Client makeClient() {
@@ -435,5 +448,68 @@ class ClientServiceTest {
             new UpdateGoalRequest(null, null, null)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("404");
+    }
+
+    // --- authorizations ---
+
+    @Test
+    void createAuthorization_saves_and_returns_response() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        Authorization saved = new Authorization(
+            clientId, UUID.randomUUID(), UUID.randomUUID(), agencyId,
+            "AUTH-001", BigDecimal.valueOf(40), UnitType.HOURS,
+            LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
+        when(authorizationRepository.save(any())).thenReturn(saved);
+
+        AuthorizationResponse result = service.createAuthorization(agencyId, clientId,
+            new CreateAuthorizationRequest(
+                UUID.randomUUID(), UUID.randomUUID(), "AUTH-001",
+                BigDecimal.valueOf(40), UnitType.HOURS,
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
+
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+
+    @Test
+    void listAuthorizations_returns_all_for_client() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(authorizationRepository.findByClientId(clientId)).thenReturn(List.of());
+
+        List<AuthorizationResponse> result = service.listAuthorizations(agencyId, clientId);
+
+        assertThat(result).isEmpty();
+        verify(authorizationRepository).findByClientId(clientId);
+    }
+
+    // --- family portal users ---
+
+    @Test
+    void addFamilyPortalUser_saves_and_returns_response() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        FamilyPortalUser saved = new FamilyPortalUser(clientId, agencyId, "family@example.com");
+        when(familyPortalUserRepository.save(any())).thenReturn(saved);
+
+        FamilyPortalUserResponse result = service.addFamilyPortalUser(agencyId, clientId,
+            new AddFamilyPortalUserRequest("Jane Doe", "family@example.com"));
+
+        assertThat(result).isNotNull();
+        verify(familyPortalUserRepository).save(any(FamilyPortalUser.class));
+    }
+
+    @Test
+    void removeFamilyPortalUser_removes_when_belongs_to_client() {
+        UUID fpuId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        FamilyPortalUser fpu = new FamilyPortalUser(clientId, agencyId, "family@example.com");
+        when(familyPortalUserRepository.findById(fpuId)).thenReturn(Optional.of(fpu));
+
+        service.removeFamilyPortalUser(agencyId, clientId, fpuId);
+
+        verify(familyPortalUserRepository).delete(fpu);
     }
 }
