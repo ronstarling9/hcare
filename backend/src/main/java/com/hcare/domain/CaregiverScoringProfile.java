@@ -60,12 +60,6 @@ public class CaregiverScoringProfile {
         this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
-    /** Called by the weekly @Scheduled job each Monday to reset OT-risk scoring data. */
-    public void resetWeeklyHours() {
-        this.currentWeekHours = BigDecimal.ZERO;
-        this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
-    }
-
     private void recalculateCancelRate() {
         int total = totalCompletedShifts + totalCancelledShifts;
         this.cancelRate = total == 0 ? BigDecimal.ZERO

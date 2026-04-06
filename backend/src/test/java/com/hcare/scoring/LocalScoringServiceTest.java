@@ -573,4 +573,14 @@ class LocalScoringServiceTest {
             LocalDateTime.now(), LocalDateTime.now().plusHours(4)));
         verify(scoringProfileRepository, never()).findByCaregiverId(any());
     }
+
+    @Test
+    void onShiftCompleted_non_positive_duration_is_no_op() {
+        UUID CG = UUID.randomUUID();
+        service.onShiftCompleted(new ShiftCompletedEvent(
+            UUID.randomUUID(), CG, UUID.randomUUID(), UUID.randomUUID(),
+            LocalDateTime.of(2026, 4, 20, 13, 0),
+            LocalDateTime.of(2026, 4, 20, 9, 0))); // timeOut before timeIn
+        verify(scoringProfileRepository, never()).findByCaregiverId(any());
+    }
 }

@@ -39,13 +39,6 @@ class CaregiverScoringProfileTest {
     }
 
     @Test
-    void resetWeeklyHours_sets_current_week_hours_to_zero() {
-        profile.updateAfterShiftCompletion(new BigDecimal("38.00"));
-        profile.resetWeeklyHours();
-        assertThat(profile.getCurrentWeekHours()).isEqualByComparingTo("0.00");
-    }
-
-    @Test
     void multiple_completions_accumulate_hours_and_count() {
         profile.updateAfterShiftCompletion(new BigDecimal("4.00"));
         profile.updateAfterShiftCompletion(new BigDecimal("6.00"));

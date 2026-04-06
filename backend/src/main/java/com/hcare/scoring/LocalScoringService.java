@@ -155,6 +155,13 @@ public class LocalScoringService implements ScoringService {
     public void onShiftCompleted(ShiftCompletedEvent event) {
         if (event.caregiverId() == null) return;
 
+        if (!event.timeOut().isAfter(event.timeIn())) {
+            log.error("ShiftCompletedEvent has non-positive duration — skipping profile update: " +
+                "shift={} caregiverId={} timeIn={} timeOut={}",
+                event.shiftId(), event.caregiverId(), event.timeIn(), event.timeOut());
+            return;
+        }
+
         CaregiverScoringProfile profile = scoringProfileRepository
             .findByCaregiverId(event.caregiverId())
             .orElseGet(() -> scoringProfileRepository.save(
