@@ -148,9 +148,6 @@ public record RankedCaregiver(
 ```java
 package com.hcare.scoring;
 
-import com.hcare.domain.ShiftCancelledEvent;
-import com.hcare.domain.ShiftCompletedEvent;
-
 import java.util.List;
 
 /**
@@ -167,10 +164,6 @@ public interface ScoringService {
      * score=0 (AI disabled). Returns an empty list if no caregiver passes all hard filters.
      */
     List<RankedCaregiver> rankCandidates(ShiftMatchRequest request);
-
-    void onShiftCompleted(ShiftCompletedEvent event);
-
-    void onShiftCancelled(ShiftCancelledEvent event);
 }
 ```
 
@@ -277,6 +270,8 @@ Expected: FAIL — `getCompletedShiftsLast90Days()`, `getCancelledShiftsLast90Da
 ALTER TABLE caregiver_scoring_profiles
     ADD COLUMN completed_shifts_last_90_days INT NOT NULL DEFAULT 0,
     ADD COLUMN cancelled_shifts_last_90_days INT NOT NULL DEFAULT 0;
+-- Note: caregiver_client_affinities already has @Version (version BIGINT, V4 migration)
+-- and UNIQUE (scoring_profile_id, client_id) (V3 migration). No changes needed.
 ```
 
 - [ ] **Step 4: Update CaregiverScoringProfile entity**
@@ -394,7 +389,7 @@ public interface CaregiverScoringProfileRepository extends JpaRepository<Caregiv
      */
     @Transactional
     @Modifying
-    @Query("UPDATE CaregiverScoringProfile p SET p.currentWeekHours = 0")
+    @Query("UPDATE CaregiverScoringProfile p SET p.currentWeekHours = 0.00")
     void resetAllWeeklyHours();
 }
 ```
@@ -419,6 +414,7 @@ git commit -m "feat: add cancel/completion counters to CaregiverScoringProfile (
 ### Task 3: LocalScoringService — hard filters + skeleton
 
 **Files:**
+- Modify: `backend/src/main/java/com/hcare/domain/ShiftRepository.java`
 - Create: `backend/src/test/java/com/hcare/scoring/LocalScoringServiceTest.java` (hard filter tests)
 - Create: `backend/src/main/java/com/hcare/scoring/LocalScoringService.java`
 
@@ -446,6 +442,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -536,7 +533,7 @@ class LocalScoringServiceTest {
         CaregiverAvailability avail = new CaregiverAvailability(
             CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(17, 0));
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(avail));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
         when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
         when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
@@ -599,7 +596,7 @@ class LocalScoringServiceTest {
         when(conflict.getStatus()).thenReturn(ShiftStatus.ASSIGNED);
         when(conflict.getScheduledStart()).thenReturn(LocalDateTime.of(2026, 4, 20, 10, 0));
         when(conflict.getScheduledEnd()).thenReturn(LocalDateTime.of(2026, 4, 20, 14, 0));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(List.of(conflict));
 
         assertThat(service.rankCandidates(buildRequest())).isEmpty();
@@ -614,7 +611,7 @@ class LocalScoringServiceTest {
         when(cancelled.getStatus()).thenReturn(ShiftStatus.CANCELLED);
         when(cancelled.getScheduledStart()).thenReturn(LocalDateTime.of(2026, 4, 20, 10, 0));
         when(cancelled.getScheduledEnd()).thenReturn(LocalDateTime.of(2026, 4, 20, 14, 0));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(List.of(cancelled));
 
         assertThat(service.rankCandidates(buildRequest())).hasSize(1);
@@ -632,7 +629,7 @@ class LocalScoringServiceTest {
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
                 LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
 
         CaregiverCredential expired = new CaregiverCredential(
@@ -656,7 +653,7 @@ class LocalScoringServiceTest {
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
                 LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
 
         // Valid expiry but NOT verified (verify() never called)
@@ -679,7 +676,7 @@ class LocalScoringServiceTest {
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
                 LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
         when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
 
@@ -691,6 +688,22 @@ class LocalScoringServiceTest {
         ShiftMatchRequest req = new ShiftMatchRequest(
             AGENCY_ID, CLIENT_ID, SERVICE_TYPE_ID, AUTH_ID, SHIFT_START, SHIFT_END);
         assertThat(service.rankCandidates(req)).isEmpty();
+    }
+
+    @Test
+    void unknown_authorization_id_throws_illegal_argument() {
+        UUID unknownAuthId = UUID.randomUUID();
+        when(clientRepository.findById(CLIENT_ID)).thenReturn(Optional.of(buildClient()));
+        when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(buildServiceTypeNoCredentials()));
+        when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.empty());
+        when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(Collections.emptyList());
+        when(authorizationRepository.findById(unknownAuthId)).thenReturn(Optional.empty());
+
+        ShiftMatchRequest req = new ShiftMatchRequest(
+            AGENCY_ID, CLIENT_ID, SERVICE_TYPE_ID, unknownAuthId, SHIFT_START, SHIFT_END);
+        assertThatThrownBy(() -> service.rankCandidates(req))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining(unknownAuthId.toString());
     }
 
     @Test
@@ -706,6 +719,32 @@ class LocalScoringServiceTest {
         assertThat(results.get(0).explanation()).isNull();
     }
 }
+```
+
+- [ ] **Step 1b: Add `findOverlapping` query to `ShiftRepository`**
+
+In `backend/src/main/java/com/hcare/domain/ShiftRepository.java`, add this method:
+```java
+    /**
+     * Returns all shifts for a caregiver whose scheduled window overlaps [start, end).
+     * Uses a proper interval overlap predicate instead of a time-window heuristic.
+     */
+    @Query("""
+        SELECT s FROM Shift s
+        WHERE s.caregiverId = :caregiverId
+          AND s.scheduledStart < :end
+          AND s.scheduledEnd > :start
+        """)
+    List<Shift> findOverlapping(@Param("caregiverId") UUID caregiverId,
+                                @Param("start") LocalDateTime start,
+                                @Param("end") LocalDateTime end);
+```
+
+Required imports (add if not already present):
+```java
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import java.time.LocalDateTime;
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -812,7 +851,9 @@ public class LocalScoringService implements ScoringService {
             .orElseThrow(() -> new IllegalArgumentException("ServiceType not found: " + request.serviceTypeId()));
 
         Authorization authorization = request.authorizationId() != null
-            ? authorizationRepository.findById(request.authorizationId()).orElse(null)
+            ? authorizationRepository.findById(request.authorizationId())
+                  .orElseThrow(() -> new IllegalArgumentException(
+                      "Authorization not found: " + request.authorizationId()))
             : null;
 
         boolean aiEnabled = featureFlagsRepository.findByAgencyId(request.agencyId())
@@ -855,14 +896,13 @@ public class LocalScoringService implements ScoringService {
 
             results.add(new RankedCaregiver(
                 caregiver.getId(), score,
-                buildExplanation(rawDistance, visitCount, profile, request)));
+                buildExplanation(rawDistance, visitCount, profile, request, caregiver, client)));
         }
 
         results.sort(Comparator.comparingDouble(RankedCaregiver::score).reversed());
         return results;
     }
 
-    @Override
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCompleted(ShiftCompletedEvent event) {
@@ -882,7 +922,10 @@ public class LocalScoringService implements ScoringService {
         updateAffinity(profile.getId(), event.clientId(), event.agencyId());
     }
 
-    @Override
+    // TODO(Plan 6): ShiftCancelledEvent is not yet published anywhere. This listener is
+    // wired and tested but inert in production until the Scheduling API (Plan 6) adds
+    // eventPublisher.publishEvent(new ShiftCancelledEvent(...)) on shift cancellation.
+    // Until then, cancelRateLast90Days remains 0 for all caregivers.
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCancelled(ShiftCancelledEvent event) {
@@ -936,13 +979,8 @@ public class LocalScoringService implements ScoringService {
     }
 
     private boolean hasConflictingShift(UUID caregiverId, LocalDateTime start, LocalDateTime end) {
-        // Query 24h before the shift start to catch existing shifts that started before ours
-        // but whose end time overlaps. True overlap check happens in Java below.
-        List<Shift> nearby = shiftRepository.findByCaregiverIdAndScheduledStartBetween(
-            caregiverId, start.minusHours(24), end);
-        return nearby.stream()
-            .filter(s -> s.getStatus() != ShiftStatus.CANCELLED)
-            .anyMatch(s -> s.getScheduledStart().isBefore(end) && s.getScheduledEnd().isAfter(start));
+        return shiftRepository.findOverlapping(caregiverId, start, end).stream()
+            .anyMatch(s -> s.getStatus() != ShiftStatus.CANCELLED);
     }
 
     private boolean hasRequiredCredentials(UUID caregiverId, List<CredentialType> required, LocalDate today) {
@@ -1007,7 +1045,8 @@ public class LocalScoringService implements ScoringService {
 
     private String buildExplanation(double rawDistanceMiles, int visitCount,
                                      CaregiverScoringProfile profile,
-                                     ShiftMatchRequest request) {
+                                     ShiftMatchRequest request,
+                                     Caregiver caregiver, Client client) {
         List<String> parts = new ArrayList<>();
         if (rawDistanceMiles >= 0) parts.add(String.format("%.1f miles away", rawDistanceMiles));
         if (visitCount > 0) {
@@ -1016,6 +1055,15 @@ public class LocalScoringService implements ScoringService {
         double current = profile != null ? profile.getCurrentWeekHours().doubleValue() : 0.0;
         double shift   = Duration.between(request.scheduledStart(), request.scheduledEnd()).toMinutes() / 60.0;
         parts.add((current + shift) < OVERTIME_THRESHOLD_HOURS ? "no overtime risk" : "overtime risk");
+        if (profile != null && profile.getCancelRateLast90Days().doubleValue() > 0.0) {
+            parts.add(String.format("%.0f%% cancel rate", profile.getCancelRateLast90Days().doubleValue() * 100));
+        }
+        List<String> clientLangs = parseLanguageList(client.getPreferredLanguages());
+        if (!clientLangs.isEmpty()) {
+            List<String> cgLangs = parseLanguageList(caregiver.getLanguages());
+            if (cgLangs.stream().noneMatch(clientLangs::contains)) parts.add("language mismatch");
+        }
+        if (client.isNoPetCaregiver() && caregiver.hasPet()) parts.add("pet conflict");
         return String.join(" · ", parts);
     }
 
@@ -1087,7 +1135,7 @@ public class LocalScoringService implements ScoringService {
 - [ ] **Step 4: Run hard-filter unit tests to verify they pass**
 
 Run: `cd backend && ./mvnw test -pl . -Dtest=LocalScoringServiceTest -q`
-Expected: 9 tests PASS
+Expected: 10 tests PASS
 
 - [ ] **Step 5: Commit**
 
@@ -1126,7 +1174,7 @@ Add the following methods before the closing `}` of `LocalScoringServiceTest`:
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
                 LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(
+        when(shiftRepository.findOverlapping(
             eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
         when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
         when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
@@ -1145,7 +1193,7 @@ Add the following methods before the closing `}` of `LocalScoringServiceTest`:
         when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(buildServiceTypeNoCredentials()));
         when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.of(flags));
         when(credentialRepository.findByCaregiverId(any())).thenReturn(Collections.emptyList());
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(any(), any(), any()))
+        when(shiftRepository.findOverlapping(any(), any(), any()))
             .thenReturn(Collections.emptyList());
 
         // Caregiver A: 38h this week + 4h shift = 42h (OT risk)
@@ -1204,7 +1252,7 @@ Add the following methods before the closing `}` of `LocalScoringServiceTest`:
         when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(englishOnly));
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(eq(CAREGIVER_ID), any(), any()))
+        when(shiftRepository.findOverlapping(eq(CAREGIVER_ID), any(), any()))
             .thenReturn(Collections.emptyList());
         when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
         when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
@@ -1243,7 +1291,7 @@ Add the following methods before the closing `}` of `LocalScoringServiceTest`:
         when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(cgWithPet));
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(eq(CAREGIVER_ID), any(), any()))
+        when(shiftRepository.findOverlapping(eq(CAREGIVER_ID), any(), any()))
             .thenReturn(Collections.emptyList());
         when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
         when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
@@ -1272,7 +1320,7 @@ Add the following methods before the closing `}` of `LocalScoringServiceTest`:
         when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(buildActiveCaregiver()));
         when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
             new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(17, 0))));
-        when(shiftRepository.findByCaregiverIdAndScheduledStartBetween(eq(CAREGIVER_ID), any(), any()))
+        when(shiftRepository.findOverlapping(eq(CAREGIVER_ID), any(), any()))
             .thenReturn(Collections.emptyList());
         when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
 
@@ -1381,6 +1429,13 @@ git commit -m "test: add scoring, explanation, and event listener unit tests (Ta
 **Files:**
 - Modify: `backend/src/main/java/com/hcare/api/v1/visits/VisitService.java`
 - Modify: `backend/src/main/resources/application-test.yml`
+
+- [ ] **Step 0: Verify `@EnableScheduling` is present**
+
+Confirm that `@EnableScheduling` appears somewhere in the application configuration (e.g., on the main `@SpringBootApplication` class or a `@Configuration` class). The existing nightly shift-generation scheduler requires it, so it should already be present. If missing, add it to the main application class.
+
+Run: `cd backend && grep -r "@EnableScheduling" src/main/java`
+Expected: at least one match.
 
 - [ ] **Step 1: Add ShiftCompletedEvent publish to VisitService.clockOut**
 
@@ -1653,13 +1708,49 @@ class LocalScoringServiceIT extends AbstractIntegrationTest {
         assertThat(results.get(0).caregiverId()).isEqualTo(cgWithHistory.getId());
         assertThat(results.get(0).explanation()).contains("worked with this client 5 times");
     }
+
+    @Test
+    void resetWeeklyHours_zeroes_current_week_hours_for_all_profiles() {
+        Caregiver cg1 = createCaregiverWithAvailability(
+            "Reset1", new BigDecimal("30.2700"), new BigDecimal("-97.7400"));
+        Caregiver cg2 = createCaregiverWithAvailability(
+            "Reset2", new BigDecimal("30.2700"), new BigDecimal("-97.7400"));
+
+        // Record hours for both caregivers
+        scoringService.onShiftCompleted(new ShiftCompletedEvent(
+            UUID.randomUUID(), cg1.getId(), client.getId(), agency.getId(),
+            LocalDateTime.of(2026, 4, 20, 9, 0), LocalDateTime.of(2026, 4, 20, 13, 0)));
+        scoringService.onShiftCompleted(new ShiftCompletedEvent(
+            UUID.randomUUID(), cg2.getId(), client.getId(), agency.getId(),
+            LocalDateTime.of(2026, 4, 20, 9, 0), LocalDateTime.of(2026, 4, 20, 17, 0)));
+
+        // Verify hours accumulated before reset
+        transactionTemplate.execute(status -> {
+            assertThat(scoringProfileRepository.findByCaregiverId(cg1.getId())
+                .orElseThrow().getCurrentWeekHours()).isEqualByComparingTo("4.00");
+            assertThat(scoringProfileRepository.findByCaregiverId(cg2.getId())
+                .orElseThrow().getCurrentWeekHours()).isEqualByComparingTo("8.00");
+            return null;
+        });
+
+        // Invoke the scheduled method directly (cron is disabled in test profile)
+        ((LocalScoringService) scoringService).resetWeeklyHours();
+
+        transactionTemplate.execute(status -> {
+            assertThat(scoringProfileRepository.findByCaregiverId(cg1.getId())
+                .orElseThrow().getCurrentWeekHours()).isEqualByComparingTo("0.00");
+            assertThat(scoringProfileRepository.findByCaregiverId(cg2.getId())
+                .orElseThrow().getCurrentWeekHours()).isEqualByComparingTo("0.00");
+            return null;
+        });
+    }
 }
 ```
 
 - [ ] **Step 2: Run the integration test (requires Docker)**
 
 Run: `cd backend && ./mvnw test -pl . -Dtest=LocalScoringServiceIT -q`
-Expected: 5 tests PASS
+Expected: 6 tests PASS
 
 - [ ] **Step 3: Run the full test suite**
 

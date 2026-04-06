@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **hcare** is a home care agency management SaaS platform targeting small agencies (1–25 caregivers). Core features: scheduling with AI-assisted caregiver matching, EVV (Electronic Visit Verification) compliance tracking, caregiver mobile app, client/care plan management, and family portal.
 
 ```
-/backend         # Core API — Spring Boot 3.x, Java 25 (system of record)
-/bff             # Mobile BFF — Spring Boot 3.x, Java 25 (stateless adapter for React Native)
+/backend         # Core API — Spring Boot 3.4.4, Java 25 (system of record)
+/bff             # Mobile BFF — Spring Boot 3.4.4, Java 25 (stateless adapter for React Native)
 /frontend        # React (TypeScript) — web admin app
 /mobile          # React Native — caregiver mobile app
 /infra           # IaC / deployment configs
@@ -38,7 +38,7 @@ All entities carry an implicit `agencyId` (row-level multi-tenancy). Key relatio
 
 ### Multi-tenancy
 
-Enforced at the persistence layer via Hibernate `@FilterDef` named `agencyFilter` (declared in `domain/package-info.java`). A `TenantFilterInterceptor` sets `TenantContext` (ThreadLocal) from the JWT before any repository call; `TenantFilterAspect` enables the Hibernate session filter inside `@Transactional`. **Never** enforce tenant isolation at the service layer — the framework prevents cross-agency leakage.
+Enforced at the persistence layer via Hibernate `@FilterDef` named `agencyFilter` (declared in `domain/package-info.java`). `TenantFilterInterceptor.preHandle()` sets `TenantContext` (ThreadLocal) from `UserPrincipal.getAgencyId()`; `TenantFilterAspect` enables the Hibernate session filter `@Before` repository calls inside `@Transactional`. `TenantContext` is cleared in `afterCompletion`. **Never** enforce tenant isolation at the service layer — the framework prevents cross-agency leakage.
 
 ### Core API vs Mobile BFF
 
@@ -48,7 +48,7 @@ Enforced at the persistence layer via Hibernate `@FilterDef` named `agencyFilter
 
 ### EVV Compliance
 
-Compliance status (`GREEN/YELLOW/RED/EXEMPT/PORTAL_SUBMIT/GREY`) is computed on read by Core API from `EVVRecord` + `EvvStateConfig`. It is **never stored** and **never pre-computed in the BFF**. Rules are DB-driven — updating `EvvStateConfig` rows instantly re-evaluates all history without reprocessing jobs.
+Compliance status (`GREEN/YELLOW/RED/EXEMPT/PORTAL_SUBMIT/GREY`) is computed on read by Core API from `EVVRecord` + `EvvStateConfig`. It is **never stored** and **never pre-computed in the BFF**. Rules are DB-driven — updating `EvvStateConfig` rows instantly re-evaluates all history without reprocessing jobs. `GREY` = no EVVRecord yet; `EXEMPT` = PRIVATE_PAY payer or no authorization linked. The computation is stateless (`EvvComplianceService.compute()` takes pre-loaded objects, makes no DB calls).
 
 ### AI Scoring Module
 
@@ -87,19 +87,19 @@ npm run lint --fix      # ESLint + Prettier fix (run before committing)
 
 ---
 
-## Mobile BFF (Java 25 / Spring Boot)
+## Mobile BFF (Java 25 / Spring Boot 3.4.4)
 
 ```bash
 cd bff
-./mvnw spring-boot:run          # start BFF (http://localhost:8081)
-./mvnw test
+mvn spring-boot:run             # start BFF (http://localhost:8081)
+mvn test
 ```
 
 ---
 
-## Backend (Java 25 / Spring Boot)
+## Backend (Java 25 / Spring Boot 3.4.4)
 
-**Stack:** Java 25, Spring Boot 3
+**Stack:** Java 25, Spring Boot 3.4.4. Virtual threads enabled globally via `spring.threads.virtual.enabled: true`. `TenantContext` uses plain `ThreadLocal` (safe with virtual threads — each virtual thread has isolated ThreadLocal storage).
 
 ### Conventions
 - DTOs are immutable records; never expose JPA entities directly from controllers.
@@ -107,15 +107,17 @@ cd bff
 - All endpoints are versioned: `/api/v1/...`
 - Validation via `jakarta.validation` annotations on request DTOs.
 - Exceptions bubble up to a global `@ControllerAdvice` handler — don't catch-and-swallow.
-- Prefer virtual threads (Java 21+) for blocking I/O; don't block platform threads.
+- Entity timestamps use `LocalDateTime.now(ZoneOffset.UTC)` — always explicit UTC.
+- Entity IDs are UUIDs (`GenerationType.UUID`).
 
 ### Common Commands
 ```bash
 cd backend
-./mvnw spring-boot:run          # start dev server (http://localhost:8080)
-./mvnw test                     # run all tests
-./mvnw verify                   # compile, test, package
-./mvnw flyway:info              # check migration status
+mvn spring-boot:run             # start dev server (http://localhost:8080)
+mvn test                        # run all tests
+mvn verify                      # compile, test, package
+mvn flyway:info                 # check migration status
+mvn test -Dtest=ClassName       # run a single test class
 ```
 
 ---
@@ -131,6 +133,8 @@ cd backend
 
 - Write tests before or alongside new code — not after.
 - Integration tests spin up a real Postgres container via Testcontainers; do not mock the database.
+- Integration tests extend `AbstractIntegrationTest` and use the `*IT.java` suffix; unit tests use `*Test.java`.
+- Test profile (`application-test.yml`) disables the nightly shift-generation scheduler (`cron: "-"`); tests invoke the scheduler service directly.
 - Never commit with failing tests.
 
 ---
@@ -159,11 +163,14 @@ cd backend
 ```
 # Backend
 SPRING_PROFILES_ACTIVE=dev|staging|prod
+JWT_SECRET=<256-bit minimum HMAC-SHA256 secret, required in prod>
 
 # Frontend
 VITE_API_BASE_URL=http://localhost:8080/api/v1
 VITE_FEATURE_FLAGS_URL=...
 ```
+
+Dev profile uses H2 in-memory DB. Test profile uses Testcontainers PostgreSQL 16. Prod requires external Postgres and a real `JWT_SECRET`.
 
 ---
 
