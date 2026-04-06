@@ -58,4 +58,10 @@ public class AdlTask {
     public String getFrequency() { return frequency; }
     public int getSortOrder() { return sortOrder; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void setName(String name) { this.name = name; }
+    public void setInstructions(String instructions) { this.instructions = instructions; }
+    public void setAssistanceLevel(AssistanceLevel assistanceLevel) { this.assistanceLevel = assistanceLevel; }
+    public void setFrequency(String frequency) { this.frequency = frequency; }
+    public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 }

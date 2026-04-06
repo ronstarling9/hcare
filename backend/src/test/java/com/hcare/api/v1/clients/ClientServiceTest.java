@@ -1,13 +1,26 @@
 package com.hcare.api.v1.clients;
 
+import com.hcare.api.v1.clients.dto.AddAdlTaskRequest;
 import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
+import com.hcare.api.v1.clients.dto.AddGoalRequest;
 import com.hcare.api.v1.clients.dto.AddMedicationRequest;
+import com.hcare.api.v1.clients.dto.AdlTaskResponse;
+import com.hcare.api.v1.clients.dto.CarePlanResponse;
 import com.hcare.api.v1.clients.dto.ClientResponse;
+import com.hcare.api.v1.clients.dto.CreateCarePlanRequest;
 import com.hcare.api.v1.clients.dto.CreateClientRequest;
 import com.hcare.api.v1.clients.dto.DiagnosisResponse;
+import com.hcare.api.v1.clients.dto.GoalResponse;
 import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
+import com.hcare.api.v1.clients.dto.UpdateGoalRequest;
 import com.hcare.api.v1.clients.dto.UpdateMedicationRequest;
+import com.hcare.domain.AdlTask;
+import com.hcare.domain.AdlTaskRepository;
+import com.hcare.domain.AssistanceLevel;
+import com.hcare.domain.CarePlan;
+import com.hcare.domain.CarePlanRepository;
+import com.hcare.domain.CarePlanStatus;
 import com.hcare.domain.Client;
 import com.hcare.domain.ClientDiagnosis;
 import com.hcare.domain.ClientDiagnosisRepository;
@@ -15,6 +28,9 @@ import com.hcare.domain.ClientMedication;
 import com.hcare.domain.ClientMedicationRepository;
 import com.hcare.domain.ClientRepository;
 import com.hcare.domain.ClientStatus;
+import com.hcare.domain.Goal;
+import com.hcare.domain.GoalRepository;
+import com.hcare.domain.GoalStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +54,9 @@ class ClientServiceTest {
     @Mock ClientRepository clientRepository;
     @Mock ClientDiagnosisRepository diagnosisRepository;
     @Mock ClientMedicationRepository medicationRepository;
+    @Mock CarePlanRepository carePlanRepository;
+    @Mock AdlTaskRepository adlTaskRepository;
+    @Mock GoalRepository goalRepository;
 
     ClientService service;
 
@@ -46,7 +65,8 @@ class ClientServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ClientService(clientRepository, diagnosisRepository, medicationRepository);
+        service = new ClientService(clientRepository, diagnosisRepository, medicationRepository,
+            carePlanRepository, adlTaskRepository, goalRepository);
     }
 
     private Client makeClient() {
@@ -244,5 +264,141 @@ class ClientServiceTest {
         service.deleteMedication(agencyId, clientId, medId);
 
         verify(medicationRepository).delete(med);
+    }
+
+    // --- care plans ---
+
+    @Test
+    void createCarePlan_creates_draft_with_next_version_number() {
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findMaxPlanVersionByClientId(clientId)).thenReturn(1);
+        when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CarePlanResponse result = service.createCarePlan(agencyId, clientId,
+            new CreateCarePlanRequest(null));
+
+        assertThat(result.planVersion()).isEqualTo(2);
+        assertThat(result.status()).isEqualTo(CarePlanStatus.DRAFT);
+    }
+
+    @Test
+    void activateCarePlan_supersedes_current_active_and_activates_new_one() {
+        UUID planId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        CarePlan currentActive = new CarePlan(clientId, agencyId, 1);
+        currentActive.activate();
+        when(carePlanRepository.findByClientIdAndStatus(clientId, CarePlanStatus.ACTIVE))
+            .thenReturn(Optional.of(currentActive));
+        CarePlan newPlan = new CarePlan(clientId, agencyId, 2);
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(newPlan));
+        when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.activateCarePlan(agencyId, clientId, planId);
+
+        assertThat(currentActive.getStatus()).isEqualTo(CarePlanStatus.SUPERSEDED);
+        assertThat(newPlan.getStatus()).isEqualTo(CarePlanStatus.ACTIVE);
+    }
+
+    @Test
+    void activateCarePlan_throws_409_when_plan_already_active() {
+        UUID planId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        plan.activate();
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+
+        assertThatThrownBy(() -> service.activateCarePlan(agencyId, clientId, planId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("409");
+    }
+
+    @Test
+    void activateCarePlan_throws_404_when_plan_belongs_to_other_client() {
+        UUID planId = UUID.randomUUID();
+        Client client = makeClient();
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        CarePlan plan = new CarePlan(UUID.randomUUID(), agencyId, 1); // different clientId
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+
+        assertThatThrownBy(() -> service.activateCarePlan(agencyId, clientId, planId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
+    }
+
+    // --- ADL tasks ---
+
+    @Test
+    void addAdlTask_saves_task_on_care_plan() {
+        UUID planId = UUID.randomUUID();
+        Client client = makeClient();
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        AdlTask saved = new AdlTask(planId, agencyId, "Bathing", AssistanceLevel.MODERATE_ASSIST);
+        when(adlTaskRepository.save(any())).thenReturn(saved);
+
+        AdlTaskResponse result = service.addAdlTask(agencyId, clientId, planId,
+            new AddAdlTaskRequest("Bathing", AssistanceLevel.MODERATE_ASSIST, null, null, null));
+
+        assertThat(result.name()).isEqualTo("Bathing");
+        assertThat(result.assistanceLevel()).isEqualTo(AssistanceLevel.MODERATE_ASSIST);
+        verify(adlTaskRepository).save(any(AdlTask.class));
+    }
+
+    @Test
+    void deleteAdlTask_removes_task_when_belongs_to_plan() {
+        UUID planId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        Client client = makeClient();
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        AdlTask task = new AdlTask(planId, agencyId, "Bathing", AssistanceLevel.MINIMAL_ASSIST);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(adlTaskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        service.deleteAdlTask(agencyId, clientId, planId, taskId);
+
+        verify(adlTaskRepository).delete(task);
+    }
+
+    // --- Goals ---
+
+    @Test
+    void addGoal_saves_goal_on_care_plan() {
+        UUID planId = UUID.randomUUID();
+        Client client = makeClient();
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        Goal saved = new Goal(planId, agencyId, "Improve mobility");
+        when(goalRepository.save(any())).thenReturn(saved);
+
+        GoalResponse result = service.addGoal(agencyId, clientId, planId,
+            new AddGoalRequest("Improve mobility", null));
+
+        assertThat(result.description()).isEqualTo("Improve mobility");
+        assertThat(result.status()).isEqualTo(GoalStatus.ACTIVE);
+    }
+
+    @Test
+    void updateGoal_updates_non_null_fields() {
+        UUID planId = UUID.randomUUID();
+        UUID goalId = UUID.randomUUID();
+        Client client = makeClient();
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        Goal goal = new Goal(planId, agencyId, "Improve mobility");
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+        when(goalRepository.save(goal)).thenReturn(goal);
+
+        service.updateGoal(agencyId, clientId, planId, goalId,
+            new UpdateGoalRequest(null, null, GoalStatus.ACHIEVED));
+
+        assertThat(goal.getStatus()).isEqualTo(GoalStatus.ACHIEVED);
+        assertThat(goal.getDescription()).isEqualTo("Improve mobility"); // unchanged
     }
 }

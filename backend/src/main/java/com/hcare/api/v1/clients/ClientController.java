@@ -1,12 +1,19 @@
 package com.hcare.api.v1.clients;
 
+import com.hcare.api.v1.clients.dto.AddAdlTaskRequest;
 import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
+import com.hcare.api.v1.clients.dto.AddGoalRequest;
 import com.hcare.api.v1.clients.dto.AddMedicationRequest;
+import com.hcare.api.v1.clients.dto.AdlTaskResponse;
+import com.hcare.api.v1.clients.dto.CarePlanResponse;
 import com.hcare.api.v1.clients.dto.ClientResponse;
+import com.hcare.api.v1.clients.dto.CreateCarePlanRequest;
 import com.hcare.api.v1.clients.dto.CreateClientRequest;
 import com.hcare.api.v1.clients.dto.DiagnosisResponse;
+import com.hcare.api.v1.clients.dto.GoalResponse;
 import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
+import com.hcare.api.v1.clients.dto.UpdateGoalRequest;
 import com.hcare.api.v1.clients.dto.UpdateMedicationRequest;
 import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
@@ -130,6 +137,113 @@ public class ClientController {
             @PathVariable UUID id,
             @PathVariable UUID medicationId) {
         clientService.deleteMedication(principal.getAgencyId(), id, medicationId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Care Plans ---
+
+    @GetMapping("/{id}/care-plans")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<CarePlanResponse>> listCarePlans(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(clientService.listCarePlans(principal.getAgencyId(), id));
+    }
+
+    @PostMapping("/{id}/care-plans")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<CarePlanResponse> createCarePlan(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateCarePlanRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(clientService.createCarePlan(principal.getAgencyId(), id, request));
+    }
+
+    @PostMapping("/{id}/care-plans/{planId}/activate")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<CarePlanResponse> activateCarePlan(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId) {
+        return ResponseEntity.ok(clientService.activateCarePlan(principal.getAgencyId(), id, planId));
+    }
+
+    // --- ADL Tasks ---
+
+    @GetMapping("/{id}/care-plans/{planId}/adl-tasks")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<AdlTaskResponse>> listAdlTasks(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId) {
+        return ResponseEntity.ok(clientService.listAdlTasks(principal.getAgencyId(), id, planId));
+    }
+
+    @PostMapping("/{id}/care-plans/{planId}/adl-tasks")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<AdlTaskResponse> addAdlTask(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId,
+            @Valid @RequestBody AddAdlTaskRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(clientService.addAdlTask(principal.getAgencyId(), id, planId, request));
+    }
+
+    @DeleteMapping("/{id}/care-plans/{planId}/adl-tasks/{taskId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<Void> deleteAdlTask(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId,
+            @PathVariable UUID taskId) {
+        clientService.deleteAdlTask(principal.getAgencyId(), id, planId, taskId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Goals ---
+
+    @GetMapping("/{id}/care-plans/{planId}/goals")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<GoalResponse>> listGoals(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId) {
+        return ResponseEntity.ok(clientService.listGoals(principal.getAgencyId(), id, planId));
+    }
+
+    @PostMapping("/{id}/care-plans/{planId}/goals")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<GoalResponse> addGoal(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId,
+            @Valid @RequestBody AddGoalRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(clientService.addGoal(principal.getAgencyId(), id, planId, request));
+    }
+
+    @PatchMapping("/{id}/care-plans/{planId}/goals/{goalId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<GoalResponse> updateGoal(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId,
+            @PathVariable UUID goalId,
+            @Valid @RequestBody UpdateGoalRequest request) {
+        return ResponseEntity.ok(
+            clientService.updateGoal(principal.getAgencyId(), id, planId, goalId, request));
+    }
+
+    @DeleteMapping("/{id}/care-plans/{planId}/goals/{goalId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<Void> deleteGoal(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID planId,
+            @PathVariable UUID goalId) {
+        clientService.deleteGoal(principal.getAgencyId(), id, planId, goalId);
         return ResponseEntity.noContent().build();
     }
 }
