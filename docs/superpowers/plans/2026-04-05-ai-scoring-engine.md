@@ -31,7 +31,9 @@ backend/src/main/java/com/hcare/
     └── VisitService.java                     — modify: publish ShiftCompletedEvent on clock-out
 
 backend/src/main/java/com/hcare/domain/
-└── CaregiverScoringProfileRepository.java    — modify: add resetAllWeeklyHours query
+├── CaregiverScoringProfileRepository.java    — modify: add resetAllWeeklyHours query
+├── CaregiverClientAffinityRepository.java    — modify: add findByScoringProfileId query
+└── ShiftRepository.java                      — modify: add findOverlapping query
 
 backend/src/main/resources/
 ├── application-test.yml                      — modify: add scoring weekly-reset-cron: "-"
@@ -388,7 +390,7 @@ public interface CaregiverScoringProfileRepository extends JpaRepository<Caregiv
      * maintenance operation that must touch every agency's data regardless of tenant.
      */
     @Transactional
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("UPDATE CaregiverScoringProfile p SET p.currentWeekHours = 0.00")
     void resetAllWeeklyHours();
 }
@@ -411,12 +413,27 @@ git commit -m "feat: add cancel/completion counters to CaregiverScoringProfile (
 
 ---
 
-### Task 3: LocalScoringService — hard filters + skeleton
+### Task 3: LocalScoringService — full implementation
 
 **Files:**
 - Modify: `backend/src/main/java/com/hcare/domain/ShiftRepository.java`
 - Create: `backend/src/test/java/com/hcare/scoring/LocalScoringServiceTest.java` (hard filter tests)
 - Create: `backend/src/main/java/com/hcare/scoring/LocalScoringService.java`
+
+- [ ] **Step 0: Verify pre-existing dependencies**
+
+`LocalScoringService` depends on classes that are not created by this plan. Verify they exist before writing any code — a missing symbol surfaces as a confusing error on the new file rather than on the missing dependency.
+
+```bash
+# FeatureFlags API
+cd backend && grep -r "findByAgencyId" src/main/java/com/hcare/domain/FeatureFlagsRepository.java
+cd backend && grep -r "isAiSchedulingEnabled\|setAiSchedulingEnabled" src/main/java/com/hcare/domain/FeatureFlags.java
+
+# CaregiverAvailability 5-arg constructor (UUID, UUID, DayOfWeek, LocalTime, LocalTime)
+cd backend && grep -A5 "public CaregiverAvailability" src/main/java/com/hcare/domain/CaregiverAvailability.java
+```
+
+Expected: all three greps return matches. If `FeatureFlagsRepository.findByAgencyId`, `FeatureFlags.isAiSchedulingEnabled`/`setAiSchedulingEnabled`, or the `CaregiverAvailability(UUID, UUID, DayOfWeek, LocalTime, LocalTime)` constructor are absent, add them before proceeding. Do not continue to Step 1 until `mvn compile -q` succeeds against the existing codebase.
 
 - [ ] **Step 1: Write the failing hard-filter unit tests**
 
@@ -763,6 +780,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.domain.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -888,21 +906,26 @@ public class LocalScoringService implements ScoringService {
             }
 
             double rawDistance = computeRawDistance(caregiver, client);
+            PreferenceResult prefs = computePreferencesScore(caregiver, client);
             double score = W_DISTANCE    * computeDistanceScore(rawDistance)
                          + W_CONTINUITY  * Math.min(1.0, visitCount / (double) CONTINUITY_SATURATION)
                          + W_OVERTIME    * computeOvertimeScore(profile, request)
-                         + W_PREFERENCES * computePreferencesScore(caregiver, client)
+                         + W_PREFERENCES * prefs.score()
                          + W_RELIABILITY * computeReliabilityScore(profile);
 
             results.add(new RankedCaregiver(
                 caregiver.getId(), score,
-                buildExplanation(rawDistance, visitCount, profile, request, caregiver, client)));
+                buildExplanation(rawDistance, visitCount, profile, request, prefs)));
         }
 
         results.sort(Comparator.comparingDouble(RankedCaregiver::score).reversed());
         return results;
     }
 
+    // Fires synchronously (AFTER_COMMIT) in the VisitService.clockOut thread — acceptable
+    // latency for P1 (1–25 caregivers: ~3–6 DB calls). Add @Async at P2 if profiling shows
+    // this exceeds acceptable response budgets; note that @Async + REQUIRES_NEW requires an
+    // explicit PlatformTransactionManager binding.
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCompleted(ShiftCompletedEvent event) {
@@ -1022,20 +1045,31 @@ public class LocalScoringService implements ScoringService {
         return (current + shift) < OVERTIME_THRESHOLD_HOURS ? 1.0 : 0.0;
     }
 
+    /** Carries the preference score and the flags that drove it, for use in buildExplanation. */
+    private record PreferenceResult(double score, boolean languageMismatch, boolean petConflict) {}
+
     /**
      * Base 1.0: deduct 0.5 for language mismatch (when client has preferences),
      * deduct 0.2 for pet mismatch. Clamped to [0, 1].
      * Note: gender preference deferred to P2 — Caregiver.gender field not in P1 schema.
      */
-    private double computePreferencesScore(Caregiver caregiver, Client client) {
+    private PreferenceResult computePreferencesScore(Caregiver caregiver, Client client) {
         double score = 1.0;
+        boolean languageMismatch = false;
+        boolean petConflict = false;
         List<String> clientLangs = parseLanguageList(client.getPreferredLanguages());
         if (!clientLangs.isEmpty()) {
             List<String> cgLangs = parseLanguageList(caregiver.getLanguages());
-            if (cgLangs.stream().noneMatch(clientLangs::contains)) score -= 0.5;
+            if (cgLangs.stream().noneMatch(clientLangs::contains)) {
+                score -= 0.5;
+                languageMismatch = true;
+            }
         }
-        if (client.isNoPetCaregiver() && caregiver.hasPet()) score -= 0.2;
-        return Math.max(0.0, score);
+        if (client.isNoPetCaregiver() && caregiver.hasPet()) {
+            score -= 0.2;
+            petConflict = true;
+        }
+        return new PreferenceResult(Math.max(0.0, score), languageMismatch, petConflict);
     }
 
     private double computeReliabilityScore(CaregiverScoringProfile profile) {
@@ -1046,7 +1080,7 @@ public class LocalScoringService implements ScoringService {
     private String buildExplanation(double rawDistanceMiles, int visitCount,
                                      CaregiverScoringProfile profile,
                                      ShiftMatchRequest request,
-                                     Caregiver caregiver, Client client) {
+                                     PreferenceResult prefs) {
         List<String> parts = new ArrayList<>();
         if (rawDistanceMiles >= 0) parts.add(String.format("%.1f miles away", rawDistanceMiles));
         if (visitCount > 0) {
@@ -1058,12 +1092,8 @@ public class LocalScoringService implements ScoringService {
         if (profile != null && profile.getCancelRateLast90Days().doubleValue() > 0.0) {
             parts.add(String.format("%.0f%% cancel rate", profile.getCancelRateLast90Days().doubleValue() * 100));
         }
-        List<String> clientLangs = parseLanguageList(client.getPreferredLanguages());
-        if (!clientLangs.isEmpty()) {
-            List<String> cgLangs = parseLanguageList(caregiver.getLanguages());
-            if (cgLangs.stream().noneMatch(clientLangs::contains)) parts.add("language mismatch");
-        }
-        if (client.isNoPetCaregiver() && caregiver.hasPet()) parts.add("pet conflict");
+        if (prefs.languageMismatch()) parts.add("language mismatch");
+        if (prefs.petConflict()) parts.add("pet conflict");
         return String.join(" · ", parts);
     }
 
@@ -1079,7 +1109,11 @@ public class LocalScoringService implements ScoringService {
                 affinity.incrementVisitCount();
                 affinityRepository.save(affinity);
                 return;
-            } catch (OptimisticLockingFailureException e) {
+            } catch (OptimisticLockingFailureException | DataIntegrityViolationException e) {
+                // OptimisticLockingFailureException: concurrent incrementVisitCount + save race.
+                // DataIntegrityViolationException: two concurrent listeners both tried to insert
+                // the same (scoring_profile_id, client_id) row; unique constraint fired on the
+                // loser. Re-querying on the next attempt will find the now-existing row.
                 if (attempt == 2) {
                     log.error("Exhausted retries updating CaregiverClientAffinity for " +
                         "scoringProfile={} client={}", scoringProfileId, clientId, e);
@@ -1140,9 +1174,10 @@ Expected: 10 tests PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/main/java/com/hcare/scoring/LocalScoringService.java \
+git add backend/src/main/java/com/hcare/domain/ShiftRepository.java \
+        backend/src/main/java/com/hcare/scoring/LocalScoringService.java \
         backend/src/test/java/com/hcare/scoring/LocalScoringServiceTest.java
-git commit -m "feat: LocalScoringService — hard filters, scoring, event listeners"
+git commit -m "feat: LocalScoringService — hard filters, scoring, event listeners; add findOverlapping to ShiftRepository"
 ```
 
 ---
@@ -1507,7 +1542,28 @@ git commit -m "feat: publish ShiftCompletedEvent from VisitService.clockOut; dis
 ### Task 6: Integration test
 
 **Files:**
+- Modify: `backend/src/main/java/com/hcare/domain/CaregiverClientAffinityRepository.java`
 - Create: `backend/src/test/java/com/hcare/scoring/LocalScoringServiceIT.java`
+
+- [ ] **Step 0: Add `findByScoringProfileId` to `CaregiverClientAffinityRepository`**
+
+In `backend/src/main/java/com/hcare/domain/CaregiverClientAffinityRepository.java`, add this method:
+```java
+    /**
+     * Returns all affinity records for a given scoring profile.
+     * Used by integration tests to verify affinity accumulation after shift completion events.
+     */
+    List<CaregiverClientAffinity> findByScoringProfileId(UUID scoringProfileId);
+```
+
+Required import (add if not already present):
+```java
+import java.util.List;
+import java.util.UUID;
+```
+
+Run: `cd backend && ./mvnw compile -q`
+Expected: BUILD SUCCESS
 
 - [ ] **Step 1: Write the integration test**
 
@@ -1534,7 +1590,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class LocalScoringServiceIT extends AbstractIntegrationTest {
 
-    @Autowired ScoringService scoringService;
+    @Autowired LocalScoringService scoringService;
     @Autowired AgencyRepository agencyRepository;
     @Autowired ClientRepository clientRepository;
     @Autowired CaregiverRepository caregiverRepository;
@@ -1734,7 +1790,7 @@ class LocalScoringServiceIT extends AbstractIntegrationTest {
         });
 
         // Invoke the scheduled method directly (cron is disabled in test profile)
-        ((LocalScoringService) scoringService).resetWeeklyHours();
+        scoringService.resetWeeklyHours();
 
         transactionTemplate.execute(status -> {
             assertThat(scoringProfileRepository.findByCaregiverId(cg1.getId())
@@ -1760,6 +1816,7 @@ Expected: All tests PASS
 - [ ] **Step 4: Commit**
 
 ```bash
-git add backend/src/test/java/com/hcare/scoring/LocalScoringServiceIT.java
+git add backend/src/main/java/com/hcare/domain/CaregiverClientAffinityRepository.java \
+        backend/src/test/java/com/hcare/scoring/LocalScoringServiceIT.java
 git commit -m "test: LocalScoringServiceIT — end-to-end ranking, event listeners, continuity accumulation"
 ```

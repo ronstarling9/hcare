@@ -19,6 +19,7 @@ import com.hcare.domain.Payer;
 import com.hcare.domain.PayerRepository;
 import com.hcare.domain.PayerType;
 import com.hcare.domain.Shift;
+import com.hcare.domain.ShiftCompletedEvent;
 import com.hcare.domain.ShiftRepository;
 import com.hcare.domain.ShiftStatus;
 import com.hcare.evv.EvvComplianceService;
@@ -149,6 +150,14 @@ public class VisitService {
 
         shift.setStatus(ShiftStatus.COMPLETED);
         shiftRepository.save(shift);
+
+        // Notify scoring module to update CaregiverScoringProfile + CaregiverClientAffinity.
+        // @TransactionalEventListener on LocalScoringService.onShiftCompleted fires AFTER_COMMIT.
+        if (shift.getCaregiverId() != null) {
+            eventPublisher.publishEvent(new ShiftCompletedEvent(
+                shiftId, shift.getCaregiverId(), shift.getClientId(), shift.getAgencyId(),
+                record.getTimeIn(), record.getTimeOut()));
+        }
 
         if (shift.getAuthorizationId() != null) {
             final UUID authorizationId = shift.getAuthorizationId();

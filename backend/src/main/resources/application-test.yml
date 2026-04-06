@@ -5,3 +5,5 @@ spring:
 hcare:
   scheduling:
     shift-generation-cron: "-"
+  scoring:
+    weekly-reset-cron: "-"

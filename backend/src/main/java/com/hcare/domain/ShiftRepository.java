@@ -33,4 +33,18 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
                                       @Param("agencyId") UUID agencyId,
                                       @Param("cutoff") LocalDateTime cutoff,
                                       @Param("statuses") Collection<ShiftStatus> statuses);
+
+    /**
+     * Returns all shifts for a caregiver whose scheduled window overlaps [start, end).
+     * Uses a proper interval overlap predicate instead of a time-window heuristic.
+     */
+    @Query("""
+        SELECT s FROM Shift s
+        WHERE s.caregiverId = :caregiverId
+          AND s.scheduledStart < :end
+          AND s.scheduledEnd > :start
+        """)
+    List<Shift> findOverlapping(@Param("caregiverId") UUID caregiverId,
+                                @Param("start") LocalDateTime start,
+                                @Param("end") LocalDateTime end);
 }
