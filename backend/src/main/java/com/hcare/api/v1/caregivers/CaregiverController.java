@@ -1,9 +1,14 @@
 package com.hcare.api.v1.caregivers;
 
 import com.hcare.api.v1.caregivers.dto.AddCredentialRequest;
+import com.hcare.api.v1.caregivers.dto.AvailabilityResponse;
+import com.hcare.api.v1.caregivers.dto.BackgroundCheckResponse;
 import com.hcare.api.v1.caregivers.dto.CaregiverResponse;
 import com.hcare.api.v1.caregivers.dto.CreateCaregiverRequest;
 import com.hcare.api.v1.caregivers.dto.CredentialResponse;
+import com.hcare.api.v1.caregivers.dto.RecordBackgroundCheckRequest;
+import com.hcare.api.v1.caregivers.dto.SetAvailabilityRequest;
+import com.hcare.api.v1.caregivers.dto.ShiftHistoryResponse;
 import com.hcare.api.v1.caregivers.dto.UpdateCaregiverRequest;
 import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
@@ -88,5 +93,56 @@ public class CaregiverController {
             @PathVariable UUID credentialId) {
         caregiverService.deleteCredential(principal.getAgencyId(), id, credentialId);
         return ResponseEntity.noContent().build();
+    }
+
+    // --- Background Checks ---
+
+    @GetMapping("/{id}/background-checks")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<BackgroundCheckResponse>> listBackgroundChecks(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(
+            caregiverService.listBackgroundChecks(principal.getAgencyId(), id));
+    }
+
+    @PostMapping("/{id}/background-checks")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<BackgroundCheckResponse> recordBackgroundCheck(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody RecordBackgroundCheckRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(caregiverService.recordBackgroundCheck(principal.getAgencyId(), id, request));
+    }
+
+    // --- Availability ---
+
+    @GetMapping("/{id}/availability")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<AvailabilityResponse> getAvailability(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(caregiverService.getAvailability(principal.getAgencyId(), id));
+    }
+
+    @PutMapping("/{id}/availability")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<AvailabilityResponse> setAvailability(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody SetAvailabilityRequest request) {
+        return ResponseEntity.ok(caregiverService.setAvailability(principal.getAgencyId(), id, request));
+    }
+
+    // --- Shift History ---
+
+    @GetMapping("/{id}/shift-history")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<ShiftHistoryResponse>> listShiftHistory(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(
+            caregiverService.listShiftHistory(principal.getAgencyId(), id));
     }
 }

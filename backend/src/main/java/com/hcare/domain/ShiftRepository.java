@@ -58,6 +58,8 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
                                 @Param("start") LocalDateTime start,
                                 @Param("end") LocalDateTime end);
 
+    List<Shift> findByCaregiverId(UUID caregiverId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Shift s WHERE s.id = :id")
     Optional<Shift> findByIdForUpdate(@Param("id") UUID id);
