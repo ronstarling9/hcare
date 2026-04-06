@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -498,6 +499,120 @@ class LocalScoringServiceTest {
         double fiveVisitScore = service.rankCandidates(buildRequest()).get(0).score();
 
         assertThat(fiveVisitScore).isGreaterThan(noVisitScore);
+    }
+
+    @Test
+    void null_caregiver_coordinates_produce_neutral_distance_score() {
+        Client client = buildClient();
+        ServiceType st = buildServiceTypeNoCredentials();
+        FeatureFlags flags = mock(FeatureFlags.class);
+        when(flags.isAiSchedulingEnabled()).thenReturn(true);
+        when(clientRepository.findById(CLIENT_ID)).thenReturn(Optional.of(client));
+        when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(st));
+        when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.of(flags));
+
+        Caregiver noCoords = mock(Caregiver.class);
+        when(noCoords.getId()).thenReturn(CAREGIVER_ID);
+        when(noCoords.getStatus()).thenReturn(CaregiverStatus.ACTIVE);
+        when(noCoords.getHomeLat()).thenReturn(null);
+        when(noCoords.getHomeLng()).thenReturn(null);
+        when(noCoords.getLanguages()).thenReturn("[]");
+        when(noCoords.hasPet()).thenReturn(false);
+        when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(noCoords));
+        when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
+            new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
+                LocalTime.of(8, 0), LocalTime.of(17, 0))));
+        when(shiftRepository.findOverlapping(eq(CAREGIVER_ID), any(), any()))
+            .thenReturn(Collections.emptyList());
+        when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
+        when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
+
+        RankedCaregiver result = service.rankCandidates(buildRequest()).get(0);
+
+        // Distance component = W_DISTANCE * 0.5 (neutral)
+        // All other components at their maximums (no history, no OT, no preference conflicts)
+        double expectedDistanceContrib = LocalScoringService.W_DISTANCE * 0.5;
+        double expectedOtherContrib    = LocalScoringService.W_CONTINUITY  * 0.0
+                                       + LocalScoringService.W_OVERTIME    * 1.0
+                                       + LocalScoringService.W_PREFERENCES * 1.0
+                                       + LocalScoringService.W_RELIABILITY * 1.0;
+        assertThat(result.score()).isCloseTo(expectedDistanceContrib + expectedOtherContrib, within(0.001));
+        // Explanation should not contain "miles away" when coordinates are missing
+        assertThat(result.explanation()).doesNotContain("miles away");
+    }
+
+    @Test
+    void continuity_score_saturates_at_ten_visits() {
+        Client client = buildClient();
+        ServiceType st = buildServiceTypeNoCredentials();
+        FeatureFlags flags = mock(FeatureFlags.class);
+        when(flags.isAiSchedulingEnabled()).thenReturn(true);
+        when(clientRepository.findById(CLIENT_ID)).thenReturn(Optional.of(client));
+        when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(st));
+        when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.of(flags));
+        Caregiver caregiver = buildActiveCaregiver();
+        when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(caregiver));
+        when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
+            new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
+                LocalTime.of(8, 0), LocalTime.of(17, 0))));
+        when(shiftRepository.findOverlapping(eq(CAREGIVER_ID), any(), any()))
+            .thenReturn(Collections.emptyList());
+        when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
+
+        CaregiverScoringProfile profile = new CaregiverScoringProfile(CAREGIVER_ID, AGENCY_ID);
+        when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.of(profile));
+
+        CaregiverClientAffinity tenVisits = mock(CaregiverClientAffinity.class);
+        when(tenVisits.getVisitCount()).thenReturn(10);
+        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CLIENT_ID)))
+            .thenReturn(Optional.of(tenVisits));
+        double tenVisitScore = service.rankCandidates(buildRequest()).get(0).score();
+
+        CaregiverClientAffinity fifteenVisits = mock(CaregiverClientAffinity.class);
+        when(fifteenVisits.getVisitCount()).thenReturn(15);
+        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CLIENT_ID)))
+            .thenReturn(Optional.of(fifteenVisits));
+        double fifteenVisitScore = service.rankCandidates(buildRequest()).get(0).score();
+
+        assertThat(fifteenVisitScore).isCloseTo(tenVisitScore, within(0.001));
+    }
+
+    @Test
+    void onShiftCompleted_zero_duration_shift_adds_zero_hours() {
+        UUID CG = UUID.randomUUID();
+        UUID CL = UUID.randomUUID();
+        UUID AG = UUID.randomUUID();
+        LocalDateTime same = LocalDateTime.of(2026, 4, 20, 9, 0);
+
+        CaregiverScoringProfile profile = new CaregiverScoringProfile(CG, AG);
+        when(scoringProfileRepository.findByCaregiverId(CG)).thenReturn(Optional.of(profile));
+        when(scoringProfileRepository.save(any())).thenReturn(profile);
+        doNothing().when(affinityRepository).insertIfNotExists(any(), any(), any());
+        CaregiverClientAffinity affinity = new CaregiverClientAffinity(null, CL, AG);
+        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CL)))
+            .thenReturn(Optional.of(affinity));
+        when(affinityRepository.save(any())).thenReturn(affinity);
+
+        service.onShiftCompleted(new ShiftCompletedEvent(UUID.randomUUID(), CG, CL, AG, same, same));
+
+        // Zero duration passes the positive-duration guard (start == end is NOT after start,
+        // so it should be caught). Verify no profile update occurred.
+        verify(scoringProfileRepository, never()).save(argThat(p -> p.getTotalCompletedShifts() > 0));
+    }
+
+    @Test
+    void onShiftCancelled_with_no_existing_profile_creates_profile() {
+        UUID CG = UUID.randomUUID();
+        UUID AG = UUID.randomUUID();
+        when(scoringProfileRepository.findByCaregiverId(CG)).thenReturn(Optional.empty());
+        CaregiverScoringProfile newProfile = new CaregiverScoringProfile(CG, AG);
+        when(scoringProfileRepository.save(any(CaregiverScoringProfile.class))).thenReturn(newProfile);
+
+        service.onShiftCancelled(new ShiftCancelledEvent(UUID.randomUUID(), CG, AG));
+
+        verify(scoringProfileRepository, atLeastOnce()).save(argThat(p ->
+            p.getTotalCancelledShifts() == 1
+            && p.getCancelRate().compareTo(BigDecimal.ONE) == 0));
     }
 
     // ── event listener tests ──────────────────────────────────────────────────

@@ -109,6 +109,12 @@ public class LocalScoringService implements ScoringService {
         List<CredentialType> requiredCredentials = parseCredentialTypes(serviceType.getRequiredCredentials());
         LocalDate today = LocalDate.now();
 
+        // Short-circuit: if the authorization is exhausted, no caregiver can be assigned.
+        if (authorization != null
+                && authorization.getUsedUnits().compareTo(authorization.getAuthorizedUnits()) >= 0) {
+            return Collections.emptyList();
+        }
+
         List<RankedCaregiver> results = new ArrayList<>();
         for (Caregiver caregiver : activeCaregivers) {
             if (!passesHardFilters(caregiver, request, authorization, requiredCredentials, today)) {
@@ -195,14 +201,15 @@ public class LocalScoringService implements ScoringService {
 
     /**
      * Resets currentWeekHours to 0 for all caregiver scoring profiles.
-     * Runs every Monday at midnight. Controlled by hcare.scoring.weekly-reset-cron
-     * (set to "-" in application-test.yml to disable during integration tests).
+     * Runs every Monday at 00:00 UTC — Sunday evening for US agencies in most time zones.
+     * Controlled by hcare.scoring.weekly-reset-cron (set to "-" in application-test.yml
+     * to disable during integration tests).
      */
     @Scheduled(cron = "${hcare.scoring.weekly-reset-cron:0 0 0 * * MON}")
     @Transactional
     public void resetWeeklyHours() {
         log.info("Resetting currentWeekHours for all caregiver scoring profiles");
-        scoringProfileRepository.resetAllWeeklyHours();
+        scoringProfileRepository.resetAllWeeklyHours(LocalDateTime.now(ZoneOffset.UTC));
     }
 
     // ── hard filters ──────────────────────────────────────────────────────────
@@ -269,11 +276,15 @@ public class LocalScoringService implements ScoringService {
         return Math.max(0.0, 1.0 - (rawDistanceMiles / MAX_DISTANCE_MILES));
     }
 
-    /** 1.0 if projected week hours remain under threshold; 0.0 if OT risk. */
-    private double computeOvertimeScore(CaregiverScoringProfile profile, ShiftMatchRequest request) {
+    private double projectedWeekHours(CaregiverScoringProfile profile, ShiftMatchRequest request) {
         double current = profile != null ? profile.getCurrentWeekHours().doubleValue() : 0.0;
         double shift   = Duration.between(request.scheduledStart(), request.scheduledEnd()).toMinutes() / 60.0;
-        return (current + shift) < OVERTIME_THRESHOLD_HOURS ? 1.0 : 0.0;
+        return current + shift;
+    }
+
+    /** 1.0 if projected week hours remain under threshold; 0.0 if OT risk. */
+    private double computeOvertimeScore(CaregiverScoringProfile profile, ShiftMatchRequest request) {
+        return projectedWeekHours(profile, request) < OVERTIME_THRESHOLD_HOURS ? 1.0 : 0.0;
     }
 
     /** Carries the preference score and the flags that drove it, for use in buildExplanation. */
@@ -317,9 +328,8 @@ public class LocalScoringService implements ScoringService {
         if (visitCount > 0) {
             parts.add("worked with this client " + visitCount + (visitCount == 1 ? " time" : " times"));
         }
-        double current = profile != null ? profile.getCurrentWeekHours().doubleValue() : 0.0;
-        double shift   = Duration.between(request.scheduledStart(), request.scheduledEnd()).toMinutes() / 60.0;
-        parts.add((current + shift) < OVERTIME_THRESHOLD_HOURS ? "no overtime risk" : "overtime risk");
+        double projected = projectedWeekHours(profile, request);
+        parts.add(projected < OVERTIME_THRESHOLD_HOURS ? "no overtime risk" : "overtime risk");
         if (profile != null && profile.getCancelRate().doubleValue() > 0.0) {
             parts.add(String.format("%.0f%% cancel rate", profile.getCancelRate().doubleValue() * 100));
         }
@@ -352,6 +362,11 @@ public class LocalScoringService implements ScoringService {
                 if (attempt == 2) {
                     log.error("Exhausted retries updating CaregiverClientAffinity for " +
                         "scoringProfile={} client={}", scoringProfileId, clientId, e);
+                } else {
+                    try { Thread.sleep(10); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
                 }
             }
         }
@@ -382,8 +397,12 @@ public class LocalScoringService implements ScoringService {
     private List<String> parseLanguageList(String json) {
         if (json == null || json.isBlank()) return Collections.emptyList();
         try {
-            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            List<String> raw = objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            return raw.stream()
+                .map(String::toLowerCase)
+                .collect(Collectors.toList());
         } catch (Exception e) {
+            log.warn("Failed to parse language list JSON '{}' — treating as empty", json);
             return Collections.emptyList();
         }
     }
