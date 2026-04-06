@@ -166,6 +166,7 @@ CREATE TABLE adl_task_completions (
     caregiver_notes TEXT,
     CONSTRAINT uq_adl_task_completion UNIQUE (shift_id, adl_task_id)
 );
+-- shift_id lookup is covered by the uq_adl_task_completion unique index (shift_id, adl_task_id)
 CREATE INDEX idx_adl_task_completions_agency_id ON adl_task_completions(agency_id);
 
 CREATE TABLE incident_reports (
@@ -190,7 +191,7 @@ CREATE TABLE communication_messages (
     recipient_id    UUID        NOT NULL,
     subject         VARCHAR(255),
     body            TEXT        NOT NULL,
-    sent_at         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at         TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_communication_messages_agency_id ON communication_messages(agency_id);
 ```
@@ -2041,6 +2042,21 @@ class ShiftGenerationServiceTest {
     }
 
     @Test
+    void regenerateAfterEdit_resets_generatedThrough_to_today_so_generation_starts_tomorrow() {
+        // Ensures no stale past-time shift is created for today's matching day of week,
+        // and no duplicate is created alongside an in-progress today's shift.
+        RecurrencePattern pattern = buildPattern("[\"WEDNESDAY\"]", LocalDate.now().minusDays(1));
+
+        service.regenerateAfterEdit(pattern);
+
+        ArgumentCaptor<RecurrencePattern> captor = ArgumentCaptor.forClass(RecurrencePattern.class);
+        verify(patternRepo).save(captor.capture());
+        // generatedThrough must be >= today (generation starts from tomorrow at earliest)
+        assertThat(captor.getValue().getGeneratedThrough())
+            .isGreaterThanOrEqualTo(LocalDate.now());
+    }
+
+    @Test
     void parseDaysOfWeek_parses_multiple_days() {
         List<DayOfWeek> result = LocalShiftGenerationService.parseDaysOfWeek(
             "[\"MONDAY\",\"WEDNESDAY\",\"FRIDAY\"]"
@@ -2082,8 +2098,10 @@ public interface ShiftGenerationService {
 
     /**
      * Deletes future unstarted shifts (OPEN or ASSIGNED, scheduledStart after now) for the
-     * given pattern, resets generatedThrough to yesterday, then calls generateForPattern.
+     * given pattern, resets generatedThrough to today, then calls generateForPattern.
+     * Generation resumes from tomorrow — preserving any in-progress visit on today's date.
      * Called when a pattern's scheduling fields are edited.
+     * Note: no-ops silently on inactive patterns (delegates to generateForPattern).
      */
     void regenerateAfterEdit(RecurrencePattern pattern);
 }
@@ -2094,6 +2112,8 @@ public interface ShiftGenerationService {
 package com.hcare.scheduling;
 
 import com.hcare.domain.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -2107,6 +2127,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class LocalShiftGenerationService implements ShiftGenerationService {
+
+    private static final Logger log = LoggerFactory.getLogger(LocalShiftGenerationService.class);
 
     static final int HORIZON_WEEKS = 8;
 
@@ -2157,6 +2179,8 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
         }
         pattern.setGeneratedThrough(end);
         patternRepository.save(pattern);
+        log.debug("Generated {} shifts for pattern {} (agency {}), generatedThrough advanced to {}",
+            shifts.size(), pattern.getId(), pattern.getAgencyId(), end);
     }
 
     @Override
@@ -2168,7 +2192,9 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
             LocalDateTime.now(),
             List.of(ShiftStatus.OPEN, ShiftStatus.ASSIGNED)
         );
-        pattern.setGeneratedThrough(LocalDate.now().minusDays(1));
+        // Reset to today so generateForPattern starts from tomorrow — avoids creating
+        // stale past-time shifts or a duplicate alongside an in-progress today's visit.
+        pattern.setGeneratedThrough(LocalDate.now());
         generateForPattern(pattern);
     }
 
@@ -2177,10 +2203,15 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
      * Package-private for unit testing without reflection.
      */
     static List<DayOfWeek> parseDaysOfWeek(String json) {
-        return Arrays.stream(json.replaceAll("[\\[\\]\"\\s]", "").split(","))
-            .filter(s -> !s.isEmpty())
-            .map(DayOfWeek::valueOf)
-            .collect(Collectors.toList());
+        try {
+            return Arrays.stream(json.replaceAll("[\\[\\]\"\\s]", "").split(","))
+                .filter(s -> !s.isEmpty())
+                .map(DayOfWeek::valueOf)
+                .collect(Collectors.toList());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                "Invalid daysOfWeek JSON — expected array of DayOfWeek names, got: " + json, e);
+        }
     }
 }
 ```
@@ -2190,7 +2221,7 @@ public class LocalShiftGenerationService implements ShiftGenerationService {
 ```bash
 cd backend && ./mvnw test -Dtest=ShiftGenerationServiceTest 2>&1 | tail -5
 ```
-Expected: `BUILD SUCCESS` — 9 tests passing.
+Expected: `BUILD SUCCESS` — 10 tests passing.
 
 - [ ] **Step 5: Commit**
 
