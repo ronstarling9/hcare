@@ -1,5 +1,7 @@
 package com.hcare.evv;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.domain.EvvRecord;
 import com.hcare.domain.PayerType;
 import com.hcare.domain.Shift;
@@ -9,8 +11,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -18,6 +20,12 @@ import java.util.stream.Collectors;
 public class LocalEvvComplianceService implements EvvComplianceService {
 
     private static final Logger log = LoggerFactory.getLogger(LocalEvvComplianceService.class);
+
+    private final ObjectMapper objectMapper;
+
+    public LocalEvvComplianceService(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     /** Clock-in more than this many minutes from scheduled start is a YELLOW time anomaly. */
     static final long TIME_ANOMALY_THRESHOLD_MINUTES = 30;
@@ -94,19 +102,24 @@ public class LocalEvvComplianceService implements EvvComplianceService {
      * with a warning rather than throwing — fail-open keeps compliant visits GREEN.
      * Package-private for direct test access.
      */
-    static Set<VerificationMethod> parseAllowedMethods(String json) {
-        if (json == null || json.isBlank()) return Set.of();
-        return Arrays.stream(json.replaceAll("[\\[\\]\"\\s]", "").split(","))
-            .filter(s -> !s.isEmpty())
-            .flatMap(s -> {
-                try {
-                    return java.util.stream.Stream.of(VerificationMethod.valueOf(s));
-                } catch (IllegalArgumentException e) {
-                    log.warn("Unknown VerificationMethod '{}' in EvvStateConfig — skipping", s);
-                    return java.util.stream.Stream.empty();
-                }
-            })
-            .collect(Collectors.toCollection(() -> EnumSet.noneOf(VerificationMethod.class)));
+    Set<VerificationMethod> parseAllowedMethods(String json) {
+        if (json == null || json.isBlank()) return EnumSet.noneOf(VerificationMethod.class);
+        try {
+            List<String> names = objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            return names.stream()
+                .flatMap(s -> {
+                    try {
+                        return java.util.stream.Stream.of(VerificationMethod.valueOf(s));
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Unknown VerificationMethod '{}' in EvvStateConfig — skipping", s);
+                        return java.util.stream.Stream.empty();
+                    }
+                })
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(VerificationMethod.class)));
+        } catch (Exception e) {
+            log.error("Failed to parse allowedVerificationMethods JSON '{}' — treating as empty", json, e);
+            return EnumSet.noneOf(VerificationMethod.class);
+        }
     }
 
     /**

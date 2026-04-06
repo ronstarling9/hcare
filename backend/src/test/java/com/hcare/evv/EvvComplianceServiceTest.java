@@ -1,5 +1,6 @@
 package com.hcare.evv;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.domain.EvvRecord;
 import com.hcare.domain.PayerType;
 import com.hcare.domain.Shift;
@@ -39,7 +40,7 @@ class EvvComplianceServiceTest {
 
     @BeforeEach
     void setup() {
-        service = new LocalEvvComplianceService();
+        service = new LocalEvvComplianceService(new ObjectMapper());
         // Default: OPEN state, GPS allowed, no tolerance published
         when(stateConfig.getSystemModel()).thenReturn(EvvSystemModel.OPEN);
         when(stateConfig.getAllowedVerificationMethods()).thenReturn("[\"GPS\",\"TELEPHONY_LANDLINE\",\"TELEPHONY_CELL\",\"FIXED_DEVICE\",\"FOB\",\"BIOMETRIC\"]");
