@@ -142,7 +142,6 @@ public class VisitService {
         if (req.capturedOffline() && req.deviceCapturedAt() != null) {
             record.setTimeOut(req.deviceCapturedAt());
             record.setCapturedOffline(true);
-            record.setDeviceCapturedAt(req.deviceCapturedAt());
         } else {
             record.setTimeOut(LocalDateTime.now(ZoneOffset.UTC));
         }
@@ -178,6 +177,8 @@ public class VisitService {
                             }
                             try { Thread.sleep(50); } catch (InterruptedException ie) {
                                 Thread.currentThread().interrupt();
+                                eventPublisher.publishEvent(new AuthorizationUnitFailedEvent(
+                                    authorizationId, capturedShiftId, timeIn, timeOut));
                                 return;
                             }
                         }

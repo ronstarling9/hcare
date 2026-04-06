@@ -360,6 +360,45 @@ class VisitControllerIT extends AbstractIntegrationTest {
         assertThat(body.evv().timeIn()).isEqualTo(deviceTime);
     }
 
+    @Test
+    void clockOut_offline_preserves_clock_in_device_captured_at() {
+        UUID caregiverId = UUID.randomUUID();
+        LocalDateTime scheduledStart = LocalDateTime.of(2026, 4, 5, 9, 0);
+        Shift shift = createAssignedShift(caregiverId, scheduledStart, scheduledStart.plusHours(4));
+
+        // Clock in online — server assigns timeIn; deviceCapturedAt is left null (no offline flag)
+        String token = loginAndGetToken();
+        ClockInRequest clockInReq = new ClockInRequest(
+            new BigDecimal("30.2672"), new BigDecimal("-97.7431"),
+            VerificationMethod.GPS, false, null);
+        ResponseEntity<ShiftDetailResponse> clockInResp = restTemplate.exchange(
+            "/api/v1/shifts/" + shift.getId() + "/clock-in",
+            HttpMethod.POST, new HttpEntity<>(clockInReq, authHeaders(token)),
+            ShiftDetailResponse.class);
+        assertThat(clockInResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Clock out offline with a specific deviceCapturedAt timestamp
+        LocalDateTime offlineClockOutTime = LocalDateTime.of(2026, 4, 5, 13, 5);
+        ClockOutRequest clockOutReq = new ClockOutRequest(true, offlineClockOutTime);
+        ResponseEntity<ShiftDetailResponse> clockOutResp = restTemplate.exchange(
+            "/api/v1/shifts/" + shift.getId() + "/clock-out",
+            HttpMethod.POST, new HttpEntity<>(clockOutReq, authHeaders(token)),
+            ShiftDetailResponse.class);
+
+        assertThat(clockOutResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        ShiftDetailResponse body = clockOutResp.getBody();
+        assertThat(body).isNotNull();
+        // timeOut must equal the offline deviceCapturedAt from the request
+        assertThat(body.evv().timeOut()).isEqualTo(offlineClockOutTime);
+        // capturedOffline flag must be true
+        assertThat(body.evv().capturedOffline()).isTrue();
+
+        // Verify clock-out did NOT overwrite deviceCapturedAt — it was null at clock-in (online)
+        // and must remain null; if the bug were present it would equal offlineClockOutTime
+        EvvRecord evvRecord = evvRecordRepo.findByShiftId(shift.getId()).orElseThrow();
+        assertThat(evvRecord.getDeviceCapturedAt()).isNull();
+    }
+
     // -------------------------------------------------------------------------
     // Authorization unit tracking tests
     // -------------------------------------------------------------------------
