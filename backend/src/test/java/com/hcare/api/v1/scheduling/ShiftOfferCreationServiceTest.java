@@ -7,10 +7,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -49,5 +51,18 @@ class ShiftOfferCreationServiceTest {
         service.createOfferIfAbsent(shiftId, caregiverId, agencyId);
 
         verify(shiftOfferRepository, never()).save(any());
+    }
+
+    @Test
+    void createOfferIfAbsent_swallows_DataIntegrityViolationException_on_concurrent_insert() {
+        UUID shiftId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        when(shiftOfferRepository.findByCaregiverIdAndShiftId(caregiverId, shiftId))
+            .thenReturn(Optional.empty());
+        when(shiftOfferRepository.save(any(ShiftOffer.class)))
+            .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        assertDoesNotThrow(() -> service.createOfferIfAbsent(shiftId, caregiverId, agencyId));
     }
 }
