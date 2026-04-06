@@ -17,4 +17,8 @@ public interface CarePlanRepository extends JpaRepository<CarePlan, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT COALESCE(MAX(p.planVersion), 0) FROM CarePlan p WHERE p.clientId = :clientId")
     int findMaxPlanVersionByClientId(UUID clientId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM CarePlan p WHERE p.id = :id")
+    Optional<CarePlan> findByIdWithLock(UUID id);
 }

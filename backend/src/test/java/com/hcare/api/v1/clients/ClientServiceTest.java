@@ -292,7 +292,7 @@ class ClientServiceTest {
         when(carePlanRepository.findByClientIdAndStatus(clientId, CarePlanStatus.ACTIVE))
             .thenReturn(Optional.of(currentActive));
         CarePlan newPlan = new CarePlan(clientId, agencyId, 2);
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(newPlan));
+        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(newPlan));
         when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.activateCarePlan(agencyId, clientId, planId);
@@ -308,7 +308,7 @@ class ClientServiceTest {
         when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
         CarePlan plan = new CarePlan(clientId, agencyId, 1);
         plan.activate();
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
 
         assertThatThrownBy(() -> service.activateCarePlan(agencyId, clientId, planId))
             .isInstanceOf(ResponseStatusException.class)
@@ -321,7 +321,7 @@ class ClientServiceTest {
         Client client = makeClient();
         when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
         CarePlan plan = new CarePlan(UUID.randomUUID(), agencyId, 1); // different clientId
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
 
         assertThatThrownBy(() -> service.activateCarePlan(agencyId, clientId, planId))
             .isInstanceOf(ResponseStatusException.class)
@@ -400,5 +400,40 @@ class ClientServiceTest {
 
         assertThat(goal.getStatus()).isEqualTo(GoalStatus.ACHIEVED);
         assertThat(goal.getDescription()).isEqualTo("Improve mobility"); // unchanged
+    }
+
+    @Test
+    void deleteAdlTask_throws_404_when_task_belongs_to_other_plan() {
+        UUID planId = UUID.randomUUID();
+        UUID otherPlanId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        Client client = makeClient();
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        AdlTask task = new AdlTask(otherPlanId, agencyId, "Bathing", AssistanceLevel.MINIMAL_ASSIST);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(adlTaskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> service.deleteAdlTask(agencyId, clientId, planId, taskId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
+    }
+
+    @Test
+    void updateGoal_throws_404_when_goal_belongs_to_other_plan() {
+        UUID planId = UUID.randomUUID();
+        UUID otherPlanId = UUID.randomUUID();
+        UUID goalId = UUID.randomUUID();
+        Client client = makeClient();
+        CarePlan plan = new CarePlan(clientId, agencyId, 1);
+        Goal goal = new Goal(otherPlanId, agencyId, "Improve mobility");
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+
+        assertThatThrownBy(() -> service.updateGoal(agencyId, clientId, planId, goalId,
+            new UpdateGoalRequest(null, null, null)))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
     }
 }

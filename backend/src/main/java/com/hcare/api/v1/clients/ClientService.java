@@ -205,7 +205,7 @@ public class ClientService {
     @Transactional
     public CarePlanResponse activateCarePlan(UUID agencyId, UUID clientId, UUID carePlanId) {
         requireClient(clientId);
-        CarePlan plan = carePlanRepository.findById(carePlanId)
+        CarePlan plan = carePlanRepository.findByIdWithLock(carePlanId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Care plan not found"));
         if (!plan.getClientId().equals(clientId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Care plan not found");
