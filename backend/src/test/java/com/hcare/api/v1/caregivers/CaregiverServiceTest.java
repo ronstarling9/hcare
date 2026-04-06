@@ -240,7 +240,6 @@ class CaregiverServiceTest {
             new RecordBackgroundCheckRequest(BackgroundCheckType.STATE_REGISTRY,
                 BackgroundCheckResult.CLEAR, LocalDate.of(2026, 1, 1), null));
 
-        assertThat(result).isNotNull();
         assertThat(result.checkType()).isEqualTo(BackgroundCheckType.STATE_REGISTRY);
         verify(backgroundCheckRepository).save(any(BackgroundCheck.class));
     }
@@ -267,14 +266,14 @@ class CaregiverServiceTest {
         when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
         CaregiverAvailability block = new CaregiverAvailability(caregiverId, agencyId,
             DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0));
-        when(availabilityRepository.save(any())).thenReturn(block);
+        when(availabilityRepository.saveAll(any())).thenReturn(List.of(block));
 
         AvailabilityResponse result = service.setAvailability(agencyId, caregiverId,
             new SetAvailabilityRequest(List.of(
                 new AvailabilityBlockRequest(DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)))));
 
         verify(availabilityRepository).deleteByCaregiverId(caregiverId);
-        verify(availabilityRepository).save(any(CaregiverAvailability.class));
+        verify(availabilityRepository).saveAll(any());
         assertThat(result.blocks()).hasSize(1);
         assertThat(result.blocks().get(0).dayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
     }

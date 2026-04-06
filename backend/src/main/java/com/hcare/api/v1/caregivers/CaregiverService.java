@@ -157,10 +157,10 @@ public class CaregiverService {
                                                  SetAvailabilityRequest req) {
         requireCaregiver(caregiverId);
         availabilityRepository.deleteByCaregiverId(caregiverId);
-        List<CaregiverAvailability> saved = req.blocks().stream()
-            .map(b -> availabilityRepository.save(
-                new CaregiverAvailability(caregiverId, agencyId, b.dayOfWeek(), b.startTime(), b.endTime())))
+        List<CaregiverAvailability> toSave = req.blocks().stream()
+            .map(b -> new CaregiverAvailability(caregiverId, agencyId, b.dayOfWeek(), b.startTime(), b.endTime()))
             .toList();
+        List<CaregiverAvailability> saved = availabilityRepository.saveAll(toSave);
         List<AvailabilityResponse.AvailabilityBlock> blocks = saved.stream()
             .map(AvailabilityResponse.AvailabilityBlock::from)
             .toList();
