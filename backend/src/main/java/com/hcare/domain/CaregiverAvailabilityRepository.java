@@ -6,4 +6,5 @@ import java.util.UUID;
 
 public interface CaregiverAvailabilityRepository extends JpaRepository<CaregiverAvailability, UUID> {
     List<CaregiverAvailability> findByCaregiverId(UUID caregiverId);
+    void deleteByCaregiverId(UUID caregiverId);
 }

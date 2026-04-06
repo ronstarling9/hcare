@@ -71,6 +71,14 @@ public class Caregiver {
         this.email = email;
     }
 
+    public void setFirstName(String firstName) { this.firstName = firstName; }
+    public void setLastName(String lastName) { this.lastName = lastName; }
+    public void setEmail(String email) { this.email = email; }
+    public void setPhone(String phone) { this.phone = phone; }
+    public void setAddress(String address) { this.address = address; }
+    public void setHireDate(LocalDate hireDate) { this.hireDate = hireDate; }
+    public void setHasPet(boolean hasPet) { this.hasPet = hasPet; }
+    public void setStatus(CaregiverStatus status) { this.status = status; }
     public void setHomeLat(BigDecimal homeLat) { this.homeLat = homeLat; }
     public void setHomeLng(BigDecimal homeLng) { this.homeLng = homeLng; }
     public void setLanguages(String languages) { this.languages = languages; }

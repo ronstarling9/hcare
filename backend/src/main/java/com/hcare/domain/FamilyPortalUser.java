@@ -49,6 +49,8 @@ public class FamilyPortalUser {
         this.lastLoginAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
+    public void setName(String name) { this.name = name; }
+
     public UUID getId() { return id; }
     public UUID getClientId() { return clientId; }
     public UUID getAgencyId() { return agencyId; }

@@ -50,4 +50,8 @@ public class Goal {
     public LocalDate getTargetDate() { return targetDate; }
     public GoalStatus getStatus() { return status; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void setDescription(String description) { this.description = description; }
+    public void setTargetDate(java.time.LocalDate targetDate) { this.targetDate = targetDate; }
+    public void setStatus(GoalStatus status) { this.status = status; }
 }

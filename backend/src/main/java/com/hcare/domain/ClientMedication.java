@@ -56,4 +56,10 @@ public class ClientMedication {
     public String getSchedule() { return schedule; }
     public String getPrescriber() { return prescriber; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void setName(String name) { this.name = name; }
+    public void setDosage(String dosage) { this.dosage = dosage; }
+    public void setRoute(String route) { this.route = route; }
+    public void setSchedule(String schedule) { this.schedule = schedule; }
+    public void setPrescriber(String prescriber) { this.prescriber = prescriber; }
 }
