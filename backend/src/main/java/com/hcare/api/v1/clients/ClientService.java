@@ -348,7 +348,7 @@ public class ClientService {
                                                          AddFamilyPortalUserRequest req) {
         requireClient(clientId);
         FamilyPortalUser fpu = new FamilyPortalUser(clientId, agencyId, req.email());
-        if (req.name() != null) fpu.setName(req.name());
+        fpu.setName(req.name());
         return FamilyPortalUserResponse.from(familyPortalUserRepository.save(fpu));
     }
 

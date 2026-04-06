@@ -468,7 +468,7 @@ class ClientServiceTest {
                 BigDecimal.valueOf(40), UnitType.HOURS,
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
 
-        assertThat(result).isNotNull();
+        assertThat(result.authNumber()).isEqualTo("AUTH-001");
         verify(authorizationRepository).save(any(Authorization.class));
     }
 
@@ -496,7 +496,7 @@ class ClientServiceTest {
         FamilyPortalUserResponse result = service.addFamilyPortalUser(agencyId, clientId,
             new AddFamilyPortalUserRequest("Jane Doe", "family@example.com"));
 
-        assertThat(result).isNotNull();
+        assertThat(result.email()).isEqualTo("family@example.com");
         verify(familyPortalUserRepository).save(any(FamilyPortalUser.class));
     }
 
