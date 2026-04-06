@@ -84,8 +84,16 @@ class ShiftSchedulingServiceTest {
         assertThat(result.getContent().get(0).status()).isEqualTo(ShiftStatus.OPEN);
     }
 
-    // listShifts_rejects_inverted_date_range: validation was moved to the controller layer.
-    // Covered by ShiftSchedulingControllerIT.
+    @Test
+    void listShifts_rejects_inverted_date_range() {
+        LocalDateTime start = LocalDateTime.of(2026, 5, 8, 0, 0);
+        LocalDateTime end   = LocalDateTime.of(2026, 5, 1, 0, 0); // end before start
+
+        assertThatThrownBy(() -> service.listShifts(agencyId, start, end, Pageable.unpaged()))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("400");
+        verifyNoInteractions(shiftRepository);
+    }
 
     // --- createShift ---
 
