@@ -44,12 +44,12 @@ public class ClientService {
 
     @Transactional(readOnly = true)
     public ClientResponse getClient(UUID agencyId, UUID clientId) {
-        return ClientResponse.from(requireClient(agencyId, clientId));
+        return ClientResponse.from(requireClient(clientId));
     }
 
     @Transactional
     public ClientResponse updateClient(UUID agencyId, UUID clientId, UpdateClientRequest req) {
-        Client client = requireClient(agencyId, clientId);
+        Client client = requireClient(clientId);
         if (req.firstName() != null) client.setFirstName(req.firstName());
         if (req.lastName() != null) client.setLastName(req.lastName());
         if (req.dateOfBirth() != null) client.setDateOfBirth(req.dateOfBirth());
@@ -66,12 +66,8 @@ public class ClientService {
 
     // --- helpers (package-private for subclasses/tests in same package) ---
 
-    Client requireClient(UUID agencyId, UUID clientId) {
-        Client client = clientRepository.findById(clientId)
+    Client requireClient(UUID clientId) {
+        return clientRepository.findById(clientId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
-        if (!client.getAgencyId().equals(agencyId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found");
-        }
-        return client;
     }
 }

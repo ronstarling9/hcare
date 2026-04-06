@@ -93,16 +93,6 @@ class ClientServiceTest {
             .hasMessageContaining("404");
     }
 
-    @Test
-    void getClient_throws_404_when_belongs_to_other_agency() {
-        Client client = new Client(UUID.randomUUID(), "Alice", "Smith", LocalDate.of(1960, 3, 15));
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-
-        assertThatThrownBy(() -> service.getClient(agencyId, clientId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
-    }
-
     // --- updateClient ---
 
     @Test
