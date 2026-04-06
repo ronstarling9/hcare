@@ -82,6 +82,13 @@ public class Client {
     public void setPreferredLanguages(String preferredLanguages) { this.preferredLanguages = preferredLanguages; }
     public void setNoPetCaregiver(boolean noPetCaregiver) { this.noPetCaregiver = noPetCaregiver; }
     public void setMedicaidId(String medicaidId) { this.medicaidId = medicaidId; }
+    public void setFirstName(String firstName) { this.firstName = firstName; }
+    public void setLastName(String lastName) { this.lastName = lastName; }
+    public void setDateOfBirth(LocalDate dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+    public void setAddress(String address) { this.address = address; }
+    public void setPhone(String phone) { this.phone = phone; }
+    public void setStatus(ClientStatus status) { this.status = status; }
+    public void setPreferredCaregiverGender(String preferredCaregiverGender) { this.preferredCaregiverGender = preferredCaregiverGender; }
 
     public UUID getId() { return id; }
     public UUID getAgencyId() { return agencyId; }
