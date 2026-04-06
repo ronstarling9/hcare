@@ -29,7 +29,7 @@ public class VisitController {
             @AuthenticationPrincipal UserPrincipal principal,
             HttpServletRequest httpRequest) {
         return ResponseEntity.ok(visitService.clockIn(
-            id, principal.getUserId(), httpRequest.getRemoteAddr(), request));
+            id, principal.getUserId(), resolveClientIp(httpRequest), request));
     }
 
     @PostMapping("/{id}/clock-out")
@@ -39,7 +39,7 @@ public class VisitController {
             @AuthenticationPrincipal UserPrincipal principal,
             HttpServletRequest httpRequest) {
         return ResponseEntity.ok(visitService.clockOut(
-            id, principal.getUserId(), httpRequest.getRemoteAddr(), request));
+            id, principal.getUserId(), resolveClientIp(httpRequest), request));
     }
 
     @GetMapping("/{id}")
@@ -48,6 +48,15 @@ public class VisitController {
             @AuthenticationPrincipal UserPrincipal principal,
             HttpServletRequest httpRequest) {
         return ResponseEntity.ok(visitService.getShiftDetail(
-            id, principal.getUserId(), httpRequest.getRemoteAddr()));
+            id, principal.getUserId(), resolveClientIp(httpRequest)));
+    }
+
+    private static String resolveClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            // X-Forwarded-For may be a comma-separated list; take the first (original client)
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }
