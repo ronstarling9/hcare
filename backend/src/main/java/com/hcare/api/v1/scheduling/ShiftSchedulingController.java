@@ -1,0 +1,100 @@
+package com.hcare.api.v1.scheduling;
+
+import com.hcare.api.v1.scheduling.dto.AssignCaregiverRequest;
+import com.hcare.api.v1.scheduling.dto.CancelShiftRequest;
+import com.hcare.api.v1.scheduling.dto.CreateShiftRequest;
+import com.hcare.api.v1.scheduling.dto.RankedCaregiverResponse;
+import com.hcare.api.v1.scheduling.dto.RespondToOfferRequest;
+import com.hcare.api.v1.scheduling.dto.ShiftOfferSummary;
+import com.hcare.api.v1.scheduling.dto.ShiftSummaryResponse;
+import com.hcare.security.UserPrincipal;
+import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/shifts")
+public class ShiftSchedulingController {
+
+    private final ShiftSchedulingService shiftSchedulingService;
+
+    public ShiftSchedulingController(ShiftSchedulingService shiftSchedulingService) {
+        this.shiftSchedulingService = shiftSchedulingService;
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<ShiftSummaryResponse>> listShifts(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end) {
+        return ResponseEntity.ok(shiftSchedulingService.listShifts(principal.getAgencyId(), start, end));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<ShiftSummaryResponse> createShift(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateShiftRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(shiftSchedulingService.createShift(principal.getAgencyId(), request));
+    }
+
+    @PatchMapping("/{id}/assign")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<ShiftSummaryResponse> assignCaregiver(
+            @PathVariable UUID id,
+            @Valid @RequestBody AssignCaregiverRequest request) {
+        return ResponseEntity.ok(shiftSchedulingService.assignCaregiver(id, request));
+    }
+
+    @PatchMapping("/{id}/unassign")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<ShiftSummaryResponse> unassignCaregiver(@PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.unassignCaregiver(id));
+    }
+
+    @PatchMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<ShiftSummaryResponse> cancelShift(
+            @PathVariable UUID id,
+            @RequestBody(required = false) CancelShiftRequest request) {
+        return ResponseEntity.ok(shiftSchedulingService.cancelShift(id,
+            request != null ? request : new CancelShiftRequest(null)));
+    }
+
+    @GetMapping("/{id}/candidates")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<RankedCaregiverResponse>> getCandidates(@PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.getCandidates(id));
+    }
+
+    @PostMapping("/{id}/broadcast")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<ShiftOfferSummary>> broadcastShift(@PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.broadcastShift(id));
+    }
+
+    @GetMapping("/{id}/offers")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<ShiftOfferSummary>> listOffers(@PathVariable UUID id) {
+        return ResponseEntity.ok(shiftSchedulingService.listOffers(id));
+    }
+
+    @PostMapping("/{id}/offers/{offerId}/respond")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<ShiftOfferSummary> respondToOffer(
+            @PathVariable UUID id,
+            @PathVariable UUID offerId,
+            @Valid @RequestBody RespondToOfferRequest request) {
+        return ResponseEntity.ok(shiftSchedulingService.respondToOffer(id, offerId, request));
+    }
+}

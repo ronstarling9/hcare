@@ -10,12 +10,10 @@ import java.util.UUID;
 
 public interface RecurrencePatternRepository extends JpaRepository<RecurrencePattern, UUID> {
 
-    /**
-     * Returns active patterns whose generatedThrough frontier is behind the given horizon
-     * and whose endDate has not yet passed.
-     * Called by the nightly scheduler — no TenantContext set, so the Hibernate @Filter is
-     * not active. This is intentional: the nightly job processes all agencies.
-     */
+    /** Returns all recurrence patterns belonging to the given agency. */
+    @Transactional(readOnly = true)
+    List<RecurrencePattern> findByAgencyId(UUID agencyId);
+
     @Transactional(readOnly = true)
     @Query("SELECT rp FROM RecurrencePattern rp WHERE rp.active = true " +
            "AND rp.generatedThrough < :horizon " +

@@ -136,6 +136,35 @@ class ShiftDomainIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void findByAgencyIdAndScheduledStartBetween_returns_only_matching_agency_and_window() {
+        Agency agencyA = agencyRepo.save(new Agency("Agency A", "TX"));
+        Agency agencyB = agencyRepo.save(new Agency("Agency B", "TX"));
+        Client clientA = clientRepo.save(new Client(agencyA.getId(), "Pat", "A", LocalDate.of(1970, 1, 1)));
+        Client clientB = clientRepo.save(new Client(agencyB.getId(), "Pat", "B", LocalDate.of(1970, 1, 1)));
+        ServiceType stA = serviceTypeRepo.save(new ServiceType(agencyA.getId(), "PCS", "PCS-A", true, "[]"));
+        ServiceType stB = serviceTypeRepo.save(new ServiceType(agencyB.getId(), "PCS", "PCS-B", true, "[]"));
+
+        LocalDateTime windowStart = LocalDateTime.of(2026, 5, 1, 0, 0);
+        LocalDateTime windowEnd   = LocalDateTime.of(2026, 5, 8, 0, 0);
+
+        // Inside window, agencyA
+        shiftRepo.save(new Shift(agencyA.getId(), null, clientA.getId(), null,
+            stA.getId(), null, LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0)));
+        // Outside window (before), agencyA
+        shiftRepo.save(new Shift(agencyA.getId(), null, clientA.getId(), null,
+            stA.getId(), null, LocalDateTime.of(2026, 4, 30, 9, 0), LocalDateTime.of(2026, 4, 30, 13, 0)));
+        // Inside window but agencyB — must be excluded
+        shiftRepo.save(new Shift(agencyB.getId(), null, clientB.getId(), null,
+            stB.getId(), null, LocalDateTime.of(2026, 5, 4, 9, 0), LocalDateTime.of(2026, 5, 4, 13, 0)));
+
+        List<Shift> results = shiftRepo.findByAgencyIdAndScheduledStartBetween(
+            agencyA.getId(), windowStart, windowEnd);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getAgencyId()).isEqualTo(agencyA.getId());
+    }
+
+    @Test
     void deleteUnstartedFutureShifts_leaves_completed_and_other_agency_shifts_intact() {
         Agency agencyA = agencyRepo.save(new Agency("Delete Agency A", "TX"));
         Agency agencyB = agencyRepo.save(new Agency("Delete Agency B", "CA"));

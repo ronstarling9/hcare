@@ -1,15 +1,22 @@
 package com.hcare.domain;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ShiftRepository extends JpaRepository<Shift, UUID> {
+
+    List<Shift> findByAgencyIdAndScheduledStartBetween(UUID agencyId,
+                                                        LocalDateTime start,
+                                                        LocalDateTime end);
 
     List<Shift> findByClientIdAndScheduledStartBetween(UUID clientId,
                                                         LocalDateTime start,
@@ -47,4 +54,8 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
     List<Shift> findOverlapping(@Param("caregiverId") UUID caregiverId,
                                 @Param("start") LocalDateTime start,
                                 @Param("end") LocalDateTime end);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Shift s WHERE s.id = :id")
+    Optional<Shift> findByIdForUpdate(@Param("id") UUID id);
 }

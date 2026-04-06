@@ -6,4 +6,6 @@ import java.util.UUID;
 
 public interface CaregiverRepository extends JpaRepository<Caregiver, UUID> {
     List<Caregiver> findByAgencyId(UUID agencyId);
+
+    boolean existsByIdAndAgencyId(UUID id, UUID agencyId);
 }

@@ -8,6 +8,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -107,6 +109,26 @@ class ShiftSubEntitiesIT extends AbstractIntegrationTest {
         assertThat(loaded.getAdlTaskId()).isEqualTo(task.getId());
         assertThat(loaded.getCaregiverNotes()).isEqualTo("Completed with moderate assistance");
         assertThat(loaded.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void findByCaregiverIdAndShiftId_returns_offer_when_present_and_empty_when_not() {
+        Agency agency = agencyRepo.save(new Agency("Offer Test Agency", "TX"));
+        Client client = clientRepo.save(new Client(agency.getId(), "Bob", "Test", LocalDate.of(1975, 3, 15)));
+        ServiceType st = serviceTypeRepo.save(new ServiceType(agency.getId(), "PCS", "PCS-OT", true, "[]"));
+        Shift shift = shiftRepo.save(new Shift(agency.getId(), null, client.getId(), null,
+            st.getId(), null,
+            LocalDateTime.of(2026, 6, 1, 9, 0), LocalDateTime.of(2026, 6, 1, 13, 0)));
+
+        UUID caregiverId = UUID.randomUUID();
+        ShiftOffer offer = shiftOfferRepo.save(new ShiftOffer(shift.getId(), caregiverId, agency.getId()));
+
+        Optional<ShiftOffer> found = shiftOfferRepo.findByCaregiverIdAndShiftId(caregiverId, shift.getId());
+        assertThat(found).isPresent();
+        assertThat(found.get().getId()).isEqualTo(offer.getId());
+
+        Optional<ShiftOffer> notFound = shiftOfferRepo.findByCaregiverIdAndShiftId(UUID.randomUUID(), shift.getId());
+        assertThat(notFound).isEmpty();
     }
 
     @Test

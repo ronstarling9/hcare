@@ -100,6 +100,47 @@ class RecurrencePatternDomainIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void findByAgencyId_returns_only_patterns_for_the_given_agency() {
+        Agency agencyA = agencyRepo.save(new Agency("RP Agency A", "TX"));
+        Agency agencyB = agencyRepo.save(new Agency("RP Agency B", "TX"));
+        Client clientA = clientRepo.save(new Client(agencyA.getId(), "Alice", "RP", LocalDate.of(1960, 1, 1)));
+        Client clientB = clientRepo.save(new Client(agencyB.getId(), "Bob", "RP", LocalDate.of(1960, 1, 1)));
+        ServiceType stA = serviceTypeRepo.save(new ServiceType(agencyA.getId(), "PCS", "PCS-RPFA", true, "[]"));
+        ServiceType stB = serviceTypeRepo.save(new ServiceType(agencyB.getId(), "PCS", "PCS-RPFB", true, "[]"));
+
+        patternRepo.save(new RecurrencePattern(agencyA.getId(), clientA.getId(), stA.getId(),
+            LocalTime.of(9, 0), 120, "[\"MONDAY\"]", LocalDate.of(2026, 5, 4)));
+        patternRepo.save(new RecurrencePattern(agencyB.getId(), clientB.getId(), stB.getId(),
+            LocalTime.of(10, 0), 60, "[\"TUESDAY\"]", LocalDate.of(2026, 5, 5)));
+
+        List<RecurrencePattern> results = patternRepo.findByAgencyId(agencyA.getId());
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getAgencyId()).isEqualTo(agencyA.getId());
+    }
+
+    @Test
+    void recurrencePattern_scheduling_setters_persist_correctly() {
+        Agency agency = agencyRepo.save(new Agency("Setter Test Agency", "TX"));
+        Client client = clientRepo.save(new Client(agency.getId(), "Setter", "Test", LocalDate.of(1970, 6, 15)));
+        ServiceType st = serviceTypeRepo.save(new ServiceType(agency.getId(), "PCS", "PCS-SET", true, "[]"));
+
+        RecurrencePattern pattern = patternRepo.save(new RecurrencePattern(
+            agency.getId(), client.getId(), st.getId(),
+            LocalTime.of(9, 0), 120, "[\"MONDAY\"]", LocalDate.of(2026, 5, 4)));
+
+        pattern.setScheduledStartTime(LocalTime.of(14, 30));
+        pattern.setScheduledDurationMinutes(180);
+        pattern.setDaysOfWeek("[\"WEDNESDAY\",\"FRIDAY\"]");
+        patternRepo.save(pattern);
+
+        RecurrencePattern reloaded = patternRepo.findById(pattern.getId()).orElseThrow();
+        assertThat(reloaded.getScheduledStartTime()).isEqualTo(LocalTime.of(14, 30));
+        assertThat(reloaded.getScheduledDurationMinutes()).isEqualTo(180);
+        assertThat(reloaded.getDaysOfWeek()).isEqualTo("[\"WEDNESDAY\",\"FRIDAY\"]");
+    }
+
+    @Test
     void findActivePatternsBehindHorizon_returns_only_patterns_behind_horizon() {
         Agency agency = agencyRepo.save(new Agency("RP Horizon Agency", "TX"));
         Client client = clientRepo.save(new Client(agency.getId(), "Horizon", "Client", LocalDate.of(1965, 3, 10)));

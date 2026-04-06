@@ -85,6 +85,9 @@ public class RecurrencePattern {
     public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
     public void setActive(boolean active) { this.active = active; }
     public void setGeneratedThrough(LocalDate generatedThrough) { this.generatedThrough = generatedThrough; }
+    public void setScheduledStartTime(LocalTime scheduledStartTime) { this.scheduledStartTime = scheduledStartTime; }
+    public void setScheduledDurationMinutes(int scheduledDurationMinutes) { this.scheduledDurationMinutes = scheduledDurationMinutes; }
+    public void setDaysOfWeek(String daysOfWeek) { this.daysOfWeek = daysOfWeek; }
 
     public UUID getId() { return id; }
     public UUID getAgencyId() { return agencyId; }
