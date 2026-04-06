@@ -66,7 +66,8 @@ public class RecurrencePatternService {
 
         boolean needsRegeneration = req.scheduledStartTime() != null
             || req.scheduledDurationMinutes() != null
-            || req.daysOfWeek() != null;
+            || req.daysOfWeek() != null
+            || req.authorizationId() != null;
 
         if (!needsRegeneration && req.caregiverId() == null
                 && req.authorizationId() == null && req.endDate() == null) {

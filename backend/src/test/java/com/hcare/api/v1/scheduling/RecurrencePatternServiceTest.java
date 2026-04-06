@@ -188,6 +188,24 @@ class RecurrencePatternServiceTest {
     }
 
     @Test
+    void updatePattern_authorizationId_only_calls_regenerateAfterEdit() {
+        UUID patternId = UUID.randomUUID();
+        UUID authorizationId = UUID.randomUUID();
+        RecurrencePattern pattern = new RecurrencePattern(agencyId, clientId, serviceTypeId,
+            LocalTime.of(9, 0), 120, "[\"MONDAY\"]", LocalDate.of(2026, 5, 4));
+        when(patternRepository.findById(patternId)).thenReturn(Optional.of(pattern));
+        when(patternRepository.save(pattern)).thenReturn(pattern);
+
+        UpdateRecurrencePatternRequest req = new UpdateRecurrencePatternRequest(
+            null, null, null, null, authorizationId, null);
+
+        service.updatePattern(agencyId, patternId, req);
+
+        verify(shiftGenerationService).regenerateAfterEdit(pattern);
+        assertThat(pattern.getAuthorizationId()).isEqualTo(authorizationId);
+    }
+
+    @Test
     void updatePattern_endDate_only_saves_in_place_without_regeneration() {
         UUID patternId = UUID.randomUUID();
         RecurrencePattern pattern = new RecurrencePattern(agencyId, clientId, serviceTypeId,

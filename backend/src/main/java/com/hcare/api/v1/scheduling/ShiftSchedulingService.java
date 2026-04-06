@@ -93,10 +93,6 @@ public class ShiftSchedulingService {
         if (req.notes() != null) {
             shift.setNotes(req.notes());
         }
-        // Shift constructor already sets status based on caregiverId, but be explicit
-        if (req.caregiverId() != null) {
-            shift.setStatus(ShiftStatus.ASSIGNED);
-        }
         return toSummary(shiftRepository.save(shift));
     }
 
@@ -207,11 +203,11 @@ public class ShiftSchedulingService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Cannot accept offer: shift is no longer OPEN (status: " + shift.getStatus() + ")");
             }
-            offer.respond(ShiftOfferResponse.ACCEPTED);
-            shiftOfferRepository.save(offer);
             shift.setCaregiverId(offer.getCaregiverId());
             shift.setStatus(ShiftStatus.ASSIGNED);
+            offer.respond(ShiftOfferResponse.ACCEPTED);
             shiftRepository.save(shift);
+            shiftOfferRepository.save(offer);
 
             shiftOfferRepository.findByShiftId(shiftId).stream()
                 .filter(o -> !offerId.equals(o.getId()) && o.getResponse() == ShiftOfferResponse.NO_RESPONSE)

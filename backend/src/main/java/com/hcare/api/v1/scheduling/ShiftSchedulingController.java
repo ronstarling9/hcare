@@ -70,7 +70,7 @@ public class ShiftSchedulingController {
     public ResponseEntity<ShiftSummaryResponse> cancelShift(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
-            @RequestBody(required = false) CancelShiftRequest request) {
+            @Valid @RequestBody(required = false) CancelShiftRequest request) {
         return ResponseEntity.ok(shiftSchedulingService.cancelShift(principal.getAgencyId(), id,
             request != null ? request : new CancelShiftRequest(null)));
     }
