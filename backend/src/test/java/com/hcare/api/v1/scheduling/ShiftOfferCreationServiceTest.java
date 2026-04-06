@@ -37,7 +37,7 @@ class ShiftOfferCreationServiceTest {
 
         service.createOfferIfAbsent(shiftId, caregiverId, agencyId);
 
-        verify(shiftOfferRepository).save(any(ShiftOffer.class));
+        verify(shiftOfferRepository).saveAndFlush(any(ShiftOffer.class));
     }
 
     @Test
@@ -60,7 +60,7 @@ class ShiftOfferCreationServiceTest {
         UUID agencyId = UUID.randomUUID();
         when(shiftOfferRepository.findByCaregiverIdAndShiftId(caregiverId, shiftId))
             .thenReturn(Optional.empty());
-        when(shiftOfferRepository.save(any(ShiftOffer.class)))
+        when(shiftOfferRepository.saveAndFlush(any(ShiftOffer.class)))
             .thenThrow(new DataIntegrityViolationException("duplicate key"));
 
         assertDoesNotThrow(() -> service.createOfferIfAbsent(shiftId, caregiverId, agencyId));

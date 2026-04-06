@@ -34,7 +34,7 @@ public class ShiftOfferCreationService {
     public void createOfferIfAbsent(UUID shiftId, UUID caregiverId, UUID agencyId) {
         if (shiftOfferRepository.findByCaregiverIdAndShiftId(caregiverId, shiftId).isEmpty()) {
             try {
-                shiftOfferRepository.save(new ShiftOffer(shiftId, caregiverId, agencyId));
+                shiftOfferRepository.saveAndFlush(new ShiftOffer(shiftId, caregiverId, agencyId));
             } catch (DataIntegrityViolationException e) {
                 log.debug("Concurrent duplicate insert for shiftId={} caregiverId={} — offer already exists, ignoring",
                         shiftId, caregiverId);
