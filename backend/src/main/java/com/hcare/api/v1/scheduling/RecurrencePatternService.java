@@ -69,8 +69,7 @@ public class RecurrencePatternService {
             || req.daysOfWeek() != null
             || req.authorizationId() != null;
 
-        if (!needsRegeneration && req.caregiverId() == null
-                && req.authorizationId() == null && req.endDate() == null) {
+        if (!needsRegeneration && req.caregiverId() == null && req.endDate() == null) {
             return toResponse(pattern);
         }
 

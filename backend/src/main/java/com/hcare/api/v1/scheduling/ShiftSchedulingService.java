@@ -98,7 +98,7 @@ public class ShiftSchedulingService {
 
     @Transactional
     public ShiftSummaryResponse assignCaregiver(UUID agencyId, UUID shiftId, AssignCaregiverRequest req) {
-        Shift shift = requireShift(shiftId, agencyId);
+        Shift shift = requireShift(agencyId, shiftId);
         if (shift.getStatus() != ShiftStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Shift must be OPEN to assign a caregiver (current status: " + shift.getStatus() + ")");
@@ -114,7 +114,7 @@ public class ShiftSchedulingService {
 
     @Transactional
     public ShiftSummaryResponse unassignCaregiver(UUID agencyId, UUID shiftId) {
-        Shift shift = requireShift(shiftId, agencyId);
+        Shift shift = requireShift(agencyId, shiftId);
         if (shift.getStatus() != ShiftStatus.ASSIGNED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Shift must be ASSIGNED to unassign caregiver (current status: " + shift.getStatus() + ")");
@@ -126,7 +126,7 @@ public class ShiftSchedulingService {
 
     @Transactional
     public ShiftSummaryResponse cancelShift(UUID agencyId, UUID shiftId, CancelShiftRequest req) {
-        Shift shift = requireShift(shiftId, agencyId);
+        Shift shift = requireShift(agencyId, shiftId);
         if (shift.getStatus() != ShiftStatus.OPEN && shift.getStatus() != ShiftStatus.ASSIGNED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Only OPEN or ASSIGNED shifts can be cancelled (current status: " + shift.getStatus() + ")");
@@ -145,7 +145,7 @@ public class ShiftSchedulingService {
 
     @Transactional(readOnly = true)
     public List<RankedCaregiverResponse> getCandidates(UUID agencyId, UUID shiftId) {
-        Shift shift = requireShift(shiftId, agencyId);
+        Shift shift = requireShift(agencyId, shiftId);
         List<RankedCaregiver> ranked = scoringService.rankCandidates(new ShiftMatchRequest(
             shift.getAgencyId(), shift.getClientId(), shift.getServiceTypeId(),
             shift.getAuthorizationId(), shift.getScheduledStart(), shift.getScheduledEnd()));
@@ -156,7 +156,7 @@ public class ShiftSchedulingService {
 
     @Transactional
     public List<ShiftOfferSummary> broadcastShift(UUID agencyId, UUID shiftId) {
-        Shift shift = requireShift(shiftId, agencyId);
+        Shift shift = requireShift(agencyId, shiftId);
         if (shift.getStatus() != ShiftStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Only OPEN shifts can be broadcast (current status: " + shift.getStatus() + ")");
@@ -174,7 +174,7 @@ public class ShiftSchedulingService {
 
     @Transactional(readOnly = true)
     public List<ShiftOfferSummary> listOffers(UUID agencyId, UUID shiftId) {
-        requireShift(shiftId, agencyId);
+        requireShift(agencyId, shiftId);
         return shiftOfferRepository.findByShiftId(shiftId).stream()
             .map(this::toOfferSummary)
             .toList();
@@ -231,7 +231,7 @@ public class ShiftSchedulingService {
 
     // --- helpers ---
 
-    private Shift requireShift(UUID shiftId, UUID agencyId) {
+    private Shift requireShift(UUID agencyId, UUID shiftId) {
         Shift shift = shiftRepository.findById(shiftId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found"));
         if (!shift.getAgencyId().equals(agencyId)) {
