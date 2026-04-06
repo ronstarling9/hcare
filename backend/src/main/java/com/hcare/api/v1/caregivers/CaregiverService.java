@@ -1,9 +1,13 @@
 package com.hcare.api.v1.caregivers;
 
+import com.hcare.api.v1.caregivers.dto.AddCredentialRequest;
 import com.hcare.api.v1.caregivers.dto.CaregiverResponse;
 import com.hcare.api.v1.caregivers.dto.CreateCaregiverRequest;
+import com.hcare.api.v1.caregivers.dto.CredentialResponse;
 import com.hcare.api.v1.caregivers.dto.UpdateCaregiverRequest;
 import com.hcare.domain.Caregiver;
+import com.hcare.domain.CaregiverCredential;
+import com.hcare.domain.CaregiverCredentialRepository;
 import com.hcare.domain.CaregiverRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,9 +21,12 @@ import java.util.UUID;
 public class CaregiverService {
 
     private final CaregiverRepository caregiverRepository;
+    private final CaregiverCredentialRepository credentialRepository;
 
-    public CaregiverService(CaregiverRepository caregiverRepository) {
+    public CaregiverService(CaregiverRepository caregiverRepository,
+                            CaregiverCredentialRepository credentialRepository) {
         this.caregiverRepository = caregiverRepository;
+        this.credentialRepository = credentialRepository;
     }
 
     @Transactional(readOnly = true)
@@ -62,5 +69,34 @@ public class CaregiverService {
     Caregiver requireCaregiver(UUID caregiverId) {
         return caregiverRepository.findById(caregiverId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Caregiver not found"));
+    }
+
+    // --- credentials ---
+
+    @Transactional(readOnly = true)
+    public List<CredentialResponse> listCredentials(UUID agencyId, UUID caregiverId) {
+        requireCaregiver(caregiverId);
+        return credentialRepository.findByCaregiverId(caregiverId).stream()
+            .map(CredentialResponse::from)
+            .toList();
+    }
+
+    @Transactional
+    public CredentialResponse addCredential(UUID agencyId, UUID caregiverId, AddCredentialRequest req) {
+        requireCaregiver(caregiverId);
+        CaregiverCredential cred = new CaregiverCredential(
+            caregiverId, agencyId, req.credentialType(), req.issueDate(), req.expiryDate());
+        return CredentialResponse.from(credentialRepository.save(cred));
+    }
+
+    @Transactional
+    public void deleteCredential(UUID agencyId, UUID caregiverId, UUID credentialId) {
+        requireCaregiver(caregiverId);
+        CaregiverCredential cred = credentialRepository.findById(credentialId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Credential not found"));
+        if (!cred.getCaregiverId().equals(caregiverId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Credential not found");
+        }
+        credentialRepository.delete(cred);
     }
 }

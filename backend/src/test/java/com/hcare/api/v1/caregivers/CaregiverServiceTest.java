@@ -1,11 +1,16 @@
 package com.hcare.api.v1.caregivers;
 
+import com.hcare.api.v1.caregivers.dto.AddCredentialRequest;
 import com.hcare.api.v1.caregivers.dto.CaregiverResponse;
 import com.hcare.api.v1.caregivers.dto.CreateCaregiverRequest;
+import com.hcare.api.v1.caregivers.dto.CredentialResponse;
 import com.hcare.api.v1.caregivers.dto.UpdateCaregiverRequest;
 import com.hcare.domain.Caregiver;
+import com.hcare.domain.CaregiverCredential;
+import com.hcare.domain.CaregiverCredentialRepository;
 import com.hcare.domain.CaregiverRepository;
 import com.hcare.domain.CaregiverStatus;
+import com.hcare.domain.CredentialType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +32,7 @@ import static org.mockito.Mockito.*;
 class CaregiverServiceTest {
 
     @Mock CaregiverRepository caregiverRepository;
+    @Mock CaregiverCredentialRepository credentialRepository;
 
     CaregiverService service;
 
@@ -35,7 +41,7 @@ class CaregiverServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CaregiverService(caregiverRepository);
+        service = new CaregiverService(caregiverRepository, credentialRepository);
     }
 
     private Caregiver makeCaregiver() {
@@ -132,5 +138,67 @@ class CaregiverServiceTest {
         service.updateCaregiver(agencyId, caregiverId, req);
 
         assertThat(c.getStatus()).isEqualTo(CaregiverStatus.INACTIVE);
+    }
+
+    // --- credentials ---
+
+    @Test
+    void addCredential_saves_and_returns_response() {
+        Caregiver c = makeCaregiver();
+        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
+        CaregiverCredential saved = new CaregiverCredential(
+            caregiverId, agencyId, CredentialType.CPR,
+            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
+        when(credentialRepository.save(any())).thenReturn(saved);
+
+        CredentialResponse result = service.addCredential(agencyId, caregiverId,
+            new AddCredentialRequest(CredentialType.CPR, LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1)));
+
+        assertThat(result.credentialType()).isEqualTo(CredentialType.CPR);
+        verify(credentialRepository).save(any(CaregiverCredential.class));
+    }
+
+    @Test
+    void listCredentials_returns_all_for_caregiver() {
+        Caregiver c = makeCaregiver();
+        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
+        CaregiverCredential cred = new CaregiverCredential(
+            caregiverId, agencyId, CredentialType.CPR,
+            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
+        when(credentialRepository.findByCaregiverId(caregiverId)).thenReturn(List.of(cred));
+
+        List<CredentialResponse> result = service.listCredentials(agencyId, caregiverId);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void deleteCredential_removes_when_belongs_to_caregiver() {
+        UUID credId = UUID.randomUUID();
+        Caregiver c = makeCaregiver();
+        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
+        CaregiverCredential cred = new CaregiverCredential(
+            caregiverId, agencyId, CredentialType.CPR,
+            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
+        when(credentialRepository.findById(credId)).thenReturn(Optional.of(cred));
+
+        service.deleteCredential(agencyId, caregiverId, credId);
+
+        verify(credentialRepository).delete(cred);
+    }
+
+    @Test
+    void deleteCredential_throws_404_when_belongs_to_other_caregiver() {
+        UUID credId = UUID.randomUUID();
+        Caregiver c = makeCaregiver();
+        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
+        CaregiverCredential cred = new CaregiverCredential(
+            UUID.randomUUID(), agencyId, CredentialType.CPR,
+            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
+        when(credentialRepository.findById(credId)).thenReturn(Optional.of(cred));
+
+        assertThatThrownBy(() -> service.deleteCredential(agencyId, caregiverId, credId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("404");
     }
 }

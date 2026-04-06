@@ -1,7 +1,9 @@
 package com.hcare.api.v1.caregivers;
 
+import com.hcare.api.v1.caregivers.dto.AddCredentialRequest;
 import com.hcare.api.v1.caregivers.dto.CaregiverResponse;
 import com.hcare.api.v1.caregivers.dto.CreateCaregiverRequest;
+import com.hcare.api.v1.caregivers.dto.CredentialResponse;
 import com.hcare.api.v1.caregivers.dto.UpdateCaregiverRequest;
 import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
@@ -56,5 +58,35 @@ public class CaregiverController {
             @Valid @RequestBody UpdateCaregiverRequest request) {
         return ResponseEntity.ok(
             caregiverService.updateCaregiver(principal.getAgencyId(), id, request));
+    }
+
+    // --- Credentials ---
+
+    @GetMapping("/{id}/credentials")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<List<CredentialResponse>> listCredentials(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(caregiverService.listCredentials(principal.getAgencyId(), id));
+    }
+
+    @PostMapping("/{id}/credentials")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<CredentialResponse> addCredential(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody AddCredentialRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(caregiverService.addCredential(principal.getAgencyId(), id, request));
+    }
+
+    @DeleteMapping("/{id}/credentials/{credentialId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<Void> deleteCredential(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @PathVariable UUID credentialId) {
+        caregiverService.deleteCredential(principal.getAgencyId(), id, credentialId);
+        return ResponseEntity.noContent().build();
     }
 }
