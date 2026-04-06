@@ -205,7 +205,34 @@ In `backend/src/main/java/com/hcare/domain/RecurrencePatternRepository.java`, ad
 List<RecurrencePattern> findByAgencyId(UUID agencyId);
 ```
 
-- [ ] **Step 10: Write a failing test for the new RecurrencePattern setters**
+- [ ] **Step 10: Add `findByIdForUpdate` to `ShiftRepository`**
+
+In `backend/src/main/java/com/hcare/domain/ShiftRepository.java`, add these imports after the existing imports:
+
+```java
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import java.util.Optional;
+```
+
+Then add this method inside the interface body, after `findOverlapping`:
+
+```java
+/**
+ * Loads a shift with a pessimistic write lock. Required by ShiftSchedulingService.respondToOffer
+ * to prevent concurrent double-assignment when two admins simultaneously accept different offers
+ * for the same OPEN shift.
+ *
+ * No dedicated domain IT test: single-threaded integration tests cannot verify
+ * PostgreSQL row-level locking. Correctness is verified by the ShiftSchedulingServiceTest
+ * unit tests added in Task 3.
+ */
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT s FROM Shift s WHERE s.id = :id")
+Optional<Shift> findByIdForUpdate(@Param("id") UUID id);
+```
+
+- [ ] **Step 11: Write a failing test for the new RecurrencePattern setters**
 
 Open `backend/src/test/java/com/hcare/domain/RecurrencePatternDomainIT.java` and add:
 
@@ -232,7 +259,7 @@ void recurrencePattern_scheduling_setters_persist_correctly() {
 }
 ```
 
-- [ ] **Step 11: Run to confirm it fails**
+- [ ] **Step 12: Run to confirm it fails**
 
 ```bash
 cd backend && mvn test -Dtest=RecurrencePatternDomainIT#recurrencePattern_scheduling_setters_persist_correctly -pl . 2>&1 | tail -20
@@ -240,7 +267,7 @@ cd backend && mvn test -Dtest=RecurrencePatternDomainIT#recurrencePattern_schedu
 
 Expected: compilation error — `setScheduledStartTime`, `setScheduledDurationMinutes`, `setDaysOfWeek` do not exist.
 
-- [ ] **Step 12: Add the three setters to `RecurrencePattern`**
+- [ ] **Step 13: Add the three setters to `RecurrencePattern`**
 
 In `backend/src/main/java/com/hcare/domain/RecurrencePattern.java`, add these three methods alongside the existing setters (after `setGeneratedThrough`):
 
@@ -250,7 +277,7 @@ public void setScheduledDurationMinutes(int scheduledDurationMinutes) { this.sch
 public void setDaysOfWeek(String daysOfWeek) { this.daysOfWeek = daysOfWeek; }
 ```
 
-- [ ] **Step 13: Run all four tests to confirm they pass**
+- [ ] **Step 14: Run all four tests to confirm they pass**
 
 ```bash
 cd backend && mvn test -Dtest="ShiftDomainIT#findByAgencyIdAndScheduledStartBetween_returns_only_matching_agency_and_window,ShiftSubEntitiesIT#findByCaregiverIdAndShiftId_returns_offer_when_present_and_empty_when_not,RecurrencePatternDomainIT#findByAgencyId_returns_only_patterns_for_the_given_agency,RecurrencePatternDomainIT#recurrencePattern_scheduling_setters_persist_correctly" -pl . 2>&1 | tail -20
@@ -258,7 +285,7 @@ cd backend && mvn test -Dtest="ShiftDomainIT#findByAgencyIdAndScheduledStartBetw
 
 Expected: `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0`
 
-- [ ] **Step 14: Run the full test suite to confirm no regressions**
+- [ ] **Step 15: Run the full test suite to confirm no regressions**
 
 ```bash
 cd backend && mvn test -pl . 2>&1 | tail -30
@@ -266,7 +293,7 @@ cd backend && mvn test -pl . 2>&1 | tail -30
 
 Expected: `BUILD SUCCESS` with all pre-existing tests still passing.
 
-- [ ] **Step 15: Commit**
+- [ ] **Step 16: Commit**
 
 ```bash
 cd backend && git add src/main/java/com/hcare/domain/RecurrencePattern.java \
@@ -435,6 +462,7 @@ package com.hcare.api.v1.scheduling.dto;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
@@ -446,7 +474,14 @@ public record CreateRecurrencePatternRequest(
     UUID authorizationId,
     @NotNull LocalTime scheduledStartTime,
     @Min(1) int scheduledDurationMinutes,
-    @NotBlank String daysOfWeek,
+    @NotBlank
+    @Pattern(
+        regexp = "^\\[\"(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\"" +
+                 "(,\"(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\")*\\]$",
+        message = "daysOfWeek must be a non-empty JSON array of uppercase day names, " +
+                  "e.g. [\"MONDAY\",\"WEDNESDAY\"]"
+    )
+    String daysOfWeek,
     @NotNull LocalDate startDate,
     LocalDate endDate
 ) {}
@@ -492,13 +527,21 @@ Create file `backend/src/main/java/com/hcare/api/v1/scheduling/dto/UpdateRecurre
 ```java
 package com.hcare.api.v1.scheduling.dto;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
 
 public record UpdateRecurrencePatternRequest(
     LocalTime scheduledStartTime,
-    Integer scheduledDurationMinutes,
+    @Min(1) Integer scheduledDurationMinutes,
+    @Pattern(
+        regexp = "^\\[\"(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\"" +
+                 "(,\"(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\")*\\]$",
+        message = "daysOfWeek must be a non-empty JSON array of uppercase day names, " +
+                  "e.g. [\"MONDAY\",\"WEDNESDAY\"]"
+    )
     String daysOfWeek,
     UUID caregiverId,
     UUID authorizationId,
@@ -539,10 +582,15 @@ package com.hcare.api.v1.scheduling;
 import com.hcare.api.v1.scheduling.dto.AssignCaregiverRequest;
 import com.hcare.api.v1.scheduling.dto.CancelShiftRequest;
 import com.hcare.api.v1.scheduling.dto.CreateShiftRequest;
+import com.hcare.api.v1.scheduling.dto.RankedCaregiverResponse;
+import com.hcare.api.v1.scheduling.dto.RespondToOfferRequest;
+import com.hcare.api.v1.scheduling.dto.ShiftOfferSummary;
 import com.hcare.api.v1.scheduling.dto.ShiftSummaryResponse;
 import com.hcare.domain.Shift;
 import com.hcare.domain.ShiftCancelledEvent;
+import com.hcare.domain.ShiftOffer;
 import com.hcare.domain.ShiftOfferRepository;
+import com.hcare.domain.ShiftOfferResponse;
 import com.hcare.domain.ShiftRepository;
 import com.hcare.domain.ShiftStatus;
 import com.hcare.scoring.ScoringService;
@@ -564,6 +612,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class ShiftSchedulingServiceTest {
@@ -733,6 +783,184 @@ class ShiftSchedulingServiceTest {
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("409");
     }
+
+    // --- getCandidates ---
+
+    @Test
+    void getCandidates_delegates_to_scoring_service_and_maps_results() {
+        UUID shiftId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(scoringService.rankCandidates(any())).thenReturn(
+            List.of(new com.hcare.scoring.RankedCaregiver(caregiverId, 0.85, "Good match")));
+
+        List<RankedCaregiverResponse> result = service.getCandidates(shiftId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).caregiverId()).isEqualTo(caregiverId);
+        assertThat(result.get(0).score()).isEqualTo(0.85);
+        verify(scoringService).rankCandidates(any());
+    }
+
+    // --- broadcastShift ---
+
+    @Test
+    void broadcastShift_on_non_open_shift_throws_409() {
+        UUID shiftId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, UUID.randomUUID(), serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+
+        assertThatThrownBy(() -> service.broadcastShift(shiftId))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("409");
+        verifyNoInteractions(shiftOfferRepository);
+    }
+
+    @Test
+    void broadcastShift_creates_offers_for_all_eligible_candidates_and_returns_summaries() {
+        UUID shiftId = UUID.randomUUID();
+        UUID cg1 = UUID.randomUUID();
+        UUID cg2 = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(scoringService.rankCandidates(any())).thenReturn(List.of(
+            new com.hcare.scoring.RankedCaregiver(cg1, 0.9, null),
+            new com.hcare.scoring.RankedCaregiver(cg2, 0.7, null)));
+        when(shiftOfferRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(shiftOfferRepository.findByShiftId(shiftId)).thenReturn(List.of(
+            new ShiftOffer(shiftId, cg1, agencyId),
+            new ShiftOffer(shiftId, cg2, agencyId)));
+
+        List<ShiftOfferSummary> result = service.broadcastShift(shiftId);
+
+        assertThat(result).hasSize(2);
+        verify(shiftOfferRepository, times(2)).save(any(ShiftOffer.class));
+        verify(shiftOfferRepository).findByShiftId(shiftId);
+    }
+
+    // --- listOffers ---
+
+    @Test
+    void listOffers_returns_offer_summaries_for_shift() {
+        UUID shiftId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(shiftOfferRepository.findByShiftId(shiftId)).thenReturn(
+            List.of(new ShiftOffer(shiftId, caregiverId, agencyId)));
+
+        List<ShiftOfferSummary> result = service.listOffers(shiftId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).caregiverId()).isEqualTo(caregiverId);
+        assertThat(result.get(0).response()).isEqualTo(ShiftOfferResponse.NO_RESPONSE);
+    }
+
+    // --- respondToOffer ---
+
+    @Test
+    void respondToOffer_with_NO_RESPONSE_throws_400() {
+        UUID shiftId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.respondToOffer(shiftId, offerId,
+                new RespondToOfferRequest(ShiftOfferResponse.NO_RESPONSE)))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("400");
+        verifyNoInteractions(shiftRepository, shiftOfferRepository);
+    }
+
+    @Test
+    void respondToOffer_on_already_responded_offer_throws_409() {
+        UUID shiftId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        ShiftOffer offer = new ShiftOffer(shiftId, caregiverId, agencyId);
+        offer.respond(ShiftOfferResponse.DECLINED);
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
+
+        assertThatThrownBy(() -> service.respondToOffer(shiftId, offerId,
+                new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED)))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("409");
+    }
+
+    @Test
+    void respondToOffer_accepted_assigns_caregiver_and_declines_other_pending_offers() {
+        UUID shiftId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID otherOfferId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        UUID otherCaregiverId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        ShiftOffer offer = new ShiftOffer(shiftId, caregiverId, agencyId);
+        ShiftOffer otherOffer = new ShiftOffer(shiftId, otherCaregiverId, agencyId);
+
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
+        when(shiftRepository.findByIdForUpdate(shiftId)).thenReturn(Optional.of(shift));
+        when(shiftRepository.save(shift)).thenReturn(shift);
+        when(shiftOfferRepository.findByShiftId(shiftId)).thenReturn(List.of(offer, otherOffer));
+        when(shiftOfferRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.respondToOffer(shiftId, offerId,
+            new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED));
+
+        assertThat(shift.getStatus()).isEqualTo(ShiftStatus.ASSIGNED);
+        assertThat(shift.getCaregiverId()).isEqualTo(caregiverId);
+        assertThat(otherOffer.getResponse()).isEqualTo(ShiftOfferResponse.DECLINED);
+    }
+
+    @Test
+    void respondToOffer_accepted_on_non_open_shift_throws_409() {
+        UUID shiftId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, UUID.randomUUID(), serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        ShiftOffer offer = new ShiftOffer(shiftId, caregiverId, agencyId);
+
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
+        when(shiftRepository.findByIdForUpdate(shiftId)).thenReturn(Optional.of(shift));
+
+        assertThatThrownBy(() -> service.respondToOffer(shiftId, offerId,
+                new RespondToOfferRequest(ShiftOfferResponse.ACCEPTED)))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("409");
+        verify(shiftRepository, never()).save(any());
+    }
+
+    @Test
+    void respondToOffer_declined_does_not_mutate_shift() {
+        UUID shiftId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID caregiverId = UUID.randomUUID();
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0));
+        ShiftOffer offer = new ShiftOffer(shiftId, caregiverId, agencyId);
+
+        when(shiftRepository.findById(shiftId)).thenReturn(Optional.of(shift));
+        when(shiftOfferRepository.findById(offerId)).thenReturn(Optional.of(offer));
+        when(shiftOfferRepository.save(any())).thenReturn(offer);
+
+        service.respondToOffer(shiftId, offerId,
+            new RespondToOfferRequest(ShiftOfferResponse.DECLINED));
+
+        assertThat(offer.getResponse()).isEqualTo(ShiftOfferResponse.DECLINED);
+        assertThat(shift.getStatus()).isEqualTo(ShiftStatus.OPEN);
+        verify(shiftRepository, never()).findByIdForUpdate(any());
+        verify(shiftRepository, never()).save(any());
+    }
 }
 ```
 
@@ -782,6 +1010,9 @@ import java.util.UUID;
 @Service
 public class ShiftSchedulingService {
 
+    private static final org.slf4j.Logger log =
+        org.slf4j.LoggerFactory.getLogger(ShiftSchedulingService.class);
+
     private final ShiftRepository shiftRepository;
     private final ShiftOfferRepository shiftOfferRepository;
     private final ScoringService scoringService;
@@ -807,6 +1038,10 @@ public class ShiftSchedulingService {
 
     @Transactional
     public ShiftSummaryResponse createShift(UUID agencyId, CreateShiftRequest req) {
+        if (!req.scheduledEnd().isAfter(req.scheduledStart())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "scheduledEnd must be after scheduledStart");
+        }
         Shift shift = new Shift(agencyId, null, req.clientId(), req.caregiverId(),
             req.serviceTypeId(), req.authorizationId(),
             req.scheduledStart(), req.scheduledEnd());
@@ -879,8 +1114,10 @@ public class ShiftSchedulingService {
         for (RankedCaregiver rc : eligible) {
             try {
                 shiftOfferRepository.save(new ShiftOffer(shiftId, rc.caregiverId(), shift.getAgencyId()));
-            } catch (DataIntegrityViolationException ignored) {
+            } catch (DataIntegrityViolationException e) {
                 // Duplicate offer for this (shift_id, caregiver_id) — idempotent re-broadcast; skip.
+                log.warn("Skipping duplicate offer for shift={} caregiver={}: {}",
+                    shiftId, rc.caregiverId(), e.getMessage());
             }
         }
         return shiftOfferRepository.findByShiftId(shiftId).stream()
@@ -898,6 +1135,11 @@ public class ShiftSchedulingService {
 
     @Transactional
     public ShiftOfferSummary respondToOffer(UUID shiftId, UUID offerId, RespondToOfferRequest req) {
+        // C4: reject NO_RESPONSE — callers must explicitly ACCEPT or DECLINE
+        if (req.response() == ShiftOfferResponse.NO_RESPONSE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Response must be ACCEPTED or DECLINED");
+        }
         requireShift(shiftId);
         ShiftOffer offer = shiftOfferRepository.findById(offerId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Offer not found"));
@@ -913,7 +1155,11 @@ public class ShiftSchedulingService {
         shiftOfferRepository.save(offer);
 
         if (req.response() == ShiftOfferResponse.ACCEPTED) {
-            Shift shift = requireShift(shiftId);
+            // C3: pessimistic write lock prevents concurrent double-assignment.
+            // Two admins simultaneously accepting different offers for the same OPEN shift
+            // would both pass the status check at READ_COMMITTED isolation without this lock.
+            Shift shift = shiftRepository.findByIdForUpdate(shiftId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shift not found"));
             if (shift.getStatus() != ShiftStatus.OPEN) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Cannot accept offer: shift is no longer OPEN (status: " + shift.getStatus() + ")");
@@ -962,7 +1208,7 @@ public class ShiftSchedulingService {
 cd backend && mvn test -Dtest=ShiftSchedulingServiceTest -pl . 2>&1 | tail -20
 ```
 
-Expected: `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0`
+Expected: `Tests run: 19, Failures: 0, Errors: 0, Skipped: 0`
 
 - [ ] **Step 5: Run the full suite to confirm no regressions**
 
@@ -1342,6 +1588,7 @@ import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -1360,6 +1607,7 @@ public class ShiftSchedulingController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<List<ShiftSummaryResponse>> listShifts(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
@@ -1368,6 +1616,7 @@ public class ShiftSchedulingController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftSummaryResponse> createShift(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateShiftRequest request) {
@@ -1376,6 +1625,7 @@ public class ShiftSchedulingController {
     }
 
     @PatchMapping("/{id}/assign")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftSummaryResponse> assignCaregiver(
             @PathVariable UUID id,
             @Valid @RequestBody AssignCaregiverRequest request) {
@@ -1383,11 +1633,13 @@ public class ShiftSchedulingController {
     }
 
     @PatchMapping("/{id}/unassign")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftSummaryResponse> unassignCaregiver(@PathVariable UUID id) {
         return ResponseEntity.ok(shiftSchedulingService.unassignCaregiver(id));
     }
 
     @PatchMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftSummaryResponse> cancelShift(
             @PathVariable UUID id,
             @RequestBody(required = false) CancelShiftRequest request) {
@@ -1396,21 +1648,25 @@ public class ShiftSchedulingController {
     }
 
     @GetMapping("/{id}/candidates")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<List<RankedCaregiverResponse>> getCandidates(@PathVariable UUID id) {
         return ResponseEntity.ok(shiftSchedulingService.getCandidates(id));
     }
 
     @PostMapping("/{id}/broadcast")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<List<ShiftOfferSummary>> broadcastShift(@PathVariable UUID id) {
         return ResponseEntity.ok(shiftSchedulingService.broadcastShift(id));
     }
 
     @GetMapping("/{id}/offers")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<List<ShiftOfferSummary>> listOffers(@PathVariable UUID id) {
         return ResponseEntity.ok(shiftSchedulingService.listOffers(id));
     }
 
     @PostMapping("/{id}/offers/{offerId}/respond")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ShiftOfferSummary> respondToOffer(
             @PathVariable UUID id,
             @PathVariable UUID offerId,
@@ -2079,6 +2335,7 @@ import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -2095,6 +2352,7 @@ public class RecurrencePatternController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<RecurrencePatternResponse> createPattern(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateRecurrencePatternRequest request) {
@@ -2103,18 +2361,21 @@ public class RecurrencePatternController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<RecurrencePatternResponse> getPattern(@PathVariable UUID id) {
         return ResponseEntity.ok(recurrencePatternService.getPattern(id));
     }
 
     @PatchMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<RecurrencePatternResponse> updatePattern(
             @PathVariable UUID id,
-            @RequestBody UpdateRecurrencePatternRequest request) {
+            @Valid @RequestBody UpdateRecurrencePatternRequest request) {
         return ResponseEntity.ok(recurrencePatternService.updatePattern(id, request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deletePattern(@PathVariable UUID id) {
         recurrencePatternService.deactivatePattern(id);
         return ResponseEntity.noContent().build();
@@ -2307,7 +2568,23 @@ None overlap. If Spring reports an ambiguous mapping error during startup, check
 - [ ] **Step 3: Commit**
 
 ```bash
-cd backend && git add -A
+cd /Users/ronstarling/repos/hcare && git add \
+  backend/src/main/java/com/hcare/domain/RecurrencePattern.java \
+  backend/src/main/java/com/hcare/domain/ShiftRepository.java \
+  backend/src/main/java/com/hcare/domain/ShiftOfferRepository.java \
+  backend/src/main/java/com/hcare/domain/RecurrencePatternRepository.java \
+  backend/src/test/java/com/hcare/domain/ShiftDomainIT.java \
+  backend/src/test/java/com/hcare/domain/ShiftSubEntitiesIT.java \
+  backend/src/test/java/com/hcare/domain/RecurrencePatternDomainIT.java \
+  backend/src/main/java/com/hcare/api/v1/scheduling/dto/ \
+  backend/src/main/java/com/hcare/api/v1/scheduling/ShiftSchedulingService.java \
+  backend/src/main/java/com/hcare/api/v1/scheduling/ShiftSchedulingController.java \
+  backend/src/main/java/com/hcare/api/v1/scheduling/RecurrencePatternService.java \
+  backend/src/main/java/com/hcare/api/v1/scheduling/RecurrencePatternController.java \
+  backend/src/test/java/com/hcare/api/v1/scheduling/ShiftSchedulingServiceTest.java \
+  backend/src/test/java/com/hcare/api/v1/scheduling/ShiftSchedulingControllerIT.java \
+  backend/src/test/java/com/hcare/api/v1/scheduling/RecurrencePatternServiceTest.java \
+  backend/src/test/java/com/hcare/api/v1/scheduling/RecurrencePatternControllerIT.java
 git commit -m "feat: Scheduling REST API complete — shifts and recurrence patterns endpoints"
 ```
 
