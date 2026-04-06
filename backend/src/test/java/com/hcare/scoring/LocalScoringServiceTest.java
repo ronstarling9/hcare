@@ -513,15 +513,19 @@ class LocalScoringServiceTest {
         when(scoringProfileRepository.findByCaregiverId(CG)).thenReturn(Optional.empty());
         CaregiverScoringProfile newProfile = new CaregiverScoringProfile(CG, AG);
         when(scoringProfileRepository.save(any(CaregiverScoringProfile.class))).thenReturn(newProfile);
-        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CL))).thenReturn(Optional.empty());
+        // insertIfNotExists is a no-op in the unit test; findByScoringProfileIdAndClientId must
+        // return non-empty afterward (orElseThrow) so supply the affinity directly.
         CaregiverClientAffinity newAffinity = new CaregiverClientAffinity(newProfile.getId(), CL, AG);
+        doNothing().when(affinityRepository).insertIfNotExists(any(), any(), any());
+        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CL)))
+            .thenReturn(Optional.of(newAffinity));
         when(affinityRepository.save(any(CaregiverClientAffinity.class))).thenReturn(newAffinity);
 
         service.onShiftCompleted(new ShiftCompletedEvent(UUID.randomUUID(), CG, CL, AG, timeIn, timeOut));
 
         verify(scoringProfileRepository, atLeastOnce()).save(argThat(p ->
             p.getCurrentWeekHours().compareTo(new BigDecimal("4.00")) == 0
-            && p.getCompletedShiftsLast90Days() == 1));
+            && p.getTotalCompletedShifts() == 1));
     }
 
     @Test
@@ -540,6 +544,7 @@ class LocalScoringServiceTest {
         when(affinityRepository.findByScoringProfileIdAndClientId(PROFILE_ID, CL))
             .thenReturn(Optional.of(affinity));
         when(affinityRepository.save(any())).thenReturn(affinity);
+        doNothing().when(affinityRepository).insertIfNotExists(any(), any(), any());
 
         service.onShiftCompleted(new ShiftCompletedEvent(UUID.randomUUID(), CG, CL, AG,
             LocalDateTime.of(2026, 4, 20, 9, 0), LocalDateTime.of(2026, 4, 20, 13, 0)));
@@ -557,8 +562,8 @@ class LocalScoringServiceTest {
 
         service.onShiftCancelled(new ShiftCancelledEvent(UUID.randomUUID(), CG, AG));
 
-        assertThat(profile.getCancelledShiftsLast90Days()).isEqualTo(1);
-        assertThat(profile.getCancelRateLast90Days()).isEqualByComparingTo("1.0000");
+        assertThat(profile.getTotalCancelledShifts()).isEqualTo(1);
+        assertThat(profile.getCancelRate()).isEqualByComparingTo("1.0000");
     }
 
     @Test

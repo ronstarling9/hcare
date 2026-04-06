@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.domain.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -173,7 +172,7 @@ public class LocalScoringService implements ScoringService {
     // TODO(Plan 6): ShiftCancelledEvent is not yet published anywhere. This listener is
     // wired and tested but inert in production until the Scheduling API (Plan 6) adds
     // eventPublisher.publishEvent(new ShiftCancelledEvent(...)) on shift cancellation.
-    // Until then, cancelRateLast90Days remains 0 for all caregivers.
+    // Until then, cancelRate remains 0 for all caregivers.
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCancelled(ShiftCancelledEvent event) {
@@ -299,7 +298,7 @@ public class LocalScoringService implements ScoringService {
 
     private double computeReliabilityScore(CaregiverScoringProfile profile) {
         if (profile == null) return 1.0; // no history — assume reliable
-        return Math.max(0.0, 1.0 - profile.getCancelRateLast90Days().doubleValue());
+        return Math.max(0.0, 1.0 - profile.getCancelRate().doubleValue());
     }
 
     private String buildExplanation(double rawDistanceMiles, int visitCount,
@@ -314,8 +313,8 @@ public class LocalScoringService implements ScoringService {
         double current = profile != null ? profile.getCurrentWeekHours().doubleValue() : 0.0;
         double shift   = Duration.between(request.scheduledStart(), request.scheduledEnd()).toMinutes() / 60.0;
         parts.add((current + shift) < OVERTIME_THRESHOLD_HOURS ? "no overtime risk" : "overtime risk");
-        if (profile != null && profile.getCancelRateLast90Days().doubleValue() > 0.0) {
-            parts.add(String.format("%.0f%% cancel rate", profile.getCancelRateLast90Days().doubleValue() * 100));
+        if (profile != null && profile.getCancelRate().doubleValue() > 0.0) {
+            parts.add(String.format("%.0f%% cancel rate", profile.getCancelRate().doubleValue() * 100));
         }
         if (prefs.languageMismatch()) parts.add("language mismatch");
         if (prefs.petConflict()) parts.add("pet conflict");
@@ -325,20 +324,24 @@ public class LocalScoringService implements ScoringService {
     // ── event listener helper ─────────────────────────────────────────────────
 
     private void updateAffinity(UUID scoringProfileId, UUID clientId, UUID agencyId) {
+        // Upsert guarantees the row exists before we read-modify-write.
+        // ON CONFLICT DO NOTHING avoids the DataIntegrityViolationException race that would
+        // otherwise abort the enclosing REQUIRES_NEW transaction.
+        affinityRepository.insertIfNotExists(scoringProfileId, clientId, agencyId);
+
+        // Retry covers the OptimisticLockingFailureException race for concurrent updates
+        // (two threads both read the same version, both try to increment, one wins).
         for (int attempt = 0; attempt < 3; attempt++) {
             try {
                 CaregiverClientAffinity affinity = affinityRepository
                     .findByScoringProfileIdAndClientId(scoringProfileId, clientId)
-                    .orElseGet(() -> affinityRepository.save(
-                        new CaregiverClientAffinity(scoringProfileId, clientId, agencyId)));
+                    .orElseThrow(() -> new IllegalStateException(
+                        "Affinity row missing after insertIfNotExists for scoringProfile="
+                        + scoringProfileId + " client=" + clientId));
                 affinity.incrementVisitCount();
                 affinityRepository.save(affinity);
                 return;
-            } catch (OptimisticLockingFailureException | DataIntegrityViolationException e) {
-                // OptimisticLockingFailureException: concurrent incrementVisitCount + save race.
-                // DataIntegrityViolationException: two concurrent listeners both tried to insert
-                // the same (scoring_profile_id, client_id) row; unique constraint fired on the
-                // loser. Re-querying on the next attempt will find the now-existing row.
+            } catch (OptimisticLockingFailureException e) {
                 if (attempt == 2) {
                     log.error("Exhausted retries updating CaregiverClientAffinity for " +
                         "scoringProfile={} client={}", scoringProfileId, clientId, e);

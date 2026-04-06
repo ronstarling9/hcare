@@ -71,7 +71,7 @@ class CaregiverSubEntitiesIT extends AbstractIntegrationTest {
             new CaregiverScoringProfile(caregiver.getId(), agency.getId()));
 
         CaregiverScoringProfile loaded = scoringProfileRepo.findById(profile.getId()).orElseThrow();
-        assertThat(loaded.getCancelRateLast90Days()).isEqualByComparingTo("0");
+        assertThat(loaded.getCancelRate()).isEqualByComparingTo("0");
         assertThat(loaded.getCurrentWeekHours()).isEqualByComparingTo("0");
         assertThat(loaded.getCaregiverId()).isEqualTo(caregiver.getId());
     }

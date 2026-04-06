@@ -134,7 +134,7 @@ class LocalScoringServiceIT extends AbstractIntegrationTest {
             scoringProfileRepository.findByCaregiverId(caregiver.getId()).orElse(null));
         assertThat(profile).isNotNull();
         assertThat(profile.getCurrentWeekHours()).isEqualByComparingTo("4.00");
-        assertThat(profile.getCompletedShiftsLast90Days()).isEqualTo(1);
+        assertThat(profile.getTotalCompletedShifts()).isEqualTo(1);
 
         List<CaregiverClientAffinity> affinities = transactionTemplate.execute(status ->
             affinityRepository.findByScoringProfileId(profile.getId()));
@@ -158,7 +158,7 @@ class LocalScoringServiceIT extends AbstractIntegrationTest {
 
         CaregiverScoringProfile profile = transactionTemplate.execute(status ->
             scoringProfileRepository.findByCaregiverId(caregiver.getId()).orElseThrow());
-        assertThat(profile.getCompletedShiftsLast90Days()).isEqualTo(3);
+        assertThat(profile.getTotalCompletedShifts()).isEqualTo(3);
         assertThat(profile.getCurrentWeekHours()).isEqualByComparingTo("12.00");
 
         List<CaregiverClientAffinity> affinities = transactionTemplate.execute(status ->
