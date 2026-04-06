@@ -203,6 +203,30 @@ class LocalScoringServiceTest {
     }
 
     @Test
+    void overnight_shift_passes_availability_filter_regardless_of_windows() {
+        LocalDateTime overnightStart = LocalDateTime.of(2026, 4, 20, 22, 0);
+        LocalDateTime overnightEnd   = LocalDateTime.of(2026, 4, 21, 6, 0);
+
+        Client client     = buildClient();
+        ServiceType st    = buildServiceTypeNoCredentials();
+        Caregiver caregiver = buildActiveCaregiver();
+
+        when(clientRepository.findById(CLIENT_ID)).thenReturn(Optional.of(client));
+        when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(st));
+        when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.empty());
+        when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(caregiver));
+        when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
+        when(shiftRepository.findOverlapping(any(), any(), any())).thenReturn(Collections.emptyList());
+        when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
+        when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
+
+        ShiftMatchRequest overnightRequest = new ShiftMatchRequest(
+            AGENCY_ID, CLIENT_ID, SERVICE_TYPE_ID, null, overnightStart, overnightEnd);
+
+        assertThat(service.rankCandidates(overnightRequest)).hasSize(1);
+    }
+
+    @Test
     void expired_required_credential_is_excluded() {
         Client client = buildClient();
         Caregiver caregiver = buildActiveCaregiver();
@@ -277,6 +301,64 @@ class LocalScoringServiceTest {
         ShiftMatchRequest req = new ShiftMatchRequest(
             AGENCY_ID, CLIENT_ID, SERVICE_TYPE_ID, AUTH_ID, SHIFT_START, SHIFT_END);
         assertThat(service.rankCandidates(req)).isEmpty();
+    }
+
+    @Test
+    void authorization_with_insufficient_remaining_units_excludes_candidate() {
+        Client client = buildClient();
+        ServiceType st = buildServiceTypeNoCredentials();
+        Caregiver caregiver = buildActiveCaregiver();
+        UUID AUTH_ID = UUID.randomUUID();
+        when(clientRepository.findById(CLIENT_ID)).thenReturn(Optional.of(client));
+        when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(st));
+        when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.empty());
+        when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(caregiver));
+        when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
+            new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
+                LocalTime.of(8, 0), LocalTime.of(17, 0))));
+        when(shiftRepository.findOverlapping(
+            eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
+        when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
+
+        // 2h remaining, shift is 4h — not enough
+        Authorization auth = mock(Authorization.class);
+        when(auth.getUsedUnits()).thenReturn(new BigDecimal("38.00"));
+        when(auth.getAuthorizedUnits()).thenReturn(new BigDecimal("40.00"));
+        when(authorizationRepository.findById(AUTH_ID)).thenReturn(Optional.of(auth));
+
+        ShiftMatchRequest req = new ShiftMatchRequest(
+            AGENCY_ID, CLIENT_ID, SERVICE_TYPE_ID, AUTH_ID, SHIFT_START, SHIFT_END);
+        assertThat(service.rankCandidates(req)).isEmpty();
+    }
+
+    @Test
+    void authorization_with_sufficient_remaining_units_includes_candidate() {
+        Client client = buildClient();
+        ServiceType st = buildServiceTypeNoCredentials();
+        Caregiver caregiver = buildActiveCaregiver();
+        UUID AUTH_ID = UUID.randomUUID();
+        when(clientRepository.findById(CLIENT_ID)).thenReturn(Optional.of(client));
+        when(serviceTypeRepository.findById(SERVICE_TYPE_ID)).thenReturn(Optional.of(st));
+        when(featureFlagsRepository.findByAgencyId(AGENCY_ID)).thenReturn(Optional.empty());
+        when(caregiverRepository.findByAgencyId(AGENCY_ID)).thenReturn(List.of(caregiver));
+        when(availabilityRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(List.of(
+            new CaregiverAvailability(CAREGIVER_ID, AGENCY_ID, DayOfWeek.MONDAY,
+                LocalTime.of(8, 0), LocalTime.of(17, 0))));
+        when(shiftRepository.findOverlapping(
+            eq(CAREGIVER_ID), any(), any())).thenReturn(Collections.emptyList());
+        when(credentialRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Collections.emptyList());
+        when(scoringProfileRepository.findByCaregiverId(CAREGIVER_ID)).thenReturn(Optional.empty());
+
+        // exactly 4h remaining, shift is 4h — fits exactly
+        Authorization auth = mock(Authorization.class);
+        when(auth.getUsedUnits()).thenReturn(new BigDecimal("36.00"));
+        when(auth.getAuthorizedUnits()).thenReturn(new BigDecimal("40.00"));
+        when(authorizationRepository.findById(AUTH_ID)).thenReturn(Optional.of(auth));
+
+        ShiftMatchRequest req = new ShiftMatchRequest(
+            AGENCY_ID, CLIENT_ID, SERVICE_TYPE_ID, AUTH_ID, SHIFT_START, SHIFT_END);
+        assertThat(service.rankCandidates(req)).hasSize(1);
+        assertThat(service.rankCandidates(req).get(0).caregiverId()).isEqualTo(CAREGIVER_ID);
     }
 
     @Test
@@ -587,17 +669,13 @@ class LocalScoringServiceTest {
         CaregiverScoringProfile profile = new CaregiverScoringProfile(CG, AG);
         when(scoringProfileRepository.findByCaregiverId(CG)).thenReturn(Optional.of(profile));
         when(scoringProfileRepository.save(any())).thenReturn(profile);
-        doNothing().when(affinityRepository).insertIfNotExists(any(), any(), any());
-        CaregiverClientAffinity affinity = new CaregiverClientAffinity(null, CL, AG);
-        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CL)))
-            .thenReturn(Optional.of(affinity));
-        when(affinityRepository.save(any())).thenReturn(affinity);
 
         service.onShiftCompleted(new ShiftCompletedEvent(UUID.randomUUID(), CG, CL, AG, same, same));
 
-        // Zero duration passes the positive-duration guard (start == end is NOT after start,
-        // so it should be caught). Verify no profile update occurred.
+        // start == end is caught by the non-positive-duration guard — no profile or affinity updates.
         verify(scoringProfileRepository, never()).save(argThat(p -> p.getTotalCompletedShifts() > 0));
+        verify(affinityRepository, never()).insertIfNotExists(any(), any(), any());
+        verify(affinityRepository, never()).incrementVisitCount(any(), any());
     }
 
     @Test
@@ -628,13 +706,8 @@ class LocalScoringServiceTest {
         when(scoringProfileRepository.findByCaregiverId(CG)).thenReturn(Optional.empty());
         CaregiverScoringProfile newProfile = new CaregiverScoringProfile(CG, AG);
         when(scoringProfileRepository.save(any(CaregiverScoringProfile.class))).thenReturn(newProfile);
-        // insertIfNotExists is a no-op in the unit test; findByScoringProfileIdAndClientId must
-        // return non-empty afterward (orElseThrow) so supply the affinity directly.
-        CaregiverClientAffinity newAffinity = new CaregiverClientAffinity(newProfile.getId(), CL, AG);
         doNothing().when(affinityRepository).insertIfNotExists(any(), any(), any());
-        when(affinityRepository.findByScoringProfileIdAndClientId(any(), eq(CL)))
-            .thenReturn(Optional.of(newAffinity));
-        when(affinityRepository.save(any(CaregiverClientAffinity.class))).thenReturn(newAffinity);
+        doNothing().when(affinityRepository).incrementVisitCount(any(), any());
 
         service.onShiftCompleted(new ShiftCompletedEvent(UUID.randomUUID(), CG, CL, AG, timeIn, timeOut));
 
@@ -655,16 +728,14 @@ class LocalScoringServiceTest {
         when(scoringProfileRepository.findByCaregiverId(CG)).thenReturn(Optional.of(existingProfile));
         when(scoringProfileRepository.save(any())).thenReturn(existingProfile);
 
-        CaregiverClientAffinity affinity = new CaregiverClientAffinity(PROFILE_ID, CL, AG);
-        when(affinityRepository.findByScoringProfileIdAndClientId(PROFILE_ID, CL))
-            .thenReturn(Optional.of(affinity));
-        when(affinityRepository.save(any())).thenReturn(affinity);
         doNothing().when(affinityRepository).insertIfNotExists(any(), any(), any());
+        doNothing().when(affinityRepository).incrementVisitCount(any(), any());
 
         service.onShiftCompleted(new ShiftCompletedEvent(UUID.randomUUID(), CG, CL, AG,
             LocalDateTime.of(2026, 4, 20, 9, 0), LocalDateTime.of(2026, 4, 20, 13, 0)));
 
-        assertThat(affinity.getVisitCount()).isEqualTo(1);
+        verify(affinityRepository).insertIfNotExists(eq(PROFILE_ID), eq(CL), any());
+        verify(affinityRepository).incrementVisitCount(PROFILE_ID, CL);
     }
 
     @Test

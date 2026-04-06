@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.domain.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -109,15 +108,20 @@ public class LocalScoringService implements ScoringService {
         List<CredentialType> requiredCredentials = parseCredentialTypes(serviceType.getRequiredCredentials());
         LocalDate today = LocalDate.now();
 
-        // Short-circuit: if the authorization is exhausted, no caregiver can be assigned.
+        BigDecimal shiftHours = BigDecimal.valueOf(
+            Duration.between(request.scheduledStart(), request.scheduledEnd()).toMinutes())
+            .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+
+        // Short-circuit: if the shift hours exceed remaining authorized units, no caregiver can be assigned.
         if (authorization != null
-                && authorization.getUsedUnits().compareTo(authorization.getAuthorizedUnits()) >= 0) {
+                && authorization.getUsedUnits().add(shiftHours)
+                    .compareTo(authorization.getAuthorizedUnits()) > 0) {
             return Collections.emptyList();
         }
 
         List<RankedCaregiver> results = new ArrayList<>();
         for (Caregiver caregiver : activeCaregivers) {
-            if (!passesHardFilters(caregiver, request, authorization, requiredCredentials, today)) {
+            if (!passesHardFilters(caregiver, request, authorization, requiredCredentials, today, shiftHours)) {
                 continue;
             }
             if (!aiEnabled) {
@@ -217,14 +221,16 @@ public class LocalScoringService implements ScoringService {
     private boolean passesHardFilters(Caregiver caregiver, ShiftMatchRequest request,
                                        Authorization authorization,
                                        List<CredentialType> requiredCredentials,
-                                       LocalDate today) {
+                                       LocalDate today,
+                                       BigDecimal shiftHours) {
         // TODO(P2): Add caregiver.isOigExcluded() check once OIG API integration lands
         //           and the oig_excluded column is added to the caregivers table.
         return hasAvailability(caregiver.getId(), request.scheduledStart(), request.scheduledEnd())
             && !hasConflictingShift(caregiver.getId(), request.scheduledStart(), request.scheduledEnd())
             && hasRequiredCredentials(caregiver.getId(), requiredCredentials, today)
             && (authorization == null
-                || authorization.getUsedUnits().compareTo(authorization.getAuthorizedUnits()) < 0);
+                || authorization.getUsedUnits().add(shiftHours)
+                    .compareTo(authorization.getAuthorizedUnits()) <= 0);
     }
 
     private boolean hasAvailability(UUID caregiverId, LocalDateTime start, LocalDateTime end) {
@@ -341,35 +347,11 @@ public class LocalScoringService implements ScoringService {
     // ── event listener helper ─────────────────────────────────────────────────
 
     private void updateAffinity(UUID scoringProfileId, UUID clientId, UUID agencyId) {
-        // Upsert guarantees the row exists before we read-modify-write.
-        // ON CONFLICT DO NOTHING avoids the DataIntegrityViolationException race that would
-        // otherwise abort the enclosing REQUIRES_NEW transaction.
+        // Ensure the row exists first (ON CONFLICT DO NOTHING is safe to call concurrently
+        // without tainting the enclosing transaction).
         affinityRepository.insertIfNotExists(scoringProfileId, clientId, agencyId);
-
-        // Retry covers the OptimisticLockingFailureException race for concurrent updates
-        // (two threads both read the same version, both try to increment, one wins).
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                CaregiverClientAffinity affinity = affinityRepository
-                    .findByScoringProfileIdAndClientId(scoringProfileId, clientId)
-                    .orElseThrow(() -> new IllegalStateException(
-                        "Affinity row missing after insertIfNotExists for scoringProfile="
-                        + scoringProfileId + " client=" + clientId));
-                affinity.incrementVisitCount();
-                affinityRepository.save(affinity);
-                return;
-            } catch (OptimisticLockingFailureException e) {
-                if (attempt == 2) {
-                    log.error("Exhausted retries updating CaregiverClientAffinity for " +
-                        "scoringProfile={} client={}", scoringProfileId, clientId, e);
-                } else {
-                    try { Thread.sleep(10); } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
-                }
-            }
-        }
+        // Atomic SQL increment — no read-modify-write race, no retry needed.
+        affinityRepository.incrementVisitCount(scoringProfileId, clientId);
     }
 
     // ── parsing helpers ───────────────────────────────────────────────────────

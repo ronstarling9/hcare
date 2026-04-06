@@ -31,4 +31,20 @@ public interface CaregiverClientAffinityRepository extends JpaRepository<Caregiv
     void insertIfNotExists(@Param("scoringProfileId") UUID scoringProfileId,
                            @Param("clientId") UUID clientId,
                            @Param("agencyId") UUID agencyId);
+
+    /**
+     * Atomically increments visit_count and version for the given (scoring_profile_id, client_id)
+     * pair. Replaces the read-modify-write + retry pattern — an UPDATE is race-free by itself,
+     * so no optimistic locking retry is required. Caller must ensure the row exists first
+     * (e.g., via insertIfNotExists).
+     */
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query("""
+        UPDATE CaregiverClientAffinity a
+        SET a.visitCount = a.visitCount + 1, a.version = a.version + 1
+        WHERE a.scoringProfileId = :scoringProfileId AND a.clientId = :clientId
+        """)
+    void incrementVisitCount(@Param("scoringProfileId") UUID scoringProfileId,
+                             @Param("clientId") UUID clientId);
 }

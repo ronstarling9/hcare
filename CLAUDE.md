@@ -52,7 +52,11 @@ Compliance status (`GREEN/YELLOW/RED/EXEMPT/PORTAL_SUBMIT/GREY`) is computed on 
 
 ### AI Scoring Module
 
-All scoring logic lives in `com.hcare.scoring`. The public interface is `ScoringService` — nothing outside this package queries scoring tables. `CaregiverScoringProfile` is pre-computed asynchronously via Spring events (on shift completion/cancellation), never on the request path.
+All scoring logic lives in `com.hcare.scoring`. The public interface is `ScoringService` — nothing outside this package queries scoring tables directly. `CaregiverScoringProfile` and `CaregiverClientAffinity` (per-caregiver/client visit history) are updated asynchronously via `@TransactionalEventListener` on `ShiftCompletedEvent` / `ShiftCancelledEvent`, never on the request path.
+
+`featureFlags.aiSchedulingEnabled` gates scoring: when `false` (Starter tier), `rankCandidates` returns eligible caregivers unsorted with `score=0`. A weekly `@Scheduled` job resets `currentWeekHours` every Monday 00:00 UTC.
+
+Known P2 gaps: `cancelRate` is a lifetime running total, not a true 90-day rolling window. `ShiftCancelledEvent` is wired and tested but not yet published — cancellation counts remain 0 until the Scheduling API (Plan 6) publishes the event.
 
 ---
 
@@ -134,7 +138,7 @@ mvn test -Dtest=ClassName       # run a single test class
 - Write tests before or alongside new code — not after.
 - Integration tests spin up a real Postgres container via Testcontainers; do not mock the database.
 - Integration tests extend `AbstractIntegrationTest` and use the `*IT.java` suffix; unit tests use `*Test.java`.
-- Test profile (`application-test.yml`) disables the nightly shift-generation scheduler (`cron: "-"`); tests invoke the scheduler service directly.
+- Test profile (`application-test.yml`) disables scheduled jobs (`cron: "-"`) — covers both the nightly shift-generation scheduler and `hcare.scoring.weekly-reset-cron`; tests invoke scheduler/service methods directly.
 - Never commit with failing tests.
 
 ---
@@ -164,6 +168,7 @@ mvn test -Dtest=ClassName       # run a single test class
 # Backend
 SPRING_PROFILES_ACTIVE=dev|staging|prod
 JWT_SECRET=<256-bit minimum HMAC-SHA256 secret, required in prod>
+HCARE_SCORING_WEEKLY_RESET_CRON=<cron expression, default "0 0 0 * * MON" (Monday 00:00 UTC); set to "-" in tests>
 
 # Frontend
 VITE_API_BASE_URL=http://localhost:8080/api/v1
@@ -182,6 +187,7 @@ Dev profile uses H2 in-memory DB. Test profile uses Testcontainers PostgreSQL 16
 - Do not bypass the DTO layer or return raw entity objects from APIs.
 - Do not introduce new dependencies without a brief note in the PR explaining why.
 - Do not compute EVV compliance status in the BFF or store it — Core API is the single authority.
+- Do not add scoring logic or query scoring tables (`caregiver_scoring_profiles`, `caregiver_client_affinities`) outside `com.hcare.scoring` — go through `ScoringService`.
 - Do not enforce multi-tenancy at the service layer — the Hibernate `agencyFilter` handles it.
 - Do not include PHI in push notification payloads — payloads carry only `shiftId`/event type codes.
 - Do not load real PHI into local H2 development environments — use synthetic/test data only.
