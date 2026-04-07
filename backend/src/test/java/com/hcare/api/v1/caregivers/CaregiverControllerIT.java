@@ -75,6 +75,14 @@ class CaregiverControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void listCaregivers_returns_401_without_token() {
+        HttpHeaders h = new HttpHeaders();
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/caregivers", HttpMethod.GET, new HttpEntity<>(h), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
     void createCaregiver_returns_201() {
         CreateCaregiverRequest req = new CreateCaregiverRequest(
             "Jane", "Smith", "jane@test.com", null, null, null, null);
@@ -122,12 +130,14 @@ class CaregiverControllerIT extends AbstractIntegrationTest {
             new HttpEntity<>(req, auth()), AvailabilityResponse.class);
         assertThat(setResp.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        ResponseEntity<AvailabilityResponse> getResp = restTemplate.exchange(
+        ResponseEntity<Map<String, Object>> getResp = restTemplate.exchange(
             "/api/v1/caregivers/" + caregiver.getId() + "/availability", HttpMethod.GET,
-            new HttpEntity<>(auth()), AvailabilityResponse.class);
+            new HttpEntity<>(auth()), new ParameterizedTypeReference<>() {});
         assertThat(getResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(getResp.getBody().blocks()).hasSize(1);
-        assertThat(getResp.getBody().blocks().get(0).dayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
+        List<?> blocks = (List<?>) getResp.getBody().get("blocks");
+        assertThat(blocks).hasSize(1);
+        Map<?, ?> block = (Map<?, ?>) blocks.get(0);
+        assertThat(block.get("dayOfWeek")).isEqualTo("MONDAY");
     }
 
     @Test
