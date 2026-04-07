@@ -13,3 +13,13 @@ export function formatLocalDate(
 ): string {
   return new Date(`${dateStr}T12:00:00`).toLocaleDateString(locale, options)
 }
+
+/**
+ * Formats the time portion of a naive datetime string (e.g. "2026-04-07T08:00:00") for display.
+ * @param iso    - ISO datetime string (local, no Z suffix)
+ * @param locale - BCP 47 locale tag (pass i18n.language from useTranslation)
+ */
+export function formatLocalTime(iso: string | null, locale: string): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
+}

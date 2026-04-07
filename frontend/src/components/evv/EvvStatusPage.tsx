@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus } from '../../types/api'
 import { mockEvvHistory } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
+import { formatLocalTime } from '../../utils/dateFormat'
 
 const STATUS_COLOR: Record<EvvComplianceStatus, string> = {
   RED: '#dc2626',
@@ -60,10 +61,7 @@ export function EvvStatusPage() {
                 </td>
                 <td className="px-6 py-3 text-text-secondary">{row.serviceTypeName}</td>
                 <td className="px-6 py-3 text-text-secondary">
-                  {new Date(row.scheduledStart).toLocaleDateString(i18n.language, {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {formatLocalTime(row.scheduledStart, i18n.language)}
                 </td>
                 <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeIn, i18n.language)}</td>
                 <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeOut, i18n.language)}</td>
