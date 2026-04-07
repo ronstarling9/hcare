@@ -33,4 +33,7 @@ public class Agency {
     public String getName() { return name; }
     public String getState() { return state; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void setName(String name) { this.name = name; }
+    public void setState(String state) { this.state = state; }
 }
