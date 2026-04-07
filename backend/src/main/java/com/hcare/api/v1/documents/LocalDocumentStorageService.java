@@ -68,7 +68,11 @@ public class LocalDocumentStorageService implements DocumentStorageService {
     @Override
     public void delete(String storageKey) {
         try {
-            Files.deleteIfExists(baseDir.resolve(storageKey));
+            Path resolved = baseDir.resolve(storageKey).normalize();
+            if (!resolved.startsWith(baseDir.normalize())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid storage key");
+            }
+            Files.deleteIfExists(resolved);
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete document", e);
         }
@@ -103,7 +107,11 @@ public class LocalDocumentStorageService implements DocumentStorageService {
 
     public InputStream loadStream(String storageKey) {
         try {
-            return Files.newInputStream(baseDir.resolve(storageKey));
+            Path resolved = baseDir.resolve(storageKey).normalize();
+            if (!resolved.startsWith(baseDir.normalize())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid storage key");
+            }
+            return Files.newInputStream(resolved);
         } catch (IOException e) {
             throw new RuntimeException("Failed to read document", e);
         }

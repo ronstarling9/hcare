@@ -72,12 +72,16 @@ public class DocumentService {
     public void delete(UUID documentId, UUID expectedOwnerId) {
         Document doc = requireDocument(documentId, expectedOwnerId);
         documentRepository.delete(doc);
+        // Note: filesystem delete runs before commit. If storageService.delete throws,
+        // the transaction rolls back (DB row survives). Acceptable for MVP local storage.
         storageService.delete(doc.getFilePath());
     }
 
     private DocumentResponse upload(DocumentOwnerType ownerType, UUID ownerId,
                                      MultipartFile file, String documentType, UUID uploadedBy) {
         UUID agencyId = TenantContext.get();
+        // Note: filesystem write runs before DB commit. If documentRepository.save() fails,
+        // the file is already stored — orphaned file with no DB entry. Acceptable for MVP local storage.
         String storageKey = storageService.store(file, agencyId, ownerType, ownerId);
         Document doc = new Document(agencyId, ownerType, ownerId,
             file.getOriginalFilename(), storageKey);
@@ -87,11 +91,13 @@ public class DocumentService {
     }
 
     private void requireClient(UUID clientId) {
+        // Hibernate agencyFilter (TenantFilterAspect) scopes findById to the current tenant.
         clientRepository.findById(clientId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
     }
 
     private void requireCaregiver(UUID caregiverId) {
+        // Hibernate agencyFilter (TenantFilterAspect) scopes findById to the current tenant.
         caregiverRepository.findById(caregiverId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Caregiver not found"));
     }
