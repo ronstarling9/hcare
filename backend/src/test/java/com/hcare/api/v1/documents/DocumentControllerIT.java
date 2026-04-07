@@ -18,6 +18,7 @@ import org.springframework.util.MultiValueMap;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -51,12 +52,30 @@ class DocumentControllerIT extends AbstractIntegrationTest {
     }
 
     @AfterEach
-    void cleanup() throws IOException {
+    void cleanup() {
         Path dir = Path.of("/tmp/hcare-test-docs");
-        if (Files.exists(dir)) {
-            Files.walk(dir).sorted(java.util.Comparator.reverseOrder())
-                .forEach(p -> { try { Files.delete(p); } catch (IOException ignored) {} });
-        }
+        if (!Files.exists(dir)) return;
+        // Use walkFileTree so that an IOException on any single path (e.g. a
+        // permission error on a subpath) is handled gracefully and the walk
+        // continues rather than propagating and masking real test failures.
+        try {
+            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    try { Files.delete(file); } catch (IOException ignored) {}
+                    return FileVisitResult.CONTINUE;
+                }
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    return FileVisitResult.CONTINUE;
+                }
+                @Override
+                public FileVisitResult postVisitDirectory(Path d, IOException exc) {
+                    try { Files.delete(d); } catch (IOException ignored) {}
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException ignored) {}
     }
 
     private HttpHeaders auth() {
@@ -108,7 +127,10 @@ class DocumentControllerIT extends AbstractIntegrationTest {
             multipartUpload("hello.txt", "hello world".getBytes(), null),
             DocumentResponse.class);
 
-        // GET /content — backend streams file bytes directly with 200 OK
+        // DocumentController.downloadDocument streams the file bytes directly with 200 OK —
+        // no redirect occurs, so the Authorization header is present on the single
+        // request throughout. TestRestTemplate does not need to follow any redirect,
+        // and the JWT is never dropped mid-flight.
         ResponseEntity<byte[]> download = restTemplate.exchange(
             "/api/v1/clients/" + client.getId() + "/documents/" + upload.getBody().id() + "/content",
             HttpMethod.GET, new HttpEntity<>(auth()), byte[].class);
