@@ -22,6 +22,13 @@ function PanelContent() {
   if (type === 'caregiver' && selectedId) {
     return <CaregiverDetailPanel caregiverId={selectedId} backLabel={backLabel} />
   }
+  if (type === 'payer') {
+    return (
+      <div className="p-6 text-text-secondary">
+        Payer detail — coming in Phase 8
+      </div>
+    )
+  }
   return null
 }
 
