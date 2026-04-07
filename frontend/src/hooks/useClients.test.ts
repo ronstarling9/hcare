@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MockAdapter from 'axios-mock-adapter'
 import { apiClient } from '../api/client'
-import { useClients, useClientDetail } from './useClients'
+import { useAllClients, useClientDetail } from './useClients'
 import type { PageResponse, ClientResponse } from '../types/api'
 import React from 'react'
 
@@ -24,7 +24,7 @@ const clientA: ClientResponse = {
   status: 'ACTIVE', createdAt: '2025-01-10T08:00:00',
 }
 
-describe('useClients', () => {
+describe('useAllClients', () => {
   let mock: MockAdapter
   beforeEach(() => { mock = new MockAdapter(apiClient) })
   afterEach(() => { mock.restore() })
@@ -34,7 +34,7 @@ describe('useClients', () => {
       content: [clientA], totalElements: 1, totalPages: 1, number: 0, size: 100, first: true, last: true,
     }
     mock.onGet('/clients').reply(200, page)
-    const { result } = renderHook(() => useClients(), { wrapper: makeWrapper() })
+    const { result } = renderHook(() => useAllClients(), { wrapper: makeWrapper() })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.clients).toHaveLength(1)
     expect(result.current.clientMap.get('c1')?.firstName).toBe('Alice')
@@ -42,7 +42,7 @@ describe('useClients', () => {
 
   it('returns empty clients and empty map before data loads', () => {
     mock.onGet('/clients').reply(200, { content: [], totalElements: 0, totalPages: 0, number: 0, size: 100, first: true, last: true })
-    const { result } = renderHook(() => useClients(), { wrapper: makeWrapper() })
+    const { result } = renderHook(() => useAllClients(), { wrapper: makeWrapper() })
     expect(result.current.clients).toEqual([])
     expect(result.current.clientMap.size).toBe(0)
   })

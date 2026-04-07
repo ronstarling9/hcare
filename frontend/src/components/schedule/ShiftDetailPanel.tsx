@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus } from '../../types/api'
 import { useShiftDetail, useAssignCaregiver, useBroadcastShift, useClockIn, useGetCandidates } from '../../hooks/useShifts'
-import { useClients } from '../../hooks/useClients'
+import { useAllClients } from '../../hooks/useClients'
 import { useCaregivers } from '../../hooks/useCaregivers'
 import { usePanelStore } from '../../store/panelStore'
 import { formatLocalTime } from '../../utils/dateFormat'
@@ -35,7 +35,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
   const { closePanel } = usePanelStore()
 
   const { data: shift, isLoading, error } = useShiftDetail(shiftId)
-  const { clientMap } = useClients()
+  const { clientMap } = useAllClients()
   const { caregiverMap } = useCaregivers()
   const assignMutation = useAssignCaregiver()
   const broadcastMutation = useBroadcastShift()

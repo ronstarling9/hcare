@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
-import { useClients } from '../../hooks/useClients'
+import { useAllClients } from '../../hooks/useClients'
 import { useCaregivers } from '../../hooks/useCaregivers'
 import { useCreateShift } from '../../hooks/useShifts'
 import { usePanelStore } from '../../store/panelStore'
@@ -23,7 +23,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
   const { t } = useTranslation('newShift')
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
-  const { clients } = useClients()
+  const { clients } = useAllClients()
   const { caregivers } = useCaregivers()
   const createMutation = useCreateShift()
 

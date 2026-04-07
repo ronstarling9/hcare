@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { mockClients, mockAuthorizations } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
 import { formatLocalDate } from '../../utils/dateFormat'
+import { useClientDetail, useClientAuthorizations } from '../../hooks/useClients'
 
 type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPortal'
 
@@ -16,7 +16,10 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const client = mockClients.find((c) => c.id === clientId)
+
+  const { data: client, isLoading, isError } = useClientDetail(clientId)
+  const { data: authsPage } = useClientAuthorizations(clientId)
+  const authorizations = authsPage?.content ?? []
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview', label: t('tabOverview') },
@@ -25,6 +28,37 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
     { id: 'documents', label: t('tabDocuments') },
     { id: 'familyPortal', label: t('tabFamilyPortal') },
   ]
+
+  if (isLoading && !client) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-6 py-4 border-b border-border">
+          <button
+            type="button"
+            className="text-[13px] mb-2 hover:underline"
+            style={{ color: '#1a9afa' }}
+            onClick={closePanel}
+          >
+            {backLabel}
+          </button>
+        </div>
+        <div className="flex items-center justify-center flex-1">
+          <span className="text-[13px] text-text-muted">{tCommon('loading')}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (isError && !client) {
+    return (
+      <div className="p-8">
+        <button type="button" className="text-blue text-[13px] mb-4" onClick={closePanel}>
+          {backLabel}
+        </button>
+        <p className="text-text-secondary">{t('notFound')}</p>
+      </div>
+    )
+  }
 
   if (!client) {
     return (
@@ -36,8 +70,6 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
       </div>
     )
   }
-
-  const authorizations = mockAuthorizations.filter((a) => a.clientId === clientId)
 
   return (
     <div className="flex flex-col h-full">

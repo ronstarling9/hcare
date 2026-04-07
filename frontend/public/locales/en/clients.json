@@ -25,5 +25,10 @@
   "documentsPhaseNote": "Documents — Phase 6 wires to real API.",
   "familyPortalPhaseNote": "Family portal — Phase 6 wires to real API.",
   "authHeader": "Auth #{{authNumber}}",
-  "authUnitsUsed": "{{used}}/{{authorized}} {{unitType}}s used"
+  "authUnitsUsed": "{{used}}/{{authorized}} {{unitType}}s used",
+  "loading": "Loading clients…",
+  "error": "Failed to load clients. Check your connection.",
+  "prev": "Prev",
+  "next": "Next",
+  "pageOf": "Page {{page}} of {{total}}"
 }
