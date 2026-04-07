@@ -108,7 +108,7 @@ class DocumentControllerIT extends AbstractIntegrationTest {
             multipartUpload("hello.txt", "hello world".getBytes(), null),
             DocumentResponse.class);
 
-        // GET /content — backend returns 302; TestRestTemplate follows the redirect
+        // GET /content — backend streams file bytes directly with 200 OK
         ResponseEntity<byte[]> download = restTemplate.exchange(
             "/api/v1/clients/" + client.getId() + "/documents/" + upload.getBody().id() + "/content",
             HttpMethod.GET, new HttpEntity<>(auth()), byte[].class);

@@ -54,7 +54,6 @@ public class LocalDocumentStorageService implements DocumentStorageService {
         }
     }
 
-    @Override
     public String generateDownloadUrl(String storageKey) {
         long expiry = System.currentTimeMillis() + TOKEN_TTL_MS;
         String encodedKey = Base64.getUrlEncoder().withoutPadding()
@@ -105,6 +104,7 @@ public class LocalDocumentStorageService implements DocumentStorageService {
         return new String(Base64.getUrlDecoder().decode(payloadParts[0]), StandardCharsets.UTF_8);
     }
 
+    @Override
     public InputStream loadStream(String storageKey) {
         try {
             Path resolved = baseDir.resolve(storageKey).normalize();

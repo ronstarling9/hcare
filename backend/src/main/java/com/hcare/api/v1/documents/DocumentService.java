@@ -4,11 +4,13 @@ import com.hcare.api.v1.documents.dto.DocumentResponse;
 import com.hcare.domain.*;
 import com.hcare.multitenancy.TenantContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -62,10 +64,13 @@ public class DocumentService {
         return upload(DocumentOwnerType.CAREGIVER, caregiverId, file, documentType, uploadedBy);
     }
 
+    public record DownloadStream(InputStream inputStream, String fileName, MediaType contentType) {}
+
     @Transactional(readOnly = true)
-    public String generateDownloadUrl(UUID documentId, UUID expectedOwnerId) {
+    public DownloadStream getDownloadStream(UUID documentId, UUID expectedOwnerId) {
         Document doc = requireDocument(documentId, expectedOwnerId);
-        return storageService.generateDownloadUrl(doc.getFilePath());
+        InputStream stream = storageService.loadStream(doc.getFilePath());
+        return new DownloadStream(stream, doc.getFileName(), MediaType.APPLICATION_OCTET_STREAM);
     }
 
     @Transactional

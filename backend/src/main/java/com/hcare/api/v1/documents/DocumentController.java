@@ -2,6 +2,8 @@ package com.hcare.api.v1.documents;
 
 import com.hcare.api.v1.documents.dto.DocumentResponse;
 import com.hcare.security.UserPrincipal;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -41,12 +43,14 @@ public class DocumentController {
     }
 
     @GetMapping("/api/v1/clients/{clientId}/documents/{docId}/content")
-    public ResponseEntity<Void> downloadClientDocument(
+    public ResponseEntity<InputStreamResource> downloadClientDocument(
             @PathVariable UUID clientId, @PathVariable UUID docId) {
-        String url = documentService.generateDownloadUrl(docId, clientId);
-        return ResponseEntity.status(HttpStatus.FOUND)
-            .header(HttpHeaders.LOCATION, url)
-            .build();
+        DocumentService.DownloadStream dl = documentService.getDownloadStream(docId, clientId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(dl.contentType());
+        headers.setContentDisposition(
+            ContentDisposition.attachment().filename(dl.fileName()).build());
+        return ResponseEntity.ok().headers(headers).body(new InputStreamResource(dl.inputStream()));
     }
 
     @DeleteMapping("/api/v1/clients/{clientId}/documents/{docId}")
@@ -73,12 +77,14 @@ public class DocumentController {
     }
 
     @GetMapping("/api/v1/caregivers/{caregiverId}/documents/{docId}/content")
-    public ResponseEntity<Void> downloadCaregiverDocument(
+    public ResponseEntity<InputStreamResource> downloadCaregiverDocument(
             @PathVariable UUID caregiverId, @PathVariable UUID docId) {
-        String url = documentService.generateDownloadUrl(docId, caregiverId);
-        return ResponseEntity.status(HttpStatus.FOUND)
-            .header(HttpHeaders.LOCATION, url)
-            .build();
+        DocumentService.DownloadStream dl = documentService.getDownloadStream(docId, caregiverId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(dl.contentType());
+        headers.setContentDisposition(
+            ContentDisposition.attachment().filename(dl.fileName()).build());
+        return ResponseEntity.ok().headers(headers).body(new InputStreamResource(dl.inputStream()));
     }
 
     @DeleteMapping("/api/v1/caregivers/{caregiverId}/documents/{docId}")
