@@ -7,3 +7,8 @@ hcare:
     shift-generation-cron: "-"
   scoring:
     weekly-reset-cron: "-"
+  storage:
+    provider: local
+    documents-dir: /tmp/hcare-test-docs
+    signing-key: test-doc-signing-key-for-tests-only-32b
+    base-url: http://localhost:${local.server.port}

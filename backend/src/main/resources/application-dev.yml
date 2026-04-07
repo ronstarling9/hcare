@@ -20,3 +20,8 @@ hcare:
   jwt:
     secret: dev-secret-key-change-in-prod-must-be-256-bits-minimum-length
     expiration-ms: 86400000
+  storage:
+    provider: local
+    documents-dir: /tmp/hcare-dev-docs
+    signing-key: dev-doc-signing-key-change-in-prod-must-be-256-bits
+    base-url: http://localhost:8080

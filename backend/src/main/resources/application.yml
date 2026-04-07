@@ -16,3 +16,8 @@ hcare:
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: 86400000
+  storage:
+    provider: ${HCARE_STORAGE_PROVIDER:local}
+    documents-dir: ${HCARE_DOCUMENTS_DIR:/var/hcare/documents}
+    signing-key: ${HCARE_STORAGE_SIGNING_KEY:${JWT_SECRET}}
+    base-url: ${HCARE_BASE_URL:http://localhost:8080}

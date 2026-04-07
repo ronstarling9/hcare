@@ -6,4 +6,5 @@ import java.util.UUID;
 
 public interface DocumentRepository extends JpaRepository<Document, UUID> {
     List<Document> findByOwnerTypeAndOwnerId(DocumentOwnerType ownerType, UUID ownerId);
+    List<Document> findByAgencyIdAndOwnerTypeAndOwnerId(UUID agencyId, DocumentOwnerType ownerType, UUID ownerId);
 }
