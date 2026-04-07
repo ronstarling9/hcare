@@ -18,10 +18,10 @@ server:
 
 hcare:
   jwt:
-    secret: ${JWT_SECRET}
+    secret: ${JWT_SECRET:dev-insecure-default-secret-not-for-production-use-must-be-at-least-256-bits}
     expiration-ms: 86400000
   storage:
     provider: ${HCARE_STORAGE_PROVIDER:local}
     documents-dir: ${HCARE_DOCUMENTS_DIR:/var/hcare/documents}
-    signing-key: ${HCARE_STORAGE_SIGNING_KEY:${JWT_SECRET}}
+    signing-key: ${HCARE_STORAGE_SIGNING_KEY:${JWT_SECRET:dev-insecure-default-secret-not-for-production-use-must-be-at-least-256-bits}}
     base-url: ${HCARE_BASE_URL:http://localhost:8080}
