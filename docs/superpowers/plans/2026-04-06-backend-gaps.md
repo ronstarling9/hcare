@@ -43,11 +43,14 @@
 ### Task 6 — Documents API
 - Add method: `backend/src/main/java/com/hcare/domain/DocumentRepository.java` (`findByAgencyIdAndOwnerTypeAndOwnerId`)
 - Create: `backend/src/main/java/com/hcare/api/v1/documents/dto/DocumentResponse.java`
-- Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentStorageService.java`
+- Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentStorageService.java` (interface — swap local ↔ S3 here)
+- Create: `backend/src/main/java/com/hcare/api/v1/documents/LocalDocumentStorageService.java`
 - Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentService.java`
 - Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentController.java`
-- Modify: `backend/src/main/resources/application.yml` (add `hcare.storage.documents-dir`)
-- Modify: `backend/src/main/resources/application-test.yml` (override with `/tmp/hcare-test-docs`)
+- Create: `backend/src/main/java/com/hcare/api/v1/documents/InternalDocumentController.java` (local-only streaming endpoint)
+- Modify: `backend/src/main/java/com/hcare/config/SecurityConfig.java` (permit internal documents path)
+- Modify: `backend/src/main/resources/application.yml` (add `hcare.storage.*`)
+- Modify: `backend/src/main/resources/application-test.yml` (override storage config)
 - Create: `backend/src/test/java/com/hcare/api/v1/documents/DocumentControllerIT.java`
 
 ---
@@ -1248,17 +1251,21 @@ git commit -m "feat: add user management API (list, invite, update role, delete)
 
 ## Task 6: Documents API
 
-Documents are stored on the local filesystem under a configurable directory. `Document.filePath` stores the absolute path. The API supports upload (multipart), list, content download, and delete for both clients and caregivers.
+Upload flow: client POSTs `multipart/form-data` to the backend — the backend stores the file and returns a `DocumentResponse`. Download flow: client GETs the content endpoint — the backend returns a **302 redirect** to a download URL. For local storage that URL is an HMAC-signed backend streaming endpoint; for S3 (future) it will be a pre-signed GET URL. The client follows the redirect either way and receives file bytes — **no client code changes when switching to S3**. `Document.filePath` stores an opaque storage key (relative path for local, S3 object key for S3).
 
 **Files:**
 - Modify: `backend/src/main/java/com/hcare/domain/DocumentRepository.java`
 - Create: `backend/src/main/java/com/hcare/api/v1/documents/dto/DocumentResponse.java`
-- Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentStorageService.java`
+- Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentStorageService.java` (interface)
+- Create: `backend/src/main/java/com/hcare/api/v1/documents/LocalDocumentStorageService.java`
 - Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentService.java`
 - Create: `backend/src/main/java/com/hcare/api/v1/documents/DocumentController.java`
+- Create: `backend/src/main/java/com/hcare/api/v1/documents/InternalDocumentController.java`
+- Modify: `backend/src/main/java/com/hcare/config/SecurityConfig.java`
 - Modify: `backend/src/main/resources/application.yml`
 - Modify: `backend/src/main/resources/application-test.yml`
 - Create: `backend/src/test/java/com/hcare/api/v1/documents/DocumentControllerIT.java`
+
 
 - [ ] **Step 1: Write the failing IT first**
 
@@ -1333,7 +1340,8 @@ class DocumentControllerIT extends AbstractIntegrationTest {
         return h;
     }
 
-    private HttpEntity<MultiValueMap<String, Object>> multipartUpload(String filename, byte[] content, String docType) {
+    private HttpEntity<MultiValueMap<String, Object>> multipartUpload(
+            String filename, byte[] content, String docType) {
         HttpHeaders fileHeaders = new HttpHeaders();
         fileHeaders.setContentType(MediaType.TEXT_PLAIN);
         ByteArrayResource resource = new ByteArrayResource(content) {
@@ -1367,11 +1375,14 @@ class DocumentControllerIT extends AbstractIntegrationTest {
 
     @Test
     void downloadDocument_returnsFileContent() {
+        // Upload a file
         ResponseEntity<DocumentResponse> upload = restTemplate.exchange(
             "/api/v1/clients/" + client.getId() + "/documents", HttpMethod.POST,
             multipartUpload("hello.txt", "hello world".getBytes(), null),
             DocumentResponse.class);
 
+        // GET /content — backend returns 302; TestRestTemplate follows the redirect
+        // to the local HMAC-signed streaming URL and returns file bytes.
         ResponseEntity<byte[]> download = restTemplate.exchange(
             "/api/v1/clients/" + client.getId() + "/documents/" + upload.getBody().id() + "/content",
             HttpMethod.GET, new HttpEntity<>(auth()), byte[].class);
@@ -1417,6 +1428,19 @@ class DocumentControllerIT extends AbstractIntegrationTest {
             new HttpEntity<>(auth()), String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
+
+    @Test
+    void downloadDocument_from_wrong_owner_returns_404() {
+        // Upload to caregiver, try to access via client path
+        ResponseEntity<DocumentResponse> upload = restTemplate.exchange(
+            "/api/v1/caregivers/" + caregiver.getId() + "/documents", HttpMethod.POST,
+            multipartUpload("secret.txt", "top secret".getBytes(), null), DocumentResponse.class);
+
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/clients/" + client.getId() + "/documents/" + upload.getBody().id() + "/content",
+            HttpMethod.GET, new HttpEntity<>(auth()), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }
 ```
 
@@ -1426,7 +1450,7 @@ class DocumentControllerIT extends AbstractIntegrationTest {
 cd backend && mvn test -Dtest=DocumentControllerIT -q 2>&1 | head -20
 ```
 
-Expected: compile error.
+Expected: compile error — `DocumentController`, `DocumentStorageService`, etc. do not exist yet.
 
 - [ ] **Step 3: Add storage config to `application.yml`**
 
@@ -1436,7 +1460,9 @@ hcare:
     secret: ${JWT_SECRET}
     expiration-ms: 86400000
   storage:
+    provider: ${HCARE_STORAGE_PROVIDER:local}
     documents-dir: ${HCARE_DOCUMENTS_DIR:/var/hcare/documents}
+    signing-key: ${HCARE_STORAGE_SIGNING_KEY:${JWT_SECRET}}
 ```
 
 - [ ] **Step 4: Add test storage config to `application-test.yml`**
@@ -1452,7 +1478,9 @@ hcare:
   scoring:
     weekly-reset-cron: "-"
   storage:
+    provider: local
     documents-dir: /tmp/hcare-test-docs
+    signing-key: test-doc-signing-key-for-tests-only-32b
 ```
 
 - [ ] **Step 5: Add `findByAgencyIdAndOwnerTypeAndOwnerId` to `DocumentRepository`**
@@ -1494,59 +1522,168 @@ public record DocumentResponse(
 }
 ```
 
-- [ ] **Step 7: Create `DocumentStorageService.java`**
+- [ ] **Step 7: Create `DocumentStorageService.java` (interface)**
 
 ```java
 package com.hcare.api.v1.documents;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
+import com.hcare.domain.DocumentOwnerType;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.UUID;
+
+/**
+ * Abstraction over document storage backends.
+ *
+ * Local implementation: stores files on the filesystem, returns HMAC-signed backend URLs.
+ * S3 implementation (future): stores in S3, returns pre-signed GET URLs for download.
+ *
+ * Upload always goes through the backend (client POSTs multipart here).
+ * Download always returns a redirect URL — the client follows it to receive bytes.
+ * No client-side changes are needed when switching from local to S3.
+ */
+public interface DocumentStorageService {
+
+    /**
+     * Stores the uploaded file and returns an opaque storage key.
+     * For local: a relative path from the configured base directory.
+     * For S3: the S3 object key.
+     */
+    String store(MultipartFile file, UUID agencyId, DocumentOwnerType ownerType, UUID ownerId);
+
+    /**
+     * Returns a URL the client can GET to receive the file bytes.
+     * For local: a short-lived HMAC-signed backend URL (no JWT required — token IS the credential).
+     * For S3: a pre-signed S3 GET URL (no JWT required — signature IS the credential).
+     */
+    String generateDownloadUrl(String storageKey);
+
+    /** Deletes the stored file. */
+    void delete(String storageKey);
+}
+```
+
+- [ ] **Step 8: Create `LocalDocumentStorageService.java`**
+
+```java
+package com.hcare.api.v1.documents;
+
+import com.hcare.domain.DocumentOwnerType;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.Base64;
 import java.util.UUID;
 
 @Service
-public class DocumentStorageService {
+@ConditionalOnProperty(name = "hcare.storage.provider", havingValue = "local", matchIfMissing = true)
+public class LocalDocumentStorageService implements DocumentStorageService {
+
+    private static final long TOKEN_TTL_MS = 15 * 60 * 1000L; // 15 minutes
 
     private final Path baseDir;
+    private final String signingKey;
 
-    public DocumentStorageService(@Value("${hcare.storage.documents-dir}") String documentsDir) {
+    public LocalDocumentStorageService(
+            @Value("${hcare.storage.documents-dir}") String documentsDir,
+            @Value("${hcare.storage.signing-key}") String signingKey) {
         this.baseDir = Path.of(documentsDir);
+        this.signingKey = signingKey;
     }
 
-    /**
-     * Saves the file and returns the absolute path where it was stored.
-     * Directory structure: {baseDir}/{agencyId}/{ownerId}/{uuid}-{originalFilename}
-     */
-    public String store(MultipartFile file, UUID agencyId, UUID ownerId) {
+    @Override
+    public String store(MultipartFile file, UUID agencyId, DocumentOwnerType ownerType, UUID ownerId) {
         try {
-            Path dir = baseDir.resolve(agencyId.toString()).resolve(ownerId.toString());
+            String ownerFolder = ownerType == DocumentOwnerType.CLIENT ? "clients" : "caregivers";
+            Path dir = baseDir.resolve(agencyId.toString())
+                              .resolve(ownerFolder)
+                              .resolve(ownerId.toString());
             Files.createDirectories(dir);
             String storedName = UUID.randomUUID() + "-" + sanitize(file.getOriginalFilename());
             Path target = dir.resolve(storedName);
             Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-            return target.toAbsolutePath().toString();
+            // storageKey is relative to baseDir — for S3 this would be the object key
+            return agencyId + "/" + ownerFolder + "/" + ownerId + "/" + storedName;
         } catch (IOException e) {
             throw new RuntimeException("Failed to store document", e);
         }
     }
 
-    public InputStream load(String filePath) {
+    @Override
+    public String generateDownloadUrl(String storageKey) {
+        long expiry = System.currentTimeMillis() + TOKEN_TTL_MS;
+        // payload: base64url(storageKey):expiry
+        String encodedKey = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(storageKey.getBytes(StandardCharsets.UTF_8));
+        String payload = encodedKey + ":" + expiry;
+        String token = payload + "." + hmac(payload);
+        return "/api/v1/internal/documents/content?token="
+            + URLEncoder.encode(token, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public void delete(String storageKey) {
         try {
-            return Files.newInputStream(Path.of(filePath));
+            Files.deleteIfExists(baseDir.resolve(storageKey));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to delete document", e);
+        }
+    }
+
+    /** Called by InternalDocumentController only. Validates the HMAC token and returns the storageKey. */
+    public String validateAndExtractKey(String token) {
+        String[] parts = token.split("\\.", 2);
+        if (parts.length != 2) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid download token");
+        }
+        String payload = parts[0];
+        if (!hmac(payload).equals(parts[1])) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid download token");
+        }
+        String[] payloadParts = payload.split(":", 2);
+        if (payloadParts.length != 2) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid download token");
+        }
+        long expiry;
+        try {
+            expiry = Long.parseLong(payloadParts[1]);
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid download token");
+        }
+        if (System.currentTimeMillis() > expiry) {
+            throw new ResponseStatusException(HttpStatus.GONE, "Download link has expired");
+        }
+        return new String(Base64.getUrlDecoder().decode(payloadParts[0]), StandardCharsets.UTF_8);
+    }
+
+    /** Called by InternalDocumentController only. Opens the file for streaming. */
+    public InputStream loadStream(String storageKey) {
+        try {
+            return Files.newInputStream(baseDir.resolve(storageKey));
         } catch (IOException e) {
             throw new RuntimeException("Failed to read document", e);
         }
     }
 
-    public void delete(String filePath) {
+    private String hmac(String data) {
         try {
-            Files.deleteIfExists(Path.of(filePath));
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to delete document", e);
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(signingKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new RuntimeException("HMAC signing error", e);
         }
     }
 
@@ -1557,7 +1694,7 @@ public class DocumentStorageService {
 }
 ```
 
-- [ ] **Step 8: Create `DocumentService.java`**
+- [ ] **Step 9: Create `DocumentService.java`**
 
 ```java
 package com.hcare.api.v1.documents;
@@ -1571,7 +1708,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -1625,26 +1761,28 @@ public class DocumentService {
         return upload(DocumentOwnerType.CAREGIVER, caregiverId, file, documentType, uploadedBy);
     }
 
-    /** Returns the InputStream for the document content. Caller must close the stream. */
+    /** Returns a redirect URL (HMAC-signed backend URL for local; pre-signed S3 URL for S3). */
     @Transactional(readOnly = true)
-    public InputStream getContent(UUID documentId) {
-        Document doc = requireDocument(documentId);
-        return storageService.load(doc.getFilePath());
+    public String generateDownloadUrl(UUID documentId, UUID expectedOwnerId) {
+        Document doc = requireDocument(documentId, expectedOwnerId);
+        return storageService.generateDownloadUrl(doc.getFilePath());
     }
 
     @Transactional
-    public void delete(UUID documentId) {
-        Document doc = requireDocument(documentId);
+    public void delete(UUID documentId, UUID expectedOwnerId) {
+        Document doc = requireDocument(documentId, expectedOwnerId);
         documentRepository.delete(doc);
+        // Note: filesystem delete runs before commit. If storageService.delete throws,
+        // the transaction rolls back (DB row survives). Acceptable for MVP local storage.
         storageService.delete(doc.getFilePath());
     }
 
     private DocumentResponse upload(DocumentOwnerType ownerType, UUID ownerId,
                                      MultipartFile file, String documentType, UUID uploadedBy) {
         UUID agencyId = TenantContext.get();
-        String filePath = storageService.store(file, agencyId, ownerId);
+        String storageKey = storageService.store(file, agencyId, ownerType, ownerId);
         Document doc = new Document(agencyId, ownerType, ownerId,
-            file.getOriginalFilename(), filePath);
+            file.getOriginalFilename(), storageKey);
         if (documentType != null) doc.setDocumentType(documentType);
         if (uploadedBy != null) doc.setUploadedBy(uploadedBy);
         return DocumentResponse.from(documentRepository.save(doc));
@@ -1668,11 +1806,11 @@ public class DocumentService {
         }
     }
 
-    private Document requireDocument(UUID documentId) {
+    private Document requireDocument(UUID documentId, UUID expectedOwnerId) {
         UUID agencyId = TenantContext.get();
         Document doc = documentRepository.findById(documentId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
-        if (!doc.getAgencyId().equals(agencyId)) {
+        if (!doc.getAgencyId().equals(agencyId) || !doc.getOwnerId().equals(expectedOwnerId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found");
         }
         return doc;
@@ -1680,14 +1818,17 @@ public class DocumentService {
 }
 ```
 
-- [ ] **Step 9: Create `DocumentController.java`**
+- [ ] **Step 10: Create `DocumentController.java`**
+
+Note: this controller bridges two resource paths (`/clients/*/documents` and `/caregivers/*/documents`) so no class-level `@RequestMapping` is used — full paths are explicit in each method.
 
 ```java
 package com.hcare.api.v1.documents;
 
 import com.hcare.api.v1.documents.dto.DocumentResponse;
 import com.hcare.security.UserPrincipal;
-import org.springframework.core.io.InputStreamResource;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -1728,17 +1869,18 @@ public class DocumentController {
     }
 
     @GetMapping("/api/v1/clients/{clientId}/documents/{docId}/content")
-    public ResponseEntity<InputStreamResource> downloadClientDocument(
+    public ResponseEntity<Void> downloadClientDocument(
             @PathVariable UUID clientId, @PathVariable UUID docId) {
-        return ResponseEntity.ok()
-            .contentType(MediaType.APPLICATION_OCTET_STREAM)
-            .body(new InputStreamResource(documentService.getContent(docId)));
+        String url = documentService.generateDownloadUrl(docId, clientId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+            .header(HttpHeaders.LOCATION, url)
+            .build();
     }
 
     @DeleteMapping("/api/v1/clients/{clientId}/documents/{docId}")
     public ResponseEntity<Void> deleteClientDocument(
             @PathVariable UUID clientId, @PathVariable UUID docId) {
-        documentService.delete(docId);
+        documentService.delete(docId, clientId);
         return ResponseEntity.noContent().build();
     }
 
@@ -1761,31 +1903,81 @@ public class DocumentController {
     }
 
     @GetMapping("/api/v1/caregivers/{caregiverId}/documents/{docId}/content")
-    public ResponseEntity<InputStreamResource> downloadCaregiverDocument(
+    public ResponseEntity<Void> downloadCaregiverDocument(
             @PathVariable UUID caregiverId, @PathVariable UUID docId) {
-        return ResponseEntity.ok()
-            .contentType(MediaType.APPLICATION_OCTET_STREAM)
-            .body(new InputStreamResource(documentService.getContent(docId)));
+        String url = documentService.generateDownloadUrl(docId, caregiverId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+            .header(HttpHeaders.LOCATION, url)
+            .build();
     }
 
     @DeleteMapping("/api/v1/caregivers/{caregiverId}/documents/{docId}")
     public ResponseEntity<Void> deleteCaregiverDocument(
             @PathVariable UUID caregiverId, @PathVariable UUID docId) {
-        documentService.delete(docId);
+        documentService.delete(docId, caregiverId);
         return ResponseEntity.noContent().build();
     }
 }
 ```
 
-- [ ] **Step 10: Run the IT**
+- [ ] **Step 11: Create `InternalDocumentController.java`**
+
+This controller is only active when `hcare.storage.provider=local`. It validates the HMAC token (no JWT required — the token IS the credential, equivalent to an S3 pre-signed URL) and streams the file.
+
+```java
+package com.hcare.api.v1.documents;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@ConditionalOnProperty(name = "hcare.storage.provider", havingValue = "local", matchIfMissing = true)
+public class InternalDocumentController {
+
+    private final LocalDocumentStorageService storageService;
+
+    public InternalDocumentController(LocalDocumentStorageService storageService) {
+        this.storageService = storageService;
+    }
+
+    @GetMapping("/api/v1/internal/documents/content")
+    public ResponseEntity<InputStreamResource> stream(@RequestParam String token) {
+        String storageKey = storageService.validateAndExtractKey(token);
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            .body(new InputStreamResource(storageService.loadStream(storageKey)));
+    }
+}
+```
+
+- [ ] **Step 12: Permit the internal streaming path in `SecurityConfig.java`**
+
+In `SecurityConfig.java`, add the internal documents path alongside the existing `permitAll` entries:
+
+```java
+.authorizeHttpRequests(auth -> auth
+    .requestMatchers("/api/v1/auth/**").permitAll()
+    .requestMatchers("/api/v1/agencies/register").permitAll()
+    .requestMatchers("/api/v1/internal/documents/**").permitAll()  // HMAC token is the credential
+    .requestMatchers("/h2-console/**").permitAll()
+    .anyRequest().authenticated()
+)
+```
+
+- [ ] **Step 13: Run the IT**
 
 ```bash
 cd backend && mvn test -Dtest=DocumentControllerIT -q
 ```
 
-Expected: all 5 tests PASS.
+Expected: all 6 tests PASS.
 
-- [ ] **Step 11: Run the full test suite to confirm no regressions**
+- [ ] **Step 14: Run the full test suite to confirm no regressions**
 
 ```bash
 cd backend && mvn test -q
@@ -1793,15 +1985,16 @@ cd backend && mvn test -q
 
 Expected: BUILD SUCCESS, all tests pass.
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 15: Commit**
 
 ```bash
 git add backend/src/main/java/com/hcare/domain/DocumentRepository.java \
         backend/src/main/java/com/hcare/api/v1/documents/ \
+        backend/src/main/java/com/hcare/config/SecurityConfig.java \
         backend/src/main/resources/application.yml \
         backend/src/main/resources/application-test.yml \
         backend/src/test/java/com/hcare/api/v1/documents/DocumentControllerIT.java
-git commit -m "feat: add documents API — upload, list, download, delete for clients and caregivers"
+git commit -m "feat: add documents API — upload, list, redirect-download, delete for clients and caregivers"
 ```
 
 ---
@@ -1816,6 +2009,7 @@ git commit -m "feat: add documents API — upload, list, download, delete for cl
 - ✅ User management CRUD (spec §5 AgencyUser: ADMIN | SCHEDULER) — Task 5
 - ✅ Documents endpoints (spec §5 Client → Documents) — Task 6
 - ✅ Cross-agency tenant isolation tested in controller ITs — Tasks 2, 3, 6
+- ✅ Download redirect pattern accommodates S3 pre-signed URLs without API change — Task 6
 
 **Placeholder scan:** All steps contain actual code. No TBDs.
 
@@ -1825,3 +2019,4 @@ git commit -m "feat: add documents API — upload, list, download, delete for cl
 - `DocumentResponse.from(Document)` used in `DocumentService` and defined in DTO — ✅
 - `TenantContext.get()` used in `UserService`, `DocumentService`, `AgencyService.updateAgency` — all consistent with existing pattern ✅
 - `CaregiverScoringProfile(UUID caregiverId, UUID agencyId)` constructor — confirm against actual class before running Task 1 test
+- `LocalDocumentStorageService.validateAndExtractKey` and `loadStream` — used only by `InternalDocumentController` which injects `LocalDocumentStorageService` directly (not the interface) ✅
