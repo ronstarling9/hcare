@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { DashboardAlert } from '../../types/api'
-import { useNavigate } from 'react-router-dom'
+import { usePanelStore } from '../../store/panelStore'
 import { formatLocalDate } from '../../utils/dateFormat'
 
 function isUrgent(dueDate: string): boolean {
@@ -14,7 +14,7 @@ interface AlertsColumnProps {
 
 export function AlertsColumn({ alerts }: AlertsColumnProps) {
   const { t, i18n } = useTranslation('dashboard')
-  const navigate = useNavigate()
+  const { openPanel } = usePanelStore()
 
   if (alerts.length === 0) {
     return (
@@ -37,11 +37,9 @@ export function AlertsColumn({ alerts }: AlertsColumnProps) {
               key={`${alert.resourceId}-${alert.type}`}
               type="button"
               onClick={() =>
-                navigate(
-                  alert.resourceType === 'CAREGIVER'
-                    ? `/caregivers`
-                    : `/clients`
-                )
+                alert.resourceType === 'CAREGIVER'
+                  ? openPanel('caregiver', alert.resourceId)
+                  : openPanel('client', alert.resourceId)
               }
               className="w-full text-left px-4 py-3 border-b border-border hover:bg-surface transition-colors"
             >
