@@ -1,6 +1,8 @@
 package com.hcare.api.v1.documents;
 
 import com.hcare.domain.DocumentOwnerType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,7 @@ import java.util.UUID;
 @ConditionalOnProperty(name = "hcare.storage.provider", havingValue = "local", matchIfMissing = true)
 public class LocalDocumentStorageService implements DocumentStorageService {
 
+    private static final Logger log = LoggerFactory.getLogger(LocalDocumentStorageService.class);
     private static final long TOKEN_TTL_MS = 15 * 60 * 1000L;
 
     private final Path baseDir;
@@ -72,6 +75,10 @@ public class LocalDocumentStorageService implements DocumentStorageService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid storage key");
             }
             Files.deleteIfExists(resolved);
+        } catch (NoSuchFileException e) {
+            // File already absent — DB row was deleted first, so this is a no-op from a
+            // consistency perspective. Log a warning and continue.
+            log.warn("Document file not found during delete (already removed?): {}", storageKey);
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete document", e);
         }

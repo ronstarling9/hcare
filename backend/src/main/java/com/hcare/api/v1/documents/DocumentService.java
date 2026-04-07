@@ -73,13 +73,21 @@ public class DocumentService {
         return new DownloadStream(stream, doc.getFileName(), MediaType.APPLICATION_OCTET_STREAM);
     }
 
-    @Transactional
     public void delete(UUID documentId, UUID expectedOwnerId) {
+        // Delete DB row first (inside a committed transaction), then delete from storage.
+        // Trade-off: if the filesystem delete fails after a successful DB commit, the file
+        // becomes orphaned garbage on disk, but the DB is clean and consistent. This is
+        // preferable to the inverse (DB row pointing to a missing file → unresolvable 500s).
+        String storageKey = deleteFromDb(documentId, expectedOwnerId);
+        storageService.delete(storageKey);
+    }
+
+    @Transactional
+    String deleteFromDb(UUID documentId, UUID expectedOwnerId) {
         Document doc = requireDocument(documentId, expectedOwnerId);
+        String storageKey = doc.getFilePath();
         documentRepository.delete(doc);
-        // Note: filesystem delete runs before commit. If storageService.delete throws,
-        // the transaction rolls back (DB row survives). Acceptable for MVP local storage.
-        storageService.delete(doc.getFilePath());
+        return storageKey;
     }
 
     private DocumentResponse upload(DocumentOwnerType ownerType, UUID ownerId,
