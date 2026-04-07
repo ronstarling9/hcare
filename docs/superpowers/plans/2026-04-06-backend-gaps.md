@@ -1151,8 +1151,7 @@ public class UserService {
 
     @Transactional
     public UserResponse updateUserRole(UUID userId, UpdateUserRoleRequest req) {
-        UUID agencyId = TenantContext.get();
-        AgencyUser user = requireUser(userId, agencyId);
+        AgencyUser user = requireUser(userId);
         user.setRole(req.role());
         return UserResponse.from(userRepository.save(user));
     }
@@ -1160,7 +1159,7 @@ public class UserService {
     @Transactional
     public void deleteUser(UUID userId) {
         UUID agencyId = TenantContext.get();
-        AgencyUser user = requireUser(userId, agencyId);
+        AgencyUser user = requireUser(userId);
         if (userRepository.countByAgencyIdAndRole(agencyId, UserRole.ADMIN) <= 1
                 && user.getRole() == UserRole.ADMIN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -1169,13 +1168,10 @@ public class UserService {
         userRepository.delete(user);
     }
 
-    private AgencyUser requireUser(UUID userId, UUID agencyId) {
-        AgencyUser user = userRepository.findById(userId)
+    private AgencyUser requireUser(UUID userId) {
+        // Hibernate agencyFilter (TenantFilterAspect) scopes findById to the current tenant.
+        return userRepository.findById(userId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        if (!user.getAgencyId().equals(agencyId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-        return user;
     }
 }
 ```
@@ -1194,7 +1190,6 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -1479,6 +1474,7 @@ hcare:
     provider: ${HCARE_STORAGE_PROVIDER:local}
     documents-dir: ${HCARE_DOCUMENTS_DIR:/var/hcare/documents}
     signing-key: ${HCARE_STORAGE_SIGNING_KEY:${JWT_SECRET}}
+    base-url: ${HCARE_BASE_URL:http://localhost:8080}
 ```
 
 - [ ] **Step 4: Add test storage config to `application-test.yml`**
@@ -1497,6 +1493,7 @@ hcare:
     provider: local
     documents-dir: /tmp/hcare-test-docs
     signing-key: test-doc-signing-key-for-tests-only-32b
+    base-url: http://localhost:${local.server.port}
 ```
 
 - [ ] **Step 5: Add `findByAgencyIdAndOwnerTypeAndOwnerId` to `DocumentRepository`**
@@ -1610,12 +1607,15 @@ public class LocalDocumentStorageService implements DocumentStorageService {
 
     private final Path baseDir;
     private final String signingKey;
+    private final String baseUrl;
 
     public LocalDocumentStorageService(
             @Value("${hcare.storage.documents-dir}") String documentsDir,
-            @Value("${hcare.storage.signing-key}") String signingKey) {
+            @Value("${hcare.storage.signing-key}") String signingKey,
+            @Value("${hcare.storage.base-url:http://localhost:8080}") String baseUrl) {
         this.baseDir = Path.of(documentsDir);
         this.signingKey = signingKey;
+        this.baseUrl = baseUrl;
     }
 
     @Override
@@ -1644,7 +1644,7 @@ public class LocalDocumentStorageService implements DocumentStorageService {
             .encodeToString(storageKey.getBytes(StandardCharsets.UTF_8));
         String payload = encodedKey + ":" + expiry;
         String token = payload + "." + hmac(payload);
-        return "/api/v1/internal/documents/content?token="
+        return baseUrl + "/api/v1/internal/documents/content?token="
             + URLEncoder.encode(token, StandardCharsets.UTF_8);
     }
 
