@@ -150,11 +150,11 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
 
         {/* Caregiver (optional) */}
         <div>
-          <label htmlFor="ns-notes" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+          <label htmlFor="ns-caregiver" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
             {t('labelCaregiver')}
           </label>
           <select
-            id="ns-notes"
+            id="ns-caregiver"
             {...register('caregiverId')}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
