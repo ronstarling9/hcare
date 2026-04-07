@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+import { useDashboard } from '../../hooks/useDashboard'
 import { SlidePanel } from '../panel/SlidePanel'
 import { usePanelStore } from '../../store/panelStore'
 import { ShiftDetailPanel } from '../schedule/ShiftDetailPanel'
@@ -34,10 +35,12 @@ function PanelContent() {
 
 export function Shell() {
   const { open, closePanel } = usePanelStore()
+  const { data } = useDashboard()
+  const redEvvCount = data?.redEvvCount ?? 0
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+      <Sidebar redEvvCount={redEvvCount} />
       {/* Main area: relative so SlidePanel's absolute positioning is scoped here */}
       <div className="relative flex-1 overflow-auto bg-surface">
         <Outlet />

@@ -12,5 +12,7 @@
   "noVisits": "No visits today.",
   "noAlerts": "No active alerts.",
   "alertsHeader": "Alerts",
-  "due": "Due {{date}}"
+  "due": "Due {{date}}",
+  "loading": "Loading dashboard…",
+  "error": "Failed to load dashboard. Check your connection and try refreshing."
 }
