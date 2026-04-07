@@ -39,7 +39,6 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
 
   function onSubmit(values: FormValues) {
     // Phase 4: replace with API call
-    console.log('Creating shift:', values)
     alert(t('mockAlert', { clientId: values.clientId, date: values.date }))
     closePanel()
   }

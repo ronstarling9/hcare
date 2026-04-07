@@ -127,7 +127,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
               </div>
               <div>
                 <div className="text-[10px] text-text-secondary">{t('fieldStatus')}</div>
-                <div className="text-[13px] text-dark">{shift.status.replace('_', ' ')}</div>
+                <div className="text-[13px] text-dark">{shift.status.replace(/_/g, ' ')}</div>
               </div>
             </div>
           </div>
