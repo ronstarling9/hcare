@@ -46,4 +46,6 @@ public class AgencyUser {
     public String getPasswordHash() { return passwordHash; }
     public UserRole getRole() { return role; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public void setRole(UserRole role) { this.role = role; }
 }
