@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
-import { mockClients } from '../../mock/data'
+import { useClients } from '../../hooks/useClients'
+import { useCaregivers } from '../../hooks/useCaregivers'
+import { useCreateShift } from '../../hooks/useShifts'
 import { usePanelStore } from '../../store/panelStore'
 
 interface FormValues {
@@ -21,10 +23,14 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
   const { t } = useTranslation('newShift')
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
+  const { clients } = useClients()
+  const { caregivers } = useCaregivers()
+  const createMutation = useCreateShift()
+
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     defaultValues: {
       date: prefill?.date ?? [
@@ -37,9 +43,14 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
     },
   })
 
-  function onSubmit(values: FormValues) {
-    // Phase 4: replace with API call
-    alert(t('mockAlert', { clientId: values.clientId, date: values.date }))
+  async function onSubmit(values: FormValues) {
+    await createMutation.mutateAsync({
+      clientId: values.clientId,
+      caregiverId: values.caregiverId || undefined,
+      serviceTypeId: values.serviceTypeId,
+      scheduledStart: `${values.date}T${values.startTime}:00`,
+      scheduledEnd: `${values.date}T${values.endTime}:00`,
+    })
     closePanel()
   }
 
@@ -49,8 +60,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
       <div className="px-6 py-4 border-b border-border">
         <button
           type="button"
-          className="text-[13px] mb-2 hover:underline"
-          style={{ color: '#1a9afa' }}
+          className="text-[13px] mb-2 hover:underline text-blue"
           onClick={closePanel}
         >
           {backLabel}
@@ -74,7 +84,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
             <option value="">{t('selectClient')}</option>
-            {mockClients.map((c) => (
+            {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.firstName} {c.lastName}
               </option>
@@ -85,7 +95,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
           )}
         </div>
 
-        {/* Service Type (static for Phase 1) */}
+        {/* Service Type — hardcoded until Phase 6 adds service-types API */}
         <div>
           <label htmlFor="ns-service-type" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
             {t('labelServiceType')}
@@ -159,19 +169,27 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
             <option value="">{t('caregiverUnassigned')}</option>
+            {caregivers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.firstName} {c.lastName}
+              </option>
+            ))}
           </select>
-          <p className="text-[10px] text-text-secondary mt-1">
-            {t('caregiverPhaseNote')}
-          </p>
         </div>
+
+        {/* API error */}
+        {createMutation.isError && (
+          <p className="text-[11px] text-red-600">{tCommon('errorTryAgain')}</p>
+        )}
 
         {/* Footer */}
         <div className="pt-4 border-t border-border flex gap-3">
           <button
             type="submit"
-            className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110"
+            disabled={isSubmitting || createMutation.isPending}
+            className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110 disabled:opacity-50"
           >
-            {t('saveShift')}
+            {isSubmitting || createMutation.isPending ? '…' : t('saveShift')}
           </button>
           <button
             type="button"

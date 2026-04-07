@@ -7,5 +7,6 @@
   "cancel": "Cancel",
   "searchByName": "Search by name…",
   "noExpiry": "No expiry",
-  "loading": "Loading…"
+  "loading": "Loading…",
+  "errorTryAgain": "Something went wrong. Please try again."
 }
