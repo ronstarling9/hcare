@@ -12,5 +12,6 @@
   "alertUncovered": "Uncovered",
   "alertLateClockIn": "Late clock-in",
   "settingsComingSoon": "Settings — coming soon",
-  "newShiftAt": "New shift at {{hour}}:00"
+  "newShiftAt": "New shift at {{hour}}:00",
+  "loading": "Loading shifts…"
 }

@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { WeekCalendar } from './WeekCalendar'
 import { AlertStrip } from './AlertStrip'
-import { mockShifts, mockClientMap, mockCaregiverMap, mockDashboard } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
+import { useShifts } from '../../hooks/useShifts'
+import { useClients } from '../../hooks/useClients'
+import { useCaregivers } from '../../hooks/useCaregivers'
 
 function getMonday(d: Date): Date {
   const date = new Date(d)
@@ -12,6 +14,13 @@ function getMonday(d: Date): Date {
   date.setDate(date.getDate() + diff)
   date.setHours(0, 0, 0, 0)
   return date
+}
+
+// Formats a local Date as an ISO-8601 LocalDateTime string without timezone offset.
+// Uses local date/time parts (not toISOString) so the boundary is correct in all timezones.
+function toLocalISODateTime(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T00:00:00`
 }
 
 function formatWeekRange(monday: Date, locale: string): string {
@@ -26,6 +35,20 @@ export function SchedulePage() {
   const { t, i18n } = useTranslation('schedule')
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const { openPanel } = usePanelStore()
+
+  // ISO strings derived from weekStart for API params — weekStart (Date) is passed to WeekCalendar
+  const weekStartStr = useMemo(() => toLocalISODateTime(weekStart), [weekStart])
+  const weekEndStr = useMemo(() => {
+    const end = new Date(weekStart)
+    end.setDate(end.getDate() + 7)
+    return toLocalISODateTime(end)
+  }, [weekStart])
+
+  const { data: shiftsPage, isLoading: shiftsLoading } = useShifts(weekStartStr, weekEndStr)
+  const { clientMap } = useClients()
+  const { caregiverMap } = useCaregivers()
+
+  const shifts = shiftsPage?.content ?? []
 
   function prevWeek() {
     setWeekStart((d) => {
@@ -43,15 +66,14 @@ export function SchedulePage() {
     })
   }
 
+  // Clicking an empty slot pre-fills the new shift form with the clicked date + hour
   function handleNewShift(date: Date, hour: number) {
-    // Use local date parts — toISOString() returns UTC and would give the wrong date
-    // for users in UTC−N timezones clicking late-evening slots.
     const dateStr = [
       date.getFullYear(),
       String(date.getMonth() + 1).padStart(2, '0'),
       String(date.getDate()).padStart(2, '0'),
     ].join('-')
-    const timeStr = `${String(hour).padStart(2, '0')}:00`
+    const timeStr = `${String(hour).padStart(2, '00')}:00`
     openPanel('newShift', undefined, {
       prefill: { date: dateStr, time: timeStr },
       backLabel: t('backLabel'),
@@ -96,24 +118,30 @@ export function SchedulePage() {
         </div>
       </div>
 
-      {/* Alert strip */}
+      {/* Alert strip — EVV counts wired in a later phase; zero placeholders suppress the bar */}
       <AlertStrip
-        redCount={mockDashboard.redEvvCount}
-        yellowCount={mockDashboard.yellowEvvCount}
-        uncoveredCount={mockDashboard.uncoveredCount}
+        redCount={0}
+        yellowCount={0}
+        uncoveredCount={0}
         lateClockInCount={0}
       />
 
       {/* Calendar */}
       <div className="flex-1 overflow-auto">
-        <WeekCalendar
-          weekStart={weekStart}
-          shifts={mockShifts}
-          clientMap={mockClientMap}
-          caregiverMap={mockCaregiverMap}
-          onShiftClick={(id) => openPanel('shift', id, { backLabel: t('backLabel') })}
-          onEmptySlotClick={handleNewShift}
-        />
+        {shiftsLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <span className="text-[13px] text-text-muted">{t('loading')}</span>
+          </div>
+        ) : (
+          <WeekCalendar
+            weekStart={weekStart}
+            shifts={shifts}
+            clientMap={clientMap}
+            caregiverMap={caregiverMap}
+            onShiftClick={(id) => openPanel('shift', id, { backLabel: t('backLabel') })}
+            onEmptySlotClick={handleNewShift}
+          />
+        )}
       </div>
     </div>
   )
