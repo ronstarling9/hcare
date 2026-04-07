@@ -229,4 +229,19 @@ class LocalScoringServiceIT extends AbstractIntegrationTest {
             return null;
         });
     }
+
+    @Test
+    void cancelShift_increments_cancel_count_on_scoring_profile() {
+        // seed: agency, caregiver, scoring profile with cancelCount = 0
+        Caregiver cg = caregiverRepository.save(new Caregiver(agency.getId(), "Jane", "Smith", "jane@test.com"));
+        CaregiverScoringProfile profile = scoringProfileRepository.save(new CaregiverScoringProfile(cg.getId(), agency.getId()));
+        assertThat(profile.getTotalCancelledShifts()).isEqualTo(0);
+
+        // publish the event directly (same as what ShiftSchedulingService does)
+        ShiftCancelledEvent event = new ShiftCancelledEvent(UUID.randomUUID(), cg.getId(), agency.getId());
+        scoringService.onShiftCancelled(event);
+
+        CaregiverScoringProfile updated = scoringProfileRepository.findByCaregiverId(cg.getId()).orElseThrow();
+        assertThat(updated.getTotalCancelledShifts()).isEqualTo(1);
+    }
 }

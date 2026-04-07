@@ -186,10 +186,6 @@ public class LocalScoringService implements ScoringService {
         updateAffinity(profile.getId(), event.clientId(), event.agencyId());
     }
 
-    // TODO(Plan 6): ShiftCancelledEvent is not yet published anywhere. This listener is
-    // wired and tested but inert in production until the Scheduling API (Plan 6) adds
-    // eventPublisher.publishEvent(new ShiftCancelledEvent(...)) on shift cancellation.
-    // Until then, cancelRate remains 0 for all caregivers.
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCancelled(ShiftCancelledEvent event) {
