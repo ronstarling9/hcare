@@ -16,6 +16,8 @@ import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.jdbc.Sql;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Sql(statements = {
@@ -63,6 +65,20 @@ class AgencyControllerIT extends AbstractIntegrationTest {
             "Agency", "TEXAS", "x@test.com", "Str0ngP@ss!");
         ResponseEntity<String> resp = restTemplate.postForEntity(
             "/api/v1/agencies/register", req, String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void register_returns_400_for_null_state() {
+        var body = Map.of(
+            "agencyName", "Null State Agency",
+            "adminEmail", "null@test.com",
+            "adminPassword", "Str0ngP@ss!"
+        );
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> resp = restTemplate.postForEntity(
+            "/api/v1/agencies/register", new HttpEntity<>(body, headers), String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 

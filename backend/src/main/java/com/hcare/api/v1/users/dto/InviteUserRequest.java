@@ -7,4 +7,9 @@ public record InviteUserRequest(
     @NotBlank @Email String email,
     @NotNull UserRole role,
     @NotBlank @Size(min = 8) String temporaryPassword
-) {}
+) {
+    @Override
+    public String toString() {
+        return "InviteUserRequest[email=" + email + ", role=" + role + ", temporaryPassword=[REDACTED]]";
+    }
+}
