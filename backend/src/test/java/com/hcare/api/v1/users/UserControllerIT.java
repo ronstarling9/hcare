@@ -96,6 +96,16 @@ class UserControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void updateUserRole_returns_409_when_demoting_last_admin() {
+        // adminLogin is the only ADMIN — try to demote them to SCHEDULER
+        UpdateUserRoleRequest req = new UpdateUserRoleRequest(UserRole.SCHEDULER);
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/users/" + adminLogin.userId(), HttpMethod.PATCH,
+            new HttpEntity<>(req, auth(adminLogin)), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
     void deleteUser_removes_user() {
         InviteUserRequest inv = new InviteUserRequest("todelete@userit.com", UserRole.SCHEDULER, "Temp1234!");
         UserResponse invited = restTemplate.exchange(

@@ -46,6 +46,12 @@ public class UserService {
     @Transactional
     public UserResponse updateUserRole(UUID userId, UpdateUserRoleRequest req) {
         AgencyUser user = requireUser(userId);
+        if (user.getRole() == UserRole.ADMIN
+                && req.role() != UserRole.ADMIN
+                && userRepository.countByAgencyIdAndRole(TenantContext.get(), UserRole.ADMIN) <= 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Cannot demote the last ADMIN user");
+        }
         user.setRole(req.role());
         return UserResponse.from(userRepository.save(user));
     }
