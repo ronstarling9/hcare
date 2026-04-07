@@ -39,25 +39,34 @@ class LocalScoringServiceIT extends AbstractIntegrationTest {
     @BeforeEach
     void setupData() {
         agency = agencyRepository.save(new Agency("Scoring IT Agency", "TX"));
+        // Set TenantContext directly (bypassing TenantFilterInterceptor) because this is a
+        // service-layer IT that doesn't go through the HTTP stack. The Hibernate agencyFilter
+        // still requires TenantContext to be populated before repository calls.
         TenantContext.set(agency.getId());
+        // Guard: if any setup step below throws, @AfterEach will NOT run, so we must clear
+        // TenantContext here to avoid ThreadLocal pollution in subsequent tests.
+        try {
+            client = clientRepository.save(new Client(
+                agency.getId(), "Score", "Client", java.time.LocalDate.of(1950, 1, 1)));
+            client.setLat(new BigDecimal("30.2672"));
+            client.setLng(new BigDecimal("-97.7431"));
+            clientRepository.save(client);
 
-        client = clientRepository.save(new Client(
-            agency.getId(), "Score", "Client", java.time.LocalDate.of(1950, 1, 1)));
-        client.setLat(new BigDecimal("30.2672"));
-        client.setLng(new BigDecimal("-97.7431"));
-        clientRepository.save(client);
+            serviceType = serviceTypeRepository.save(
+                new ServiceType(agency.getId(), "PCS", "PCS-SCORE-IT", true, "[]"));
 
-        serviceType = serviceTypeRepository.save(
-            new ServiceType(agency.getId(), "PCS", "PCS-SCORE-IT", true, "[]"));
+            FeatureFlags flags = new FeatureFlags(agency.getId());
+            flags.setAiSchedulingEnabled(true);
+            featureFlagsRepository.save(flags);
 
-        FeatureFlags flags = new FeatureFlags(agency.getId());
-        flags.setAiSchedulingEnabled(true);
-        featureFlagsRepository.save(flags);
-
-        // Next Monday at 09:00–13:00
-        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
-        shiftStart = nextMonday.atTime(9, 0);
-        shiftEnd   = nextMonday.atTime(13, 0);
+            // Next Monday at 09:00–13:00
+            LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+            shiftStart = nextMonday.atTime(9, 0);
+            shiftEnd   = nextMonday.atTime(13, 0);
+        } catch (Exception e) {
+            TenantContext.clear();
+            throw e;
+        }
     }
 
     @AfterEach
