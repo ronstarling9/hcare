@@ -15,6 +15,9 @@ public interface BackgroundCheckRepository extends JpaRepository<BackgroundCheck
     /**
      * Returns background checks for the agency whose renewalDueDate falls within [from, to] (inclusive).
      * Used by DashboardService to find background checks due within the next 30 days.
+     * NOTE: The agencyFilter @Filter is active on this entity so agencyId is already scoped
+     * by the Hibernate filter; the agencyId parameter here is redundant but adds an explicit
+     * safety predicate for queries run outside a filtered session (e.g. batch jobs).
      */
     List<BackgroundCheck> findByAgencyIdAndRenewalDueDateBetween(UUID agencyId,
                                                                   LocalDate from,

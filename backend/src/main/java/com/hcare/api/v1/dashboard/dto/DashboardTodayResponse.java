@@ -9,7 +9,7 @@ public record DashboardTodayResponse(
     int totalVisitsToday,
     int completedVisits,
     int inProgressVisits,
-    int openVisits,
+    int openOrAssignedVisits,
     int redEvvCount,
     List<DashboardVisitRow> visits,
     List<DashboardAlert> alerts

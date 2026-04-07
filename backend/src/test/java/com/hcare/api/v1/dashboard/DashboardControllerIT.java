@@ -3,12 +3,19 @@ package com.hcare.api.v1.dashboard;
 import com.hcare.AbstractIntegrationTest;
 import com.hcare.api.v1.auth.dto.LoginRequest;
 import com.hcare.api.v1.auth.dto.LoginResponse;
+import com.hcare.api.v1.dashboard.dto.AlertType;
 import com.hcare.api.v1.dashboard.dto.DashboardAlert;
 import com.hcare.api.v1.dashboard.dto.DashboardTodayResponse;
 import com.hcare.domain.Agency;
 import com.hcare.domain.AgencyRepository;
 import com.hcare.domain.AgencyUser;
 import com.hcare.domain.AgencyUserRepository;
+import com.hcare.domain.Authorization;
+import com.hcare.domain.AuthorizationRepository;
+import com.hcare.domain.BackgroundCheck;
+import com.hcare.domain.BackgroundCheckRepository;
+import com.hcare.domain.BackgroundCheckResult;
+import com.hcare.domain.BackgroundCheckType;
 import com.hcare.domain.Caregiver;
 import com.hcare.domain.CaregiverCredential;
 import com.hcare.domain.CaregiverCredentialRepository;
@@ -16,10 +23,14 @@ import com.hcare.domain.CaregiverRepository;
 import com.hcare.domain.Client;
 import com.hcare.domain.ClientRepository;
 import com.hcare.domain.CredentialType;
+import com.hcare.domain.Payer;
+import com.hcare.domain.PayerRepository;
+import com.hcare.domain.PayerType;
 import com.hcare.domain.ServiceType;
 import com.hcare.domain.ServiceTypeRepository;
 import com.hcare.domain.Shift;
 import com.hcare.domain.ShiftRepository;
+import com.hcare.domain.UnitType;
 import com.hcare.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +45,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.jdbc.Sql;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -61,6 +73,9 @@ class DashboardControllerIT extends AbstractIntegrationTest {
     @Autowired private ServiceTypeRepository serviceTypeRepo;
     @Autowired private ShiftRepository shiftRepo;
     @Autowired private CaregiverCredentialRepository credentialRepo;
+    @Autowired private BackgroundCheckRepository backgroundCheckRepo;
+    @Autowired private PayerRepository payerRepo;
+    @Autowired private AuthorizationRepository authorizationRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
     private Agency agency;
@@ -223,8 +238,207 @@ class DashboardControllerIT extends AbstractIntegrationTest {
 
         assertThat(body.alerts())
             .anyMatch(alert ->
-                "CREDENTIAL_EXPIRING".equals(alert.alertType())
+                alert.alertType() == AlertType.CREDENTIAL_EXPIRING
                 && alert.subjectName() != null
                 && alert.subjectName().contains("Carol"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Fix 2: multi-tenancy isolation — Agency A cannot see Agency B's shifts
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_does_not_return_other_agency_shifts() {
+        Agency agencyB = agencyRepo.save(new Agency("Other Agency", "CA"));
+
+        Client clientB = clientRepo.save(new Client(
+            agencyB.getId(), "Eve", "Other", LocalDate.of(1970, 3, 20)));
+
+        ServiceType serviceTypeB = serviceTypeRepo.save(
+            new ServiceType(agencyB.getId(), "PCS", "PCS-V1", true, "[]"));
+
+        Caregiver caregiverB = caregiverRepo.save(
+            new Caregiver(agencyB.getId(), "Frank", "Other", "frank@other.com"));
+
+        LocalDateTime todayMid = LocalDate.now(ZoneOffset.UTC).atTime(9, 0);
+        shiftRepo.save(new Shift(
+            agencyB.getId(), null, clientB.getId(), caregiverB.getId(),
+            serviceTypeB.getId(), null,
+            todayMid, todayMid.plusHours(3)));
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.totalVisitsToday()).isEqualTo(0);
+        assertThat(body.visits()).isEmpty();
+    }
+
+    // -------------------------------------------------------------------------
+    // Fix 3: BACKGROUND_CHECK_DUE alert
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_includes_background_check_due_alert() {
+        Caregiver caregiver = caregiverRepo.save(
+            new Caregiver(agency.getId(), "Grace", "Lee", "grace@test.com"));
+
+        BackgroundCheck bc = new BackgroundCheck(
+            caregiver.getId(), agency.getId(),
+            BackgroundCheckType.STATE_REGISTRY,
+            BackgroundCheckResult.CLEAR,
+            LocalDate.now(ZoneOffset.UTC).minusYears(2));
+        bc.setRenewalDueDate(LocalDate.now(ZoneOffset.UTC).plusDays(15));
+        backgroundCheckRepo.save(bc);
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.alerts()).isNotNull();
+
+        assertThat(body.alerts())
+            .anyMatch(alert ->
+                alert.alertType() == AlertType.BACKGROUND_CHECK_DUE
+                && alert.subjectName() != null
+                && alert.subjectName().contains("Grace"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Fix 4: AUTHORIZATION_LOW alert
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_includes_authorization_low_alert() {
+        Client client = clientRepo.save(new Client(
+            agency.getId(), "Henry", "Walker", LocalDate.of(1955, 8, 10)));
+
+        Payer payer = payerRepo.save(
+            new Payer(agency.getId(), "Medicaid TX", PayerType.MEDICAID, "TX"));
+
+        ServiceType serviceType = serviceTypeRepo.save(
+            new ServiceType(agency.getId(), "PCS", "PCS-V1", true, "[]"));
+
+        Authorization auth = new Authorization(
+            client.getId(), payer.getId(), serviceType.getId(), agency.getId(),
+            "AUTH-001", new BigDecimal("100"),
+            UnitType.HOURS,
+            LocalDate.now(ZoneOffset.UTC).minusMonths(1),
+            LocalDate.now(ZoneOffset.UTC).plusMonths(5));
+        auth.addUsedUnits(new BigDecimal("85"));
+        authorizationRepository.save(auth);
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.alerts()).isNotNull();
+
+        assertThat(body.alerts())
+            .anyMatch(alert -> alert.alertType() == AlertType.AUTHORIZATION_LOW);
+    }
+
+    // -------------------------------------------------------------------------
+    // Fix 5a: Credential expiring exactly on day 30 — should generate alert
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_includes_credential_expiring_on_boundary_day_30() {
+        Caregiver caregiver = caregiverRepo.save(
+            new Caregiver(agency.getId(), "Iris", "Grant", "iris@test.com"));
+
+        LocalDate expiryDate = LocalDate.now(ZoneOffset.UTC).plusDays(30);
+        credentialRepo.save(new CaregiverCredential(
+            caregiver.getId(), agency.getId(),
+            CredentialType.CPR,
+            LocalDate.now(ZoneOffset.UTC).minusYears(2),
+            expiryDate));
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+
+        assertThat(body.alerts())
+            .anyMatch(alert -> alert.alertType() == AlertType.CREDENTIAL_EXPIRING);
+    }
+
+    // -------------------------------------------------------------------------
+    // Fix 5b: Credential expiring on day 31 — should NOT generate alert
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_does_not_include_credential_expiring_on_day_31() {
+        Caregiver caregiver = caregiverRepo.save(
+            new Caregiver(agency.getId(), "Jack", "Hill", "jack@test.com"));
+
+        LocalDate expiryDate = LocalDate.now(ZoneOffset.UTC).plusDays(31);
+        credentialRepo.save(new CaregiverCredential(
+            caregiver.getId(), agency.getId(),
+            CredentialType.CPR,
+            LocalDate.now(ZoneOffset.UTC).minusYears(2),
+            expiryDate));
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+
+        assertThat(body.alerts())
+            .noneMatch(alert -> alert.alertType() == AlertType.CREDENTIAL_EXPIRING);
+    }
+
+    // -------------------------------------------------------------------------
+    // Fix 6: SCHEDULER role can access dashboard
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_returns_200_for_scheduler_role() {
+        String schedulerEmail = "dash-scheduler@test.com";
+        String schedulerPassword = "password123";
+
+        userRepo.save(new AgencyUser(
+            agency.getId(), schedulerEmail,
+            passwordEncoder.encode(schedulerPassword), UserRole.SCHEDULER));
+
+        LoginRequest loginReq = new LoginRequest(schedulerEmail, schedulerPassword);
+        ResponseEntity<LoginResponse> loginResp = restTemplate.postForEntity(
+            "/api/v1/auth/login", loginReq, LoginResponse.class);
+        assertThat(loginResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(loginResp.getBody()).isNotNull();
+        String schedulerToken = loginResp.getBody().token();
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(schedulerToken)),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 }

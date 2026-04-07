@@ -1,5 +1,6 @@
 package com.hcare.api.v1.dashboard;
 
+import com.hcare.api.v1.dashboard.dto.AlertType;
 import com.hcare.api.v1.dashboard.dto.DashboardAlert;
 import com.hcare.api.v1.dashboard.dto.DashboardTodayResponse;
 import com.hcare.api.v1.dashboard.dto.DashboardVisitRow;
@@ -24,6 +25,8 @@ import com.hcare.evv.EvvComplianceService;
 import com.hcare.evv.EvvComplianceStatus;
 import com.hcare.evv.EvvStateConfig;
 import com.hcare.evv.EvvStateConfigRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -38,12 +41,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class DashboardService {
+
+    private static final Logger log = LoggerFactory.getLogger(DashboardService.class);
 
     private static final int ALERT_WINDOW_DAYS = 30;
     private static final BigDecimal AUTH_LOW_THRESHOLD = new BigDecimal("0.80");
@@ -85,7 +90,7 @@ public class DashboardService {
     @Transactional(readOnly = true)
     public DashboardTodayResponse buildTodayDashboard(UUID agencyId) {
         LocalDateTime startOfDay = LocalDate.now(ZoneOffset.UTC).atStartOfDay();
-        LocalDateTime endOfDay = startOfDay.plusDays(1);
+        LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
 
         // Fetch today's shifts — unpaged in practice (< 500 for a small agency)
         List<Shift> todayShifts = shiftRepository
@@ -111,6 +116,11 @@ public class DashboardService {
         // EVV state config cache (keyed by state code); findByStateCode returns Optional so unwrap
         Map<String, EvvStateConfig> stateConfigCache = new HashMap<>();
 
+        // Bulk-fetch EVV records for all today's shifts — avoids N+1 queries
+        Set<UUID> shiftIds = todayShifts.stream().map(Shift::getId).collect(Collectors.toSet());
+        Map<UUID, EvvRecord> evvByShiftId = evvRecordRepository.findByShiftIdIn(shiftIds).stream()
+                .collect(Collectors.toMap(EvvRecord::getShiftId, r -> r));
+
         // Build visit rows
         List<DashboardVisitRow> visitRows = new ArrayList<>();
         int completed = 0, inProgress = 0, open = 0, redCount = 0;
@@ -120,9 +130,7 @@ public class DashboardService {
             Caregiver caregiver = shift.getCaregiverId() != null
                     ? caregiverMap.get(shift.getCaregiverId()) : null;
 
-            // findByShiftId is tenant-safe and backed by a unique index (no bulk-fetch needed)
-            Optional<EvvRecord> evvOpt = evvRecordRepository.findByShiftId(shift.getId());
-            EvvRecord evvRecord = evvOpt.orElse(null);
+            EvvRecord evvRecord = evvByShiftId.get(shift.getId());
 
             // Determine payer type for compliance computation
             PayerType payerType = null;
@@ -143,7 +151,10 @@ public class DashboardService {
                 EvvStateConfig stateConfig = stateConfigCache.computeIfAbsent(
                         stateCode,
                         code -> evvStateConfigRepository.findByStateCode(code).orElse(null));
-                if (stateConfig != null) {
+                if (stateConfig == null) {
+                    log.warn("No EvvStateConfig found for state code '{}' — EVV status will be GREY for shift {}",
+                            stateCode, shift.getId());
+                } else {
                     evvStatus = evvComplianceService.compute(
                             evvRecord, stateConfig, shift, payerType,
                             client.getLat(), client.getLng());
@@ -184,7 +195,7 @@ public class DashboardService {
             Caregiver cg = caregiverMap.get(cred.getCaregiverId());
             String name = cg != null ? cg.getFirstName() + " " + cg.getLastName() : "Unknown Caregiver";
             alerts.add(new DashboardAlert(
-                    "CREDENTIAL_EXPIRING",
+                    AlertType.CREDENTIAL_EXPIRING,
                     cred.getId(),
                     name,
                     cred.getCredentialType().name() + " expires",
@@ -199,7 +210,7 @@ public class DashboardService {
             Caregiver cg = caregiverMap.get(bc.getCaregiverId());
             String name = cg != null ? cg.getFirstName() + " " + cg.getLastName() : "Unknown Caregiver";
             alerts.add(new DashboardAlert(
-                    "BACKGROUND_CHECK_DUE",
+                    AlertType.BACKGROUND_CHECK_DUE,
                     bc.getId(),
                     name,
                     bc.getCheckType().name() + " renewal due",
@@ -208,7 +219,7 @@ public class DashboardService {
         }
 
         // Authorizations with >= 80% utilization
-        List<Authorization> allAuths = authorizationRepository.findByAgencyId(agencyId);
+        List<Authorization> allAuths = new ArrayList<>(authById.values());
         for (Authorization auth : allAuths) {
             if (auth.getAuthorizedUnits().compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal utilization = auth.getUsedUnits()
@@ -218,7 +229,7 @@ public class DashboardService {
                     String name = cl != null ? cl.getFirstName() + " " + cl.getLastName() : "Unknown Client";
                     int pct = utilization.multiply(new BigDecimal("100")).intValue();
                     alerts.add(new DashboardAlert(
-                            "AUTHORIZATION_LOW",
+                            AlertType.AUTHORIZATION_LOW,
                             auth.getId(),
                             name,
                             "Auth " + auth.getAuthNumber() + " at " + pct + "% utilization",
