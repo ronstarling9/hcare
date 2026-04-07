@@ -133,12 +133,8 @@ mvn test -Dtest=ClassName       # run a single test class
 | Frontend unit | Vitest + Testing Library | 80% coverage |
 | Frontend e2e | Playwright | Critical user flows |
 | Backend unit | JUnit 5 + Mockito | 80% coverage |
-| Backend integration | Spring Boot Test + Testcontainers | All repository & controller layers |
 
 - Write tests before or alongside new code — not after.
-- Integration tests spin up a real Postgres container via Testcontainers; do not mock the database.
-- Integration tests extend `AbstractIntegrationTest` and use the `*IT.java` suffix; unit tests use `*Test.java`.
-- Test profile (`application-test.yml`) disables scheduled jobs (`cron: "-"`) — covers both the nightly shift-generation scheduler and `hcare.scoring.weekly-reset-cron`; tests invoke scheduler/service methods directly.
 - Never commit with failing tests.
 
 ---

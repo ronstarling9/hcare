@@ -9,7 +9,6 @@ import java.util.UUID;
 
 public record CaregiverResponse(
     UUID id,
-    UUID agencyId,
     String firstName,
     String lastName,
     String email,
@@ -22,7 +21,7 @@ public record CaregiverResponse(
 ) {
     public static CaregiverResponse from(Caregiver c) {
         return new CaregiverResponse(
-            c.getId(), c.getAgencyId(), c.getFirstName(), c.getLastName(),
+            c.getId(), c.getFirstName(), c.getLastName(),
             c.getEmail(), c.getPhone(), c.getAddress(), c.getHireDate(),
             c.hasPet(), c.getStatus(), c.getCreatedAt());
     }

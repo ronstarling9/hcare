@@ -10,15 +10,15 @@ import com.hcare.api.v1.caregivers.dto.RecordBackgroundCheckRequest;
 import com.hcare.api.v1.caregivers.dto.SetAvailabilityRequest;
 import com.hcare.api.v1.caregivers.dto.ShiftHistoryResponse;
 import com.hcare.api.v1.caregivers.dto.UpdateCaregiverRequest;
-import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -33,65 +33,59 @@ public class CaregiverController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<CaregiverResponse>> listCaregivers(
-            @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.ok(caregiverService.listCaregivers(principal.getAgencyId()));
+    public ResponseEntity<Page<CaregiverResponse>> listCaregivers(
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(caregiverService.listCaregivers(pageable));
     }
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<CaregiverResponse> createCaregiver(
-            @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateCaregiverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(caregiverService.createCaregiver(principal.getAgencyId(), request));
+            .body(caregiverService.createCaregiver(request));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<CaregiverResponse> getCaregiver(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
-        return ResponseEntity.ok(caregiverService.getCaregiver(principal.getAgencyId(), id));
+        return ResponseEntity.ok(caregiverService.getCaregiver(id));
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<CaregiverResponse> updateCaregiver(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateCaregiverRequest request) {
-        return ResponseEntity.ok(
-            caregiverService.updateCaregiver(principal.getAgencyId(), id, request));
+        return ResponseEntity.ok(caregiverService.updateCaregiver(id, request));
     }
 
     // --- Credentials ---
 
     @GetMapping("/{id}/credentials")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<CredentialResponse>> listCredentials(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(caregiverService.listCredentials(principal.getAgencyId(), id));
+    public ResponseEntity<Page<CredentialResponse>> listCredentials(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(caregiverService.listCredentials(id, pageable));
     }
 
     @PostMapping("/{id}/credentials")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<CredentialResponse> addCredential(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody AddCredentialRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(caregiverService.addCredential(principal.getAgencyId(), id, request));
+            .body(caregiverService.addCredential(id, request));
     }
 
     @DeleteMapping("/{id}/credentials/{credentialId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Void> deleteCredential(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID credentialId) {
-        caregiverService.deleteCredential(principal.getAgencyId(), id, credentialId);
+        caregiverService.deleteCredential(id, credentialId);
         return ResponseEntity.noContent().build();
     }
 
@@ -99,21 +93,19 @@ public class CaregiverController {
 
     @GetMapping("/{id}/background-checks")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<BackgroundCheckResponse>> listBackgroundChecks(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(
-            caregiverService.listBackgroundChecks(principal.getAgencyId(), id));
+    public ResponseEntity<Page<BackgroundCheckResponse>> listBackgroundChecks(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(caregiverService.listBackgroundChecks(id, pageable));
     }
 
     @PostMapping("/{id}/background-checks")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<BackgroundCheckResponse> recordBackgroundCheck(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody RecordBackgroundCheckRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(caregiverService.recordBackgroundCheck(principal.getAgencyId(), id, request));
+            .body(caregiverService.recordBackgroundCheck(id, request));
     }
 
     // --- Availability ---
@@ -121,28 +113,25 @@ public class CaregiverController {
     @GetMapping("/{id}/availability")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<AvailabilityResponse> getAvailability(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
-        return ResponseEntity.ok(caregiverService.getAvailability(principal.getAgencyId(), id));
+        return ResponseEntity.ok(caregiverService.getAvailability(id));
     }
 
     @PutMapping("/{id}/availability")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<AvailabilityResponse> setAvailability(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody SetAvailabilityRequest request) {
-        return ResponseEntity.ok(caregiverService.setAvailability(principal.getAgencyId(), id, request));
+        return ResponseEntity.ok(caregiverService.setAvailability(id, request));
     }
 
     // --- Shift History ---
 
     @GetMapping("/{id}/shift-history")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<ShiftHistoryResponse>> listShiftHistory(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(
-            caregiverService.listShiftHistory(principal.getAgencyId(), id));
+    public ResponseEntity<Page<ShiftHistoryResponse>> listShiftHistory(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(caregiverService.listShiftHistory(id, pageable));
     }
 }

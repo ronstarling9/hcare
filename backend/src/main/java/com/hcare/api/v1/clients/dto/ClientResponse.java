@@ -8,7 +8,6 @@ import java.util.UUID;
 
 public record ClientResponse(
     UUID id,
-    UUID agencyId,
     String firstName,
     String lastName,
     LocalDate dateOfBirth,
@@ -24,7 +23,7 @@ public record ClientResponse(
 ) {
     public static ClientResponse from(Client c) {
         return new ClientResponse(
-            c.getId(), c.getAgencyId(), c.getFirstName(), c.getLastName(),
+            c.getId(), c.getFirstName(), c.getLastName(),
             c.getDateOfBirth(), c.getAddress(), c.getPhone(), c.getMedicaidId(),
             c.getServiceState(), c.getPreferredCaregiverGender(), c.getPreferredLanguages(),
             c.isNoPetCaregiver(), c.getStatus(), c.getCreatedAt());

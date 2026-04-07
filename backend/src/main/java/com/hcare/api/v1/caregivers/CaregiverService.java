@@ -20,6 +20,9 @@ import com.hcare.domain.CaregiverCredentialRepository;
 import com.hcare.domain.CaregiverRepository;
 import com.hcare.domain.Shift;
 import com.hcare.domain.ShiftRepository;
+import com.hcare.multitenancy.TenantContext;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,14 +53,14 @@ public class CaregiverService {
     }
 
     @Transactional(readOnly = true)
-    public List<CaregiverResponse> listCaregivers(UUID agencyId) {
-        return caregiverRepository.findByAgencyId(agencyId).stream()
-            .map(CaregiverResponse::from)
-            .toList();
+    public Page<CaregiverResponse> listCaregivers(Pageable pageable) {
+        return caregiverRepository.findByAgencyId(TenantContext.get(), pageable)
+            .map(CaregiverResponse::from);
     }
 
     @Transactional
-    public CaregiverResponse createCaregiver(UUID agencyId, CreateCaregiverRequest req) {
+    public CaregiverResponse createCaregiver(CreateCaregiverRequest req) {
+        UUID agencyId = TenantContext.get();
         Caregiver c = new Caregiver(agencyId, req.firstName(), req.lastName(), req.email());
         if (req.phone() != null) c.setPhone(req.phone());
         if (req.address() != null) c.setAddress(req.address());
@@ -67,13 +70,12 @@ public class CaregiverService {
     }
 
     @Transactional(readOnly = true)
-    public CaregiverResponse getCaregiver(UUID agencyId, UUID caregiverId) {
+    public CaregiverResponse getCaregiver(UUID caregiverId) {
         return CaregiverResponse.from(requireCaregiver(caregiverId));
     }
 
     @Transactional
-    public CaregiverResponse updateCaregiver(UUID agencyId, UUID caregiverId,
-                                              UpdateCaregiverRequest req) {
+    public CaregiverResponse updateCaregiver(UUID caregiverId, UpdateCaregiverRequest req) {
         Caregiver c = requireCaregiver(caregiverId);
         if (req.firstName() != null) c.setFirstName(req.firstName());
         if (req.lastName() != null) c.setLastName(req.lastName());
@@ -88,34 +90,37 @@ public class CaregiverService {
 
     Caregiver requireCaregiver(UUID caregiverId) {
         return caregiverRepository.findById(caregiverId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Caregiver not found"));
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Caregiver not found: " + caregiverId));
     }
 
     // --- credentials ---
 
     @Transactional(readOnly = true)
-    public List<CredentialResponse> listCredentials(UUID agencyId, UUID caregiverId) {
+    public Page<CredentialResponse> listCredentials(UUID caregiverId, Pageable pageable) {
         requireCaregiver(caregiverId);
-        return credentialRepository.findByCaregiverId(caregiverId).stream()
-            .map(CredentialResponse::from)
-            .toList();
+        return credentialRepository.findByCaregiverId(caregiverId, pageable)
+            .map(CredentialResponse::from);
     }
 
     @Transactional
-    public CredentialResponse addCredential(UUID agencyId, UUID caregiverId, AddCredentialRequest req) {
+    public CredentialResponse addCredential(UUID caregiverId, AddCredentialRequest req) {
         requireCaregiver(caregiverId);
+        UUID agencyId = TenantContext.get();
         CaregiverCredential cred = new CaregiverCredential(
             caregiverId, agencyId, req.credentialType(), req.issueDate(), req.expiryDate());
         return CredentialResponse.from(credentialRepository.save(cred));
     }
 
     @Transactional
-    public void deleteCredential(UUID agencyId, UUID caregiverId, UUID credentialId) {
+    public void deleteCredential(UUID caregiverId, UUID credentialId) {
         requireCaregiver(caregiverId);
         CaregiverCredential cred = credentialRepository.findById(credentialId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Credential not found"));
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Credential not found: " + credentialId));
         if (!cred.getCaregiverId().equals(caregiverId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Credential not found");
+            throw new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Credential not found: " + credentialId);
         }
         credentialRepository.delete(cred);
     }
@@ -123,17 +128,17 @@ public class CaregiverService {
     // --- background checks ---
 
     @Transactional(readOnly = true)
-    public List<BackgroundCheckResponse> listBackgroundChecks(UUID agencyId, UUID caregiverId) {
+    public Page<BackgroundCheckResponse> listBackgroundChecks(UUID caregiverId, Pageable pageable) {
         requireCaregiver(caregiverId);
-        return backgroundCheckRepository.findByCaregiverId(caregiverId).stream()
-            .map(BackgroundCheckResponse::from)
-            .toList();
+        return backgroundCheckRepository.findByCaregiverId(caregiverId, pageable)
+            .map(BackgroundCheckResponse::from);
     }
 
     @Transactional
-    public BackgroundCheckResponse recordBackgroundCheck(UUID agencyId, UUID caregiverId,
-                                                          RecordBackgroundCheckRequest req) {
+    public BackgroundCheckResponse recordBackgroundCheck(UUID caregiverId,
+                                                         RecordBackgroundCheckRequest req) {
         requireCaregiver(caregiverId);
+        UUID agencyId = TenantContext.get();
         BackgroundCheck check = new BackgroundCheck(
             caregiverId, agencyId, req.checkType(), req.result(), req.checkedAt());
         if (req.renewalDueDate() != null) check.setRenewalDueDate(req.renewalDueDate());
@@ -143,7 +148,7 @@ public class CaregiverService {
     // --- availability (replace-all semantics) ---
 
     @Transactional(readOnly = true)
-    public AvailabilityResponse getAvailability(UUID agencyId, UUID caregiverId) {
+    public AvailabilityResponse getAvailability(UUID caregiverId) {
         requireCaregiver(caregiverId);
         List<AvailabilityResponse.AvailabilityBlock> blocks =
             availabilityRepository.findByCaregiverId(caregiverId).stream()
@@ -153,12 +158,13 @@ public class CaregiverService {
     }
 
     @Transactional
-    public AvailabilityResponse setAvailability(UUID agencyId, UUID caregiverId,
-                                                 SetAvailabilityRequest req) {
+    public AvailabilityResponse setAvailability(UUID caregiverId, SetAvailabilityRequest req) {
         requireCaregiver(caregiverId);
-        availabilityRepository.deleteByCaregiverId(caregiverId);
+        UUID agencyId = TenantContext.get();
+        availabilityRepository.deleteByCaregiverIdAndAgencyId(caregiverId, agencyId);
         List<CaregiverAvailability> toSave = req.blocks().stream()
-            .map(b -> new CaregiverAvailability(caregiverId, agencyId, b.dayOfWeek(), b.startTime(), b.endTime()))
+            .map(b -> new CaregiverAvailability(
+                caregiverId, agencyId, b.dayOfWeek(), b.startTime(), b.endTime()))
             .toList();
         List<CaregiverAvailability> saved = availabilityRepository.saveAll(toSave);
         List<AvailabilityResponse.AvailabilityBlock> blocks = saved.stream()
@@ -170,10 +176,9 @@ public class CaregiverService {
     // --- shift history ---
 
     @Transactional(readOnly = true)
-    public List<ShiftHistoryResponse> listShiftHistory(UUID agencyId, UUID caregiverId) {
+    public Page<ShiftHistoryResponse> listShiftHistory(UUID caregiverId, Pageable pageable) {
         requireCaregiver(caregiverId);
-        return shiftRepository.findByCaregiverId(caregiverId).stream()
-            .map(ShiftHistoryResponse::from)
-            .toList();
+        return shiftRepository.findByCaregiverId(caregiverId, pageable)
+            .map(ShiftHistoryResponse::from);
     }
 }

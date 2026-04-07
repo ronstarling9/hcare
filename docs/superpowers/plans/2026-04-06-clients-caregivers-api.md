@@ -739,8 +739,10 @@ public record AddMedicationRequest(
 ```java
 package com.hcare.api.v1.clients.dto;
 
+import jakarta.validation.constraints.Size;
+
 public record UpdateMedicationRequest(
-    String name,
+    @Size(min = 1) String name,
     String dosage,
     String route,
     String schedule,
@@ -1105,11 +1107,8 @@ Add test methods:
     void createCarePlan_creates_draft_with_next_version_number() {
         Client client = makeClient();
         when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        CarePlan existingPlan = new CarePlan(clientId, agencyId, 1);
-        when(carePlanRepository.findByClientIdOrderByPlanVersionAsc(clientId))
-            .thenReturn(List.of(existingPlan));
-        CarePlan saved = new CarePlan(clientId, agencyId, 2);
-        when(carePlanRepository.save(any())).thenReturn(saved);
+        when(carePlanRepository.findMaxPlanVersionByClientId(clientId)).thenReturn(1);
+        when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CarePlanResponse result = service.createCarePlan(agencyId, clientId,
             new CreateCarePlanRequest(null));
@@ -1145,8 +1144,6 @@ Add test methods:
         CarePlan plan = new CarePlan(clientId, agencyId, 1);
         plan.activate();
         when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        when(carePlanRepository.findByClientIdAndStatus(clientId, CarePlanStatus.ACTIVE))
-            .thenReturn(Optional.of(plan));
 
         assertThatThrownBy(() -> service.activateCarePlan(agencyId, clientId, planId))
             .isInstanceOf(ResponseStatusException.class)
@@ -1411,6 +1408,21 @@ public record GoalResponse(
 }
 ```
 
+- [ ] **Step 4b: Verify CarePlan domain methods**
+
+Read `backend/src/main/java/com/hcare/domain/CarePlan.java`. Confirm that `review(UUID clinicianId)`, `activate()`, and `supersede()` all exist as domain methods.
+
+- If `review(UUID clinicianId)` is missing, add it to `CarePlan.java`:
+  ```java
+  public void review(UUID clinicianId) {
+      this.reviewedByClinicianId = clinicianId;
+      this.reviewedAt = LocalDateTime.now(ZoneOffset.UTC);
+  }
+  ```
+- If `activate()` or `supersede()` are missing, add them analogously (set status + timestamp).
+
+Do not proceed to Step 5 until these are confirmed.
+
 - [ ] **Step 5: Extend ClientService with care plan / ADL task / goal methods**
 
 Add these methods to `ClientService.java` (and add the three new repository constructor parameters and fields):
@@ -1597,6 +1609,9 @@ public interface CarePlanRepository extends JpaRepository<CarePlan, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<CarePlan> findByClientIdAndStatus(UUID clientId, CarePlanStatus status);
 
+    // PESSIMISTIC_WRITE serializes concurrent createCarePlan calls for the same client,
+    // preventing two simultaneous requests from both reading max version N and saving duplicate N+1.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT COALESCE(MAX(p.planVersion), 0) FROM CarePlan p WHERE p.clientId = :clientId")
     int findMaxPlanVersionByClientId(UUID clientId);
 }
@@ -1748,14 +1763,34 @@ git commit -m "feat: add care plans, ADL tasks, and goals sub-resources to clien
 - Modify: `backend/src/main/java/com/hcare/api/v1/clients/ClientController.java`
 - Modify: `backend/src/test/java/com/hcare/api/v1/clients/ClientServiceTest.java`
 
-- [ ] **Step 0: Verify ServiceType domain model (C4)**
+- [ ] **Step 0: Verify domain assumptions before writing any Task 4 code**
+
+**0a. ServiceType ownership model (C4):**
 
 Read `backend/src/main/java/com/hcare/domain/ServiceType.java`.
 
 - **If `agencyId` field exists on `ServiceType`:** proceed with the `createAuthorization` service code as written in Step 5 — the `serviceType.getAgencyId().equals(agencyId)` ownership check is correct.
 - **If `ServiceType` is global (no `agencyId` field, similar to `EvvStateConfig`):** remove the `serviceType.getAgencyId()` check from `createAuthorization` in Step 5; validate only payer ownership. Also remove or adjust the `ServiceType serviceType = new ServiceType(agencyId, ...)` constructor calls in the test stubs (Step 1) to match the actual constructor signature.
 
-Do not proceed to Step 1 until this is confirmed.
+**0b. `Authorization.getUsedUnits()` (N13):**
+
+Read `backend/src/main/java/com/hcare/domain/Authorization.java`. Confirm `getUsedUnits()` exists and what it returns.
+
+- **If it is a stored field:** `AuthorizationResponse.from(a)` using `a.getUsedUnits()` is correct.
+- **If it is absent or computed differently (e.g., via `@Formula`):** adjust `AuthorizationResponse.from()` to use the correct method or remove the field from the response record.
+
+**0c. `FamilyPortalUserRepository.findByAgencyIdAndEmail` (Q3):**
+
+Read `backend/src/main/java/com/hcare/domain/FamilyPortalUserRepository.java`. Confirm `findByAgencyIdAndEmail(UUID agencyId, String email)` exists.
+
+- **If it already exists:** no change needed; proceed to Step 1.
+- **If it is missing:** add it to `FamilyPortalUserRepository.java`:
+  ```java
+  Optional<FamilyPortalUser> findByAgencyIdAndEmail(UUID agencyId, String email);
+  ```
+  Add `FamilyPortalUserRepository.java` to the Files list for this task.
+
+Do not proceed to Step 1 until all three checks are resolved.
 
 - [ ] **Step 1: Add tests for authorizations and family portal users**
 
@@ -1862,6 +1897,29 @@ Add test methods:
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 1, 1))))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("400");
+    }
+
+    @Test
+    void createAuthorization_throws_409_when_overlapping_authorization_exists() {
+        UUID payerId = UUID.randomUUID();
+        UUID serviceTypeId = UUID.randomUUID();
+        Client client = makeClient();
+        Payer payer = new Payer(agencyId, "Medicaid", PayerType.MEDICAID, "CA");
+        ServiceType serviceType = new ServiceType(agencyId, "Personal Care", "PC", false, "[]");
+        Authorization existing = new Authorization(clientId, payerId, serviceTypeId, agencyId,
+            "AUTH-000", new BigDecimal("40"), UnitType.HOURS,
+            LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30));
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(payerRepository.findById(payerId)).thenReturn(Optional.of(payer));
+        when(serviceTypeRepository.findById(serviceTypeId)).thenReturn(Optional.of(serviceType));
+        when(authorizationRepository.findByClientId(clientId)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> service.createAuthorization(agencyId, clientId,
+            new CreateAuthorizationRequest(payerId, serviceTypeId, "AUTH-001",
+                UnitType.HOURS, new BigDecimal("40"),
+                LocalDate.of(2026, 4, 1), LocalDate.of(2026, 12, 31))))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("409");
     }
 
     @Test
@@ -2094,6 +2152,15 @@ New service methods:
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "ServiceType does not belong to this agency");
         }
+        boolean hasOverlap = authorizationRepository.findByClientId(clientId).stream()
+            .filter(a -> a.getPayerId().equals(req.payerId())
+                      && a.getServiceTypeId().equals(req.serviceTypeId()))
+            .anyMatch(a -> req.startDate().isBefore(a.getEndDate())
+                       && a.getStartDate().isBefore(req.endDate()));
+        if (hasOverlap) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "An overlapping authorization already exists for this client, payer, and service type");
+        }
         Authorization auth = new Authorization(clientId, req.payerId(), req.serviceTypeId(),
             agencyId, req.authNumber(), req.authorizedUnits(), req.unitType(),
             req.startDate(), req.endDate());
@@ -2214,7 +2281,7 @@ Add to `ClientController.java`:
 cd backend && mvn test -Dtest=ClientServiceTest -q 2>&1 | tail -5
 ```
 
-Expected: `BUILD SUCCESS` — `Tests run: 36, Failures: 0`.
+Expected: `BUILD SUCCESS` — `Tests run: 37, Failures: 0`.
 
 - [ ] **Step 8: Commit**
 
@@ -3154,6 +3221,22 @@ Add test methods:
             .hasMessageContaining("400");
     }
 
+    @Test
+    void setAvailability_rejects_overlapping_blocks() {
+        Caregiver caregiver = makeCaregiver();
+        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(caregiver));
+        when(availabilityRepository.findByCaregiverId(caregiverId)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.setAvailability(agencyId, caregiverId,
+            new SetAvailabilityRequest(List.of(
+                new AvailabilityBlockRequest(DayOfWeek.MONDAY,
+                    LocalTime.of(8, 0), LocalTime.of(16, 0)),
+                new AvailabilityBlockRequest(DayOfWeek.MONDAY,
+                    LocalTime.of(10, 0), LocalTime.of(18, 0))))))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("400");
+    }
+
     // --- shift history ---
 
     @Test
@@ -3266,11 +3349,12 @@ package com.hcare.api.v1.caregivers.dto;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
 public record SetAvailabilityRequest(
-    @NotNull @Valid List<AvailabilityBlockRequest> blocks
+    @NotNull @Size(min = 1) @Valid List<AvailabilityBlockRequest> blocks
 ) {}
 ```
 
@@ -3511,7 +3595,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 cd backend && mvn test -Dtest=CaregiverServiceTest -q 2>&1 | tail -5
 ```
 
-Expected: `BUILD SUCCESS` — `Tests run: 22, Failures: 0`.
+Expected: `BUILD SUCCESS` — `Tests run: 23, Failures: 0`.
 
 - [ ] **Step 8: Run full test suite**
 

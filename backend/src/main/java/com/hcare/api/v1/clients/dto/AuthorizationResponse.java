@@ -12,7 +12,6 @@ public record AuthorizationResponse(
     UUID clientId,
     UUID payerId,
     UUID serviceTypeId,
-    UUID agencyId,
     String authNumber,
     BigDecimal authorizedUnits,
     BigDecimal usedUnits,
@@ -25,7 +24,7 @@ public record AuthorizationResponse(
     public static AuthorizationResponse from(Authorization a) {
         return new AuthorizationResponse(
             a.getId(), a.getClientId(), a.getPayerId(), a.getServiceTypeId(),
-            a.getAgencyId(), a.getAuthNumber(), a.getAuthorizedUnits(), a.getUsedUnits(),
+            a.getAuthNumber(), a.getAuthorizedUnits(), a.getUsedUnits(),
             a.getUnitType(), a.getStartDate(), a.getEndDate(), a.getVersion(), a.getCreatedAt());
     }
 }

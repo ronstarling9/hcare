@@ -8,7 +8,6 @@ import java.util.UUID;
 public record CarePlanResponse(
     UUID id,
     UUID clientId,
-    UUID agencyId,
     int planVersion,
     CarePlanStatus status,
     UUID reviewedByClinicianId,
@@ -18,7 +17,7 @@ public record CarePlanResponse(
 ) {
     public static CarePlanResponse from(CarePlan p) {
         return new CarePlanResponse(
-            p.getId(), p.getClientId(), p.getAgencyId(), p.getPlanVersion(),
+            p.getId(), p.getClientId(), p.getPlanVersion(),
             p.getStatus(), p.getReviewedByClinicianId(), p.getReviewedAt(),
             p.getActivatedAt(), p.getCreatedAt());
     }

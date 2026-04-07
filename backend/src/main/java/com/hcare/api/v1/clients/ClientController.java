@@ -19,15 +19,15 @@ import com.hcare.api.v1.clients.dto.MedicationResponse;
 import com.hcare.api.v1.clients.dto.UpdateClientRequest;
 import com.hcare.api.v1.clients.dto.UpdateGoalRequest;
 import com.hcare.api.v1.clients.dto.UpdateMedicationRequest;
-import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -42,64 +42,59 @@ public class ClientController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<ClientResponse>> listClients(
-            @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.ok(clientService.listClients(principal.getAgencyId()));
+    public ResponseEntity<Page<ClientResponse>> listClients(
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listClients(pageable));
     }
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ClientResponse> createClient(
-            @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateClientRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.createClient(principal.getAgencyId(), request));
+            .body(clientService.createClient(request));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ClientResponse> getClient(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
-        return ResponseEntity.ok(clientService.getClient(principal.getAgencyId(), id));
+        return ResponseEntity.ok(clientService.getClient(id));
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<ClientResponse> updateClient(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateClientRequest request) {
-        return ResponseEntity.ok(clientService.updateClient(principal.getAgencyId(), id, request));
+        return ResponseEntity.ok(clientService.updateClient(id, request));
     }
 
     // --- Diagnoses ---
 
     @GetMapping("/{id}/diagnoses")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<DiagnosisResponse>> listDiagnoses(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(clientService.listDiagnoses(principal.getAgencyId(), id));
+    public ResponseEntity<Page<DiagnosisResponse>> listDiagnoses(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listDiagnoses(id, pageable));
     }
 
     @PostMapping("/{id}/diagnoses")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<DiagnosisResponse> addDiagnosis(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody AddDiagnosisRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.addDiagnosis(principal.getAgencyId(), id, request));
+            .body(clientService.addDiagnosis(id, request));
     }
 
     @DeleteMapping("/{id}/diagnoses/{diagnosisId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Void> deleteDiagnosis(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID diagnosisId) {
-        clientService.deleteDiagnosis(principal.getAgencyId(), id, diagnosisId);
+        clientService.deleteDiagnosis(id, diagnosisId);
         return ResponseEntity.noContent().build();
     }
 
@@ -107,40 +102,37 @@ public class ClientController {
 
     @GetMapping("/{id}/medications")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<MedicationResponse>> listMedications(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(clientService.listMedications(principal.getAgencyId(), id));
+    public ResponseEntity<Page<MedicationResponse>> listMedications(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listMedications(id, pageable));
     }
 
     @PostMapping("/{id}/medications")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<MedicationResponse> addMedication(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody AddMedicationRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.addMedication(principal.getAgencyId(), id, request));
+            .body(clientService.addMedication(id, request));
     }
 
     @PatchMapping("/{id}/medications/{medicationId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<MedicationResponse> updateMedication(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID medicationId,
             @Valid @RequestBody UpdateMedicationRequest request) {
         return ResponseEntity.ok(
-            clientService.updateMedication(principal.getAgencyId(), id, medicationId, request));
+            clientService.updateMedication(id, medicationId, request));
     }
 
     @DeleteMapping("/{id}/medications/{medicationId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Void> deleteMedication(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID medicationId) {
-        clientService.deleteMedication(principal.getAgencyId(), id, medicationId);
+        clientService.deleteMedication(id, medicationId);
         return ResponseEntity.noContent().build();
     }
 
@@ -148,61 +140,57 @@ public class ClientController {
 
     @GetMapping("/{id}/care-plans")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<CarePlanResponse>> listCarePlans(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(clientService.listCarePlans(principal.getAgencyId(), id));
+    public ResponseEntity<Page<CarePlanResponse>> listCarePlans(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listCarePlans(id, pageable));
     }
 
     @PostMapping("/{id}/care-plans")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<CarePlanResponse> createCarePlan(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody CreateCarePlanRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.createCarePlan(principal.getAgencyId(), id, request));
+            .body(clientService.createCarePlan(id, request));
     }
 
     @PostMapping("/{id}/care-plans/{planId}/activate")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<CarePlanResponse> activateCarePlan(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID planId) {
-        return ResponseEntity.ok(clientService.activateCarePlan(principal.getAgencyId(), id, planId));
+        return ResponseEntity.ok(clientService.activateCarePlan(id, planId));
     }
 
     // --- ADL Tasks ---
 
     @GetMapping("/{id}/care-plans/{planId}/adl-tasks")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<AdlTaskResponse>> listAdlTasks(
-            @AuthenticationPrincipal UserPrincipal principal,
+    public ResponseEntity<Page<AdlTaskResponse>> listAdlTasks(
             @PathVariable UUID id,
-            @PathVariable UUID planId) {
-        return ResponseEntity.ok(clientService.listAdlTasks(principal.getAgencyId(), id, planId));
+            @PathVariable UUID planId,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listAdlTasks(id, planId, pageable));
     }
 
     @PostMapping("/{id}/care-plans/{planId}/adl-tasks")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<AdlTaskResponse> addAdlTask(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID planId,
             @Valid @RequestBody AddAdlTaskRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.addAdlTask(principal.getAgencyId(), id, planId, request));
+            .body(clientService.addAdlTask(id, planId, request));
     }
 
     @DeleteMapping("/{id}/care-plans/{planId}/adl-tasks/{taskId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Void> deleteAdlTask(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID planId,
             @PathVariable UUID taskId) {
-        clientService.deleteAdlTask(principal.getAgencyId(), id, planId, taskId);
+        clientService.deleteAdlTask(id, planId, taskId);
         return ResponseEntity.noContent().build();
     }
 
@@ -210,44 +198,41 @@ public class ClientController {
 
     @GetMapping("/{id}/care-plans/{planId}/goals")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<GoalResponse>> listGoals(
-            @AuthenticationPrincipal UserPrincipal principal,
+    public ResponseEntity<Page<GoalResponse>> listGoals(
             @PathVariable UUID id,
-            @PathVariable UUID planId) {
-        return ResponseEntity.ok(clientService.listGoals(principal.getAgencyId(), id, planId));
+            @PathVariable UUID planId,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listGoals(id, planId, pageable));
     }
 
     @PostMapping("/{id}/care-plans/{planId}/goals")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<GoalResponse> addGoal(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID planId,
             @Valid @RequestBody AddGoalRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.addGoal(principal.getAgencyId(), id, planId, request));
+            .body(clientService.addGoal(id, planId, request));
     }
 
     @PatchMapping("/{id}/care-plans/{planId}/goals/{goalId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<GoalResponse> updateGoal(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID planId,
             @PathVariable UUID goalId,
             @Valid @RequestBody UpdateGoalRequest request) {
         return ResponseEntity.ok(
-            clientService.updateGoal(principal.getAgencyId(), id, planId, goalId, request));
+            clientService.updateGoal(id, planId, goalId, request));
     }
 
     @DeleteMapping("/{id}/care-plans/{planId}/goals/{goalId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Void> deleteGoal(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID planId,
             @PathVariable UUID goalId) {
-        clientService.deleteGoal(principal.getAgencyId(), id, planId, goalId);
+        clientService.deleteGoal(id, planId, goalId);
         return ResponseEntity.noContent().build();
     }
 
@@ -255,49 +240,46 @@ public class ClientController {
 
     @GetMapping("/{id}/authorizations")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<AuthorizationResponse>> listAuthorizations(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(clientService.listAuthorizations(principal.getAgencyId(), id));
+    public ResponseEntity<Page<AuthorizationResponse>> listAuthorizations(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listAuthorizations(id, pageable));
     }
 
     @PostMapping("/{id}/authorizations")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<AuthorizationResponse> createAuthorization(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody CreateAuthorizationRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.createAuthorization(principal.getAgencyId(), id, request));
+            .body(clientService.createAuthorization(id, request));
     }
 
     // --- Family Portal Users ---
 
     @GetMapping("/{id}/family-portal-users")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<List<FamilyPortalUserResponse>> listFamilyPortalUsers(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(clientService.listFamilyPortalUsers(principal.getAgencyId(), id));
+    public ResponseEntity<Page<FamilyPortalUserResponse>> listFamilyPortalUsers(
+            @PathVariable UUID id,
+            @PageableDefault(size = 25) Pageable pageable) {
+        return ResponseEntity.ok(clientService.listFamilyPortalUsers(id, pageable));
     }
 
     @PostMapping("/{id}/family-portal-users")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<FamilyPortalUserResponse> addFamilyPortalUser(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody AddFamilyPortalUserRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(clientService.addFamilyPortalUser(principal.getAgencyId(), id, request));
+            .body(clientService.addFamilyPortalUser(id, request));
     }
 
     @DeleteMapping("/{id}/family-portal-users/{fpuId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Void> removeFamilyPortalUser(
-            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @PathVariable UUID fpuId) {
-        clientService.removeFamilyPortalUser(principal.getAgencyId(), id, fpuId);
+        clientService.removeFamilyPortalUser(id, fpuId);
         return ResponseEntity.noContent().build();
     }
 }

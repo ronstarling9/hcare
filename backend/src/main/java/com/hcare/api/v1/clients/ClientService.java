@@ -36,12 +36,15 @@ import com.hcare.domain.FamilyPortalUser;
 import com.hcare.domain.FamilyPortalUserRepository;
 import com.hcare.domain.Goal;
 import com.hcare.domain.GoalRepository;
+import com.hcare.multitenancy.TenantContext;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -75,14 +78,14 @@ public class ClientService {
     }
 
     @Transactional(readOnly = true)
-    public List<ClientResponse> listClients(UUID agencyId) {
-        return clientRepository.findByAgencyId(agencyId).stream()
-            .map(ClientResponse::from)
-            .toList();
+    public Page<ClientResponse> listClients(Pageable pageable) {
+        return clientRepository.findByAgencyId(TenantContext.get(), pageable)
+            .map(ClientResponse::from);
     }
 
     @Transactional
-    public ClientResponse createClient(UUID agencyId, CreateClientRequest req) {
+    public ClientResponse createClient(CreateClientRequest req) {
+        UUID agencyId = TenantContext.get();
         Client client = new Client(agencyId, req.firstName(), req.lastName(), req.dateOfBirth());
         if (req.address() != null) client.setAddress(req.address());
         if (req.phone() != null) client.setPhone(req.phone());
@@ -95,12 +98,12 @@ public class ClientService {
     }
 
     @Transactional(readOnly = true)
-    public ClientResponse getClient(UUID agencyId, UUID clientId) {
+    public ClientResponse getClient(UUID clientId) {
         return ClientResponse.from(requireClient(clientId));
     }
 
     @Transactional
-    public ClientResponse updateClient(UUID agencyId, UUID clientId, UpdateClientRequest req) {
+    public ClientResponse updateClient(UUID clientId, UpdateClientRequest req) {
         Client client = requireClient(clientId);
         if (req.firstName() != null) client.setFirstName(req.firstName());
         if (req.lastName() != null) client.setLastName(req.lastName());
@@ -119,8 +122,9 @@ public class ClientService {
     // --- diagnoses ---
 
     @Transactional
-    public DiagnosisResponse addDiagnosis(UUID agencyId, UUID clientId, AddDiagnosisRequest req) {
+    public DiagnosisResponse addDiagnosis(UUID clientId, AddDiagnosisRequest req) {
         requireClient(clientId);
+        UUID agencyId = TenantContext.get();
         ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, req.icd10Code());
         if (req.description() != null) diag.setDescription(req.description());
         if (req.onsetDate() != null) diag.setOnsetDate(req.onsetDate());
@@ -128,20 +132,21 @@ public class ClientService {
     }
 
     @Transactional(readOnly = true)
-    public List<DiagnosisResponse> listDiagnoses(UUID agencyId, UUID clientId) {
+    public Page<DiagnosisResponse> listDiagnoses(UUID clientId, Pageable pageable) {
         requireClient(clientId);
-        return diagnosisRepository.findByClientId(clientId).stream()
-            .map(DiagnosisResponse::from)
-            .toList();
+        return diagnosisRepository.findByClientId(clientId, pageable)
+            .map(DiagnosisResponse::from);
     }
 
     @Transactional
-    public void deleteDiagnosis(UUID agencyId, UUID clientId, UUID diagnosisId) {
+    public void deleteDiagnosis(UUID clientId, UUID diagnosisId) {
         requireClient(clientId);
         ClientDiagnosis diag = diagnosisRepository.findById(diagnosisId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Diagnosis not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Diagnosis not found: " + diagnosisId));
         if (!diag.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Diagnosis not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Diagnosis not found: " + diagnosisId);
         }
         diagnosisRepository.delete(diag);
     }
@@ -149,8 +154,9 @@ public class ClientService {
     // --- medications ---
 
     @Transactional
-    public MedicationResponse addMedication(UUID agencyId, UUID clientId, AddMedicationRequest req) {
+    public MedicationResponse addMedication(UUID clientId, AddMedicationRequest req) {
         requireClient(clientId);
+        UUID agencyId = TenantContext.get();
         ClientMedication med = new ClientMedication(clientId, agencyId, req.name());
         if (req.dosage() != null) med.setDosage(req.dosage());
         if (req.route() != null) med.setRoute(req.route());
@@ -160,21 +166,22 @@ public class ClientService {
     }
 
     @Transactional(readOnly = true)
-    public List<MedicationResponse> listMedications(UUID agencyId, UUID clientId) {
+    public Page<MedicationResponse> listMedications(UUID clientId, Pageable pageable) {
         requireClient(clientId);
-        return medicationRepository.findByClientId(clientId).stream()
-            .map(MedicationResponse::from)
-            .toList();
+        return medicationRepository.findByClientId(clientId, pageable)
+            .map(MedicationResponse::from);
     }
 
     @Transactional
-    public MedicationResponse updateMedication(UUID agencyId, UUID clientId, UUID medicationId,
+    public MedicationResponse updateMedication(UUID clientId, UUID medicationId,
                                                UpdateMedicationRequest req) {
         requireClient(clientId);
         ClientMedication med = medicationRepository.findById(medicationId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Medication not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Medication not found: " + medicationId));
         if (!med.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Medication not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Medication not found: " + medicationId);
         }
         if (req.name() != null) med.setName(req.name());
         if (req.dosage() != null) med.setDosage(req.dosage());
@@ -185,12 +192,14 @@ public class ClientService {
     }
 
     @Transactional
-    public void deleteMedication(UUID agencyId, UUID clientId, UUID medicationId) {
+    public void deleteMedication(UUID clientId, UUID medicationId) {
         requireClient(clientId);
         ClientMedication med = medicationRepository.findById(medicationId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Medication not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Medication not found: " + medicationId));
         if (!med.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Medication not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Medication not found: " + medicationId);
         }
         medicationRepository.delete(med);
     }
@@ -198,34 +207,40 @@ public class ClientService {
     // --- care plans ---
 
     @Transactional(readOnly = true)
-    public List<CarePlanResponse> listCarePlans(UUID agencyId, UUID clientId) {
+    public Page<CarePlanResponse> listCarePlans(UUID clientId, Pageable pageable) {
         requireClient(clientId);
-        return carePlanRepository.findByClientIdOrderByPlanVersionAsc(clientId).stream()
-            .map(CarePlanResponse::from)
-            .toList();
+        return carePlanRepository.findByClientIdOrderByPlanVersionAsc(clientId, pageable)
+            .map(CarePlanResponse::from);
     }
 
     @Transactional
-    public CarePlanResponse createCarePlan(UUID agencyId, UUID clientId, CreateCarePlanRequest req) {
+    public CarePlanResponse createCarePlan(UUID clientId, CreateCarePlanRequest req) {
         requireClient(clientId);
+        UUID agencyId = TenantContext.get();
         int nextVersion = carePlanRepository.findMaxPlanVersionByClientId(clientId) + 1;
         CarePlan plan = new CarePlan(clientId, agencyId, nextVersion);
-        if (req.reviewedByClinicianId() != null) {
-            plan.review(req.reviewedByClinicianId());
+        if (req.reviewedByClinicianId() != null) plan.review(req.reviewedByClinicianId());
+        try {
+            return CarePlanResponse.from(carePlanRepository.saveAndFlush(plan));
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "A concurrent care plan creation occurred; retry the request");
         }
-        return CarePlanResponse.from(carePlanRepository.save(plan));
     }
 
     @Transactional
-    public CarePlanResponse activateCarePlan(UUID agencyId, UUID clientId, UUID carePlanId) {
+    public CarePlanResponse activateCarePlan(UUID clientId, UUID carePlanId) {
         requireClient(clientId);
         CarePlan plan = carePlanRepository.findByIdWithLock(carePlanId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Care plan not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Care plan not found: " + carePlanId));
         if (!plan.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Care plan not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Care plan not found: " + carePlanId);
         }
-        if (plan.getStatus() == CarePlanStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Care plan is already ACTIVE");
+        if (plan.getStatus() != CarePlanStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Only DRAFT plans can be activated; current status: " + plan.getStatus());
         }
         carePlanRepository.findByClientIdAndStatus(clientId, CarePlanStatus.ACTIVE)
             .ifPresent(current -> {
@@ -239,17 +254,16 @@ public class ClientService {
     // --- ADL tasks ---
 
     @Transactional(readOnly = true)
-    public List<AdlTaskResponse> listAdlTasks(UUID agencyId, UUID clientId, UUID carePlanId) {
+    public Page<AdlTaskResponse> listAdlTasks(UUID clientId, UUID carePlanId, Pageable pageable) {
         requireCarePlan(clientId, carePlanId);
-        return adlTaskRepository.findByCarePlanIdOrderBySortOrder(carePlanId).stream()
-            .map(AdlTaskResponse::from)
-            .toList();
+        return adlTaskRepository.findByCarePlanIdOrderBySortOrder(carePlanId, pageable)
+            .map(AdlTaskResponse::from);
     }
 
     @Transactional
-    public AdlTaskResponse addAdlTask(UUID agencyId, UUID clientId, UUID carePlanId,
-                                      AddAdlTaskRequest req) {
+    public AdlTaskResponse addAdlTask(UUID clientId, UUID carePlanId, AddAdlTaskRequest req) {
         requireCarePlan(clientId, carePlanId);
+        UUID agencyId = TenantContext.get();
         AdlTask task = new AdlTask(carePlanId, agencyId, req.name(), req.assistanceLevel());
         if (req.instructions() != null) task.setInstructions(req.instructions());
         if (req.frequency() != null) task.setFrequency(req.frequency());
@@ -258,12 +272,14 @@ public class ClientService {
     }
 
     @Transactional
-    public void deleteAdlTask(UUID agencyId, UUID clientId, UUID carePlanId, UUID taskId) {
+    public void deleteAdlTask(UUID clientId, UUID carePlanId, UUID taskId) {
         requireCarePlan(clientId, carePlanId);
         AdlTask task = adlTaskRepository.findById(taskId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ADL task not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "ADL task not found: " + taskId));
         if (!task.getCarePlanId().equals(carePlanId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "ADL task not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "ADL task not found: " + taskId);
         }
         adlTaskRepository.delete(task);
     }
@@ -271,29 +287,30 @@ public class ClientService {
     // --- goals ---
 
     @Transactional(readOnly = true)
-    public List<GoalResponse> listGoals(UUID agencyId, UUID clientId, UUID carePlanId) {
+    public Page<GoalResponse> listGoals(UUID clientId, UUID carePlanId, Pageable pageable) {
         requireCarePlan(clientId, carePlanId);
-        return goalRepository.findByCarePlanId(carePlanId).stream()
-            .map(GoalResponse::from)
-            .toList();
+        return goalRepository.findByCarePlanId(carePlanId, pageable)
+            .map(GoalResponse::from);
     }
 
     @Transactional
-    public GoalResponse addGoal(UUID agencyId, UUID clientId, UUID carePlanId, AddGoalRequest req) {
+    public GoalResponse addGoal(UUID clientId, UUID carePlanId, AddGoalRequest req) {
         requireCarePlan(clientId, carePlanId);
+        UUID agencyId = TenantContext.get();
         Goal goal = new Goal(carePlanId, agencyId, req.description());
         if (req.targetDate() != null) goal.setTargetDate(req.targetDate());
         return GoalResponse.from(goalRepository.save(goal));
     }
 
     @Transactional
-    public GoalResponse updateGoal(UUID agencyId, UUID clientId, UUID carePlanId, UUID goalId,
+    public GoalResponse updateGoal(UUID clientId, UUID carePlanId, UUID goalId,
                                    UpdateGoalRequest req) {
         requireCarePlan(clientId, carePlanId);
         Goal goal = goalRepository.findById(goalId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Goal not found: " + goalId));
         if (!goal.getCarePlanId().equals(carePlanId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found: " + goalId);
         }
         if (req.description() != null) goal.setDescription(req.description());
         if (req.targetDate() != null) goal.setTargetDate(req.targetDate());
@@ -302,12 +319,13 @@ public class ClientService {
     }
 
     @Transactional
-    public void deleteGoal(UUID agencyId, UUID clientId, UUID carePlanId, UUID goalId) {
+    public void deleteGoal(UUID clientId, UUID carePlanId, UUID goalId) {
         requireCarePlan(clientId, carePlanId);
         Goal goal = goalRepository.findById(goalId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Goal not found: " + goalId));
         if (!goal.getCarePlanId().equals(carePlanId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Goal not found: " + goalId);
         }
         goalRepository.delete(goal);
     }
@@ -315,17 +333,17 @@ public class ClientService {
     // --- authorizations ---
 
     @Transactional(readOnly = true)
-    public List<AuthorizationResponse> listAuthorizations(UUID agencyId, UUID clientId) {
+    public Page<AuthorizationResponse> listAuthorizations(UUID clientId, Pageable pageable) {
         requireClient(clientId);
-        return authorizationRepository.findByClientId(clientId).stream()
-            .map(AuthorizationResponse::from)
-            .toList();
+        return authorizationRepository.findByClientId(clientId, pageable)
+            .map(AuthorizationResponse::from);
     }
 
     @Transactional
-    public AuthorizationResponse createAuthorization(UUID agencyId, UUID clientId,
+    public AuthorizationResponse createAuthorization(UUID clientId,
                                                       CreateAuthorizationRequest req) {
         requireClient(clientId);
+        UUID agencyId = TenantContext.get();
         Authorization auth = new Authorization(
             clientId, req.payerId(), req.serviceTypeId(), agencyId,
             req.authNumber(), req.authorizedUnits(), req.unitType(),
@@ -336,30 +354,31 @@ public class ClientService {
     // --- family portal users ---
 
     @Transactional(readOnly = true)
-    public List<FamilyPortalUserResponse> listFamilyPortalUsers(UUID agencyId, UUID clientId) {
+    public Page<FamilyPortalUserResponse> listFamilyPortalUsers(UUID clientId, Pageable pageable) {
         requireClient(clientId);
-        return familyPortalUserRepository.findByClientId(clientId).stream()
-            .map(FamilyPortalUserResponse::from)
-            .toList();
+        return familyPortalUserRepository.findByClientId(clientId, pageable)
+            .map(FamilyPortalUserResponse::from);
     }
 
     @Transactional
-    public FamilyPortalUserResponse addFamilyPortalUser(UUID agencyId, UUID clientId,
+    public FamilyPortalUserResponse addFamilyPortalUser(UUID clientId,
                                                          AddFamilyPortalUserRequest req) {
         requireClient(clientId);
+        UUID agencyId = TenantContext.get();
         FamilyPortalUser fpu = new FamilyPortalUser(clientId, agencyId, req.email());
         fpu.setName(req.name());
         return FamilyPortalUserResponse.from(familyPortalUserRepository.save(fpu));
     }
 
     @Transactional
-    public void removeFamilyPortalUser(UUID agencyId, UUID clientId, UUID fpuId) {
+    public void removeFamilyPortalUser(UUID clientId, UUID fpuId) {
         requireClient(clientId);
         FamilyPortalUser fpu = familyPortalUserRepository.findById(fpuId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "Family portal user not found"));
+                "Family portal user not found: " + fpuId));
         if (!fpu.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Family portal user not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Family portal user not found: " + fpuId);
         }
         familyPortalUserRepository.delete(fpu);
     }
@@ -368,15 +387,18 @@ public class ClientService {
 
     Client requireClient(UUID clientId) {
         return clientRepository.findById(clientId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Client not found: " + clientId));
     }
 
     private CarePlan requireCarePlan(UUID clientId, UUID carePlanId) {
         requireClient(clientId);
         CarePlan plan = carePlanRepository.findById(carePlanId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Care plan not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Care plan not found: " + carePlanId));
         if (!plan.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Care plan not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Care plan not found: " + carePlanId);
         }
         return plan;
     }

@@ -7,7 +7,6 @@ import java.util.UUID;
 public record FamilyPortalUserResponse(
     UUID id,
     UUID clientId,
-    UUID agencyId,
     String name,
     String email,
     LocalDateTime lastLoginAt,
@@ -15,7 +14,7 @@ public record FamilyPortalUserResponse(
 ) {
     public static FamilyPortalUserResponse from(FamilyPortalUser f) {
         return new FamilyPortalUserResponse(
-            f.getId(), f.getClientId(), f.getAgencyId(), f.getName(), f.getEmail(),
+            f.getId(), f.getClientId(), f.getName(), f.getEmail(),
             f.getLastLoginAt(), f.getCreatedAt());
     }
 }

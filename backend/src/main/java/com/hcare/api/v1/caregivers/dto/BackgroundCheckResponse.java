@@ -10,7 +10,6 @@ import java.util.UUID;
 public record BackgroundCheckResponse(
     UUID id,
     UUID caregiverId,
-    UUID agencyId,
     BackgroundCheckType checkType,
     BackgroundCheckResult result,
     LocalDate checkedAt,
@@ -19,7 +18,7 @@ public record BackgroundCheckResponse(
 ) {
     public static BackgroundCheckResponse from(BackgroundCheck b) {
         return new BackgroundCheckResponse(
-            b.getId(), b.getCaregiverId(), b.getAgencyId(),
+            b.getId(), b.getCaregiverId(),
             b.getCheckType(), b.getResult(), b.getCheckedAt(),
             b.getRenewalDueDate(), b.getCreatedAt());
     }

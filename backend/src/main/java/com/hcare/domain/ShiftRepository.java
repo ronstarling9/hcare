@@ -60,6 +60,8 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
 
     List<Shift> findByCaregiverId(UUID caregiverId);
 
+    Page<Shift> findByCaregiverId(UUID caregiverId, Pageable pageable);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Shift s WHERE s.id = :id")
     Optional<Shift> findByIdForUpdate(@Param("id") UUID id);
