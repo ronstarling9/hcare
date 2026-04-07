@@ -5,6 +5,7 @@ import com.hcare.api.v1.users.dto.UpdateUserRoleRequest;
 import com.hcare.api.v1.users.dto.UserResponse;
 import com.hcare.domain.*;
 import com.hcare.multitenancy.TenantContext;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -34,12 +35,19 @@ public class UserService {
 
     @Transactional
     public UserResponse inviteUser(InviteUserRequest req) {
-        if (userRepository.findByEmail(req.email()).isPresent()) {
+        if (userRepository.findByAgencyIdAndEmail(TenantContext.get(), req.email()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
         }
-        AgencyUser user = userRepository.save(new AgencyUser(
-            TenantContext.get(), req.email(),
-            passwordEncoder.encode(req.temporaryPassword()), req.role()));
+        AgencyUser user;
+        try {
+            user = userRepository.save(new AgencyUser(
+                TenantContext.get(), req.email(),
+                passwordEncoder.encode(req.temporaryPassword()), req.role()));
+        } catch (DataIntegrityViolationException ex) {
+            // Email exists in a different agency — surface a generic 409 without
+            // revealing cross-tenant information.
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+        }
         return UserResponse.from(user);
     }
 

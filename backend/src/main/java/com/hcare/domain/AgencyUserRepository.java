@@ -7,6 +7,7 @@ import java.util.UUID;
 
 public interface AgencyUserRepository extends JpaRepository<AgencyUser, UUID> {
     Optional<AgencyUser> findByEmail(String email);
+    Optional<AgencyUser> findByAgencyIdAndEmail(UUID agencyId, String email);
     List<AgencyUser> findByAgencyId(UUID agencyId);
     long countByAgencyIdAndRole(UUID agencyId, UserRole role);
 }
