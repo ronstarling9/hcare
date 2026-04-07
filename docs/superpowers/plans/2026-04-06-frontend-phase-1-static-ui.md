@@ -42,7 +42,8 @@ cd frontend && npm install && npm install \
   react-hook-form \
   axios \
   tailwindcss@^3 autoprefixer postcss \
-  @types/node && \
+  @types/node \
+  i18next react-i18next i18next-http-backend i18next-browser-languagedetector && \
 npm install --save-dev \
   @testing-library/react \
   @testing-library/jest-dom \
@@ -179,6 +180,222 @@ Create `frontend/src/test/setup.ts`:
 
 ```ts
 import '@testing-library/jest-dom'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+
+// Initialize i18next synchronously for tests — no HTTP backend needed.
+// Tests assert against real English strings, not translation keys.
+//
+// MAINTENANCE: Keep these inline resources in sync with public/locales/en/*.json.
+// If you add a key to a JSON file but omit it here, tests will display raw
+// translation keys (e.g. "nav.settings") instead of real strings.
+i18n.use(initReactI18next).init({
+  lng: 'en',
+  fallbackLng: 'en',
+  resources: {
+    en: {
+      nav: {
+        wordmarkPrefix: 'h',
+        wordmarkDot: '.',
+        wordmarkSuffix: 'care',
+        agencySubtitle: 'Agency Management',
+        schedule: 'Schedule',
+        dashboard: 'Dashboard',
+        clients: 'Clients',
+        caregivers: 'Caregivers',
+        payers: 'Payers',
+        evvStatus: 'EVV Status',
+        settings: 'Settings',
+        settingsComingSoon: 'Settings — coming soon',
+        sectionOperations: 'Operations',
+        sectionPeople: 'People',
+        sectionAdmin: 'Admin',
+      },
+      common: {
+        back: '← Back',
+        unassigned: 'Unassigned',
+        noDash: '—',
+        yes: 'Yes',
+        no: 'No',
+        cancel: 'Cancel',
+        searchByName: 'Search by name…',
+        noExpiry: 'No expiry',
+      },
+      schedule: {
+        pageTitle: 'Schedule',
+        backLabel: '← Schedule',
+        newShift: '+ New Shift',
+        broadcastOpen: 'Broadcast Open',
+        broadcastOpenAlert: 'Broadcast Open: confirms then broadcasts all unassigned shifts',
+        prevWeek: '←',
+        nextWeek: '→',
+        alertStripToday: 'Today:',
+        alertRedEvv: 'RED EVV',
+        alertYellowEvv: 'YELLOW EVV',
+        alertUncovered: 'Uncovered',
+        alertLateClockIn: 'Late clock-in',
+        settingsComingSoon: 'Settings — coming soon',
+        newShiftAt: 'New shift at {{hour}}:00',
+      },
+      shiftDetail: {
+        notFound: 'Shift not found.',
+        sectionVisitDetails: 'Visit Details',
+        sectionEvvRecord: 'EVV Record',
+        sectionAiMatch: 'AI Match — Top Candidates',
+        fieldClient: 'Client',
+        fieldCaregiver: 'Caregiver',
+        fieldService: 'Service',
+        fieldStatus: 'Status',
+        fieldClockIn: 'Clock-in',
+        fieldClockOut: 'Clock-out',
+        fieldMethod: 'Method',
+        fieldOffline: 'Offline',
+        unknownClient: 'Unknown Client',
+        staticService: 'PCS',
+        visitNotStarted: ' — Visit not yet started',
+        evvCompliant: 'Compliant',
+        evvAttention: 'Attention Required',
+        evvNonCompliant: 'Non-Compliant',
+        evvNotStarted: 'Not Started',
+        evvExempt: 'Exempt',
+        evvPortalSubmit: 'Portal Submit',
+        assignCaregiver: 'Assign Caregiver',
+        addManualClockIn: 'Add Manual Clock-in',
+        editShift: 'Edit Shift',
+        markAsMissed: 'Mark as Missed',
+        viewCareNotes: 'View Care Notes',
+        candidate1Name: 'Maria Garcia',
+        candidate1Reason: '0.8 mi · 12 prior visits · no OT risk',
+        candidate2Name: 'Sarah Davis',
+        candidate2Reason: '1.4 mi · 5 prior visits · no OT risk',
+        assign: 'Assign →',
+      },
+      newShift: {
+        panelTitle: 'New Shift',
+        labelClient: 'Client',
+        labelServiceType: 'Service Type',
+        labelDate: 'Date',
+        labelStartTime: 'Start Time',
+        labelEndTime: 'End Time',
+        labelCaregiver: 'Caregiver (optional)',
+        selectClient: 'Select client…',
+        selectServiceType: 'Select service type…',
+        serviceTypePcs: 'PCS — Personal Care Services',
+        caregiverUnassigned: 'Leave unassigned (broadcast after)',
+        caregiverPhaseNote: 'Phase 4 will populate this list from the API.',
+        validationClientRequired: 'Client is required',
+        validationServiceTypeRequired: 'Service type is required',
+        validationDateRequired: 'Date is required',
+        saveShift: 'Save Shift',
+        mockAlert: 'Mock: shift for client {{clientId}} on {{date}} created.\n\nPhase 4 will wire this to POST /shifts.',
+      },
+      dashboard: {
+        pageTitle: 'Dashboard',
+        backLabel: '← Dashboard',
+        tileRedEvv: 'RED EVV',
+        tileRedEvvSub: 'Missing elements',
+        tileYellowEvv: 'YELLOW EVV',
+        tileYellowEvvSub: 'Attention needed',
+        tileUncovered: 'UNCOVERED',
+        tileUncoveredSub: 'No caregiver',
+        tileOnTrack: 'ON TRACK',
+        tileOnTrackSub: 'Compliant',
+        noVisits: 'No visits today.',
+        noAlerts: 'No active alerts.',
+        alertsHeader: 'Alerts',
+        due: 'Due {{date}}',
+      },
+      clients: {
+        pageTitle: 'Clients',
+        backLabel: '← Clients',
+        addClient: '+ Add Client',
+        addClientAlert: 'Add Client — Phase 6 will wire this form.',
+        notFound: 'Client not found.',
+        noResults: 'No clients found.',
+        colClient: 'Client',
+        colMedicaidId: 'Medicaid ID',
+        colState: 'State',
+        colStatus: 'Status',
+        tabOverview: 'Overview',
+        tabCarePlan: 'Care Plan',
+        tabAuthorizations: 'Authorizations',
+        tabDocuments: 'Documents',
+        tabFamilyPortal: 'Family Portal',
+        fieldPhone: 'Phone',
+        fieldAddress: 'Address',
+        fieldServiceState: 'Service State',
+        fieldStatus: 'Status',
+        fieldPreferredLanguage: 'Preferred Language',
+        fieldNoPetCaregiver: 'No Pet Caregiver',
+        noAuthorizations: 'No authorizations.',
+        carePlanPhaseNote: 'Care plan — Phase 6 wires to real API.',
+        documentsPhaseNote: 'Documents — Phase 6 wires to real API.',
+        familyPortalPhaseNote: 'Family portal — Phase 6 wires to real API.',
+        authHeader: 'Auth #{{authNumber}}',
+        authUnitsUsed: '{{used}}/{{authorized}} {{unitType}}s used',
+      },
+      caregivers: {
+        pageTitle: 'Caregivers',
+        backLabel: '← Caregivers',
+        addCaregiver: '+ Add Caregiver',
+        addCaregiverAlert: 'Add Caregiver — Phase 7 will wire this form.',
+        notFound: 'Caregiver not found.',
+        noResults: 'No caregivers found.',
+        colCaregiver: 'Caregiver',
+        colEmail: 'Email',
+        colPhone: 'Phone',
+        colStatus: 'Status',
+        colHireDate: 'Hire Date',
+        tabOverview: 'Overview',
+        tabCredentials: 'Credentials',
+        tabBackgroundChecks: 'Background Checks',
+        tabAvailability: 'Availability',
+        tabShiftHistory: 'Shift History',
+        fieldPhone: 'Phone',
+        fieldAddress: 'Address',
+        fieldHireDate: 'Hire Date',
+        fieldStatus: 'Status',
+        fieldHasPet: 'Has Pet',
+        noCredentials: 'No credentials on file.',
+        credExpires: 'Expires:',
+        credExpiringSoon: 'Expiring soon',
+        credVerified: 'Verified',
+        credUnverified: 'Unverified',
+        backgroundPhaseNote: 'Background checks — Phase 7 wires to real API.',
+        availabilityPhaseNote: 'Availability — Phase 7 wires to real API.',
+        shiftHistoryPhaseNote: 'Shift history — Phase 7 wires to real API.',
+      },
+      payers: {
+        pageTitle: 'Payers',
+        addPayer: '+ Add Payer',
+        addPayerAlert: 'Phase 8 will wire this to the API.',
+        colPayerName: 'Payer Name',
+        colType: 'Type',
+        colState: 'State',
+        colEvvAggregator: 'EVV Aggregator',
+        typeMedicaid: 'Medicaid',
+        typePrivatePay: 'Private Pay',
+        typeLtcInsurance: 'LTC Insurance',
+        typeVa: 'VA',
+        typeMedicare: 'Medicare',
+      },
+      evvStatus: {
+        pageTitle: 'EVV Status',
+        backLabel: '← EVV Status',
+        subtitle: 'Last 30 days — computed live from Core API',
+        colClient: 'Client',
+        colCaregiver: 'Caregiver',
+        colService: 'Service',
+        colDate: 'Date',
+        colClockIn: 'Clock-in',
+        colClockOut: 'Clock-out',
+        colStatus: 'Status',
+      },
+    },
+  },
+  interpolation: { escapeValue: false },
+  initImmediate: false, // synchronous init for tests
+})
 ```
 
 - [ ] **Step 2.6: Update tsconfig.json**
@@ -225,7 +442,7 @@ cd ..
 git add frontend/tailwind.config.ts frontend/postcss.config.js \
   frontend/vite.config.ts frontend/src/index.css \
   frontend/src/test/setup.ts frontend/tsconfig.json
-git commit -m "chore: configure Tailwind CSS v3 + Vitest + design tokens"
+git commit -m "chore: configure Tailwind CSS v3 + Vitest + design tokens + i18next test setup"
 ```
 
 ---
@@ -503,12 +720,337 @@ git commit -m "feat(frontend): add TypeScript API types matching backend DTOs"
 
 ---
 
+### Task 3.5: i18n Setup (react-i18next)
+
+**Files:**
+- Create: `frontend/src/i18n.ts`
+- Create: `frontend/public/locales/en/nav.json`
+- Create: `frontend/public/locales/en/common.json`
+- Create: `frontend/public/locales/en/schedule.json`
+- Create: `frontend/public/locales/en/shiftDetail.json`
+- Create: `frontend/public/locales/en/newShift.json`
+- Create: `frontend/public/locales/en/dashboard.json`
+- Create: `frontend/public/locales/en/clients.json`
+- Create: `frontend/public/locales/en/caregivers.json`
+- Create: `frontend/public/locales/en/payers.json`
+- Create: `frontend/public/locales/en/evvStatus.json`
+
+All user-visible text lives in JSON translation files under `public/locales/`. Components use the `useTranslation` hook from react-i18next. Adding a new locale is: create `public/locales/<lng>/` with the same filenames and add the language code to `supportedLngs` in `i18n.ts`.
+
+- [ ] **Step 3.5.1: Create i18n config**
+
+Create `frontend/src/i18n.ts`:
+
+```ts
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+import HttpBackend from 'i18next-http-backend'
+import LanguageDetector from 'i18next-browser-languagedetector'
+
+i18n
+  .use(HttpBackend)
+  .use(LanguageDetector)
+  .use(initReactI18next)
+  .init({
+    fallbackLng: 'en',
+    supportedLngs: ['en'],
+    defaultNS: 'common',
+    ns: [
+      'common',
+      'nav',
+      'schedule',
+      'shiftDetail',
+      'newShift',
+      'dashboard',
+      'clients',
+      'caregivers',
+      'payers',
+      'evvStatus',
+    ],
+    backend: {
+      loadPath: '/locales/{{lng}}/{{ns}}.json',
+    },
+    interpolation: {
+      escapeValue: false, // React handles XSS escaping
+    },
+  })
+
+export default i18n
+```
+
+- [ ] **Step 3.5.2: Create translation JSON files**
+
+Create `frontend/public/locales/en/nav.json`:
+
+```json
+{
+  "wordmarkPrefix": "h",
+  "wordmarkDot": ".",
+  "wordmarkSuffix": "care",
+  "agencySubtitle": "Agency Management",
+  "schedule": "Schedule",
+  "dashboard": "Dashboard",
+  "clients": "Clients",
+  "caregivers": "Caregivers",
+  "payers": "Payers",
+  "evvStatus": "EVV Status",
+  "settings": "Settings",
+  "settingsComingSoon": "Settings — coming soon",
+  "sectionOperations": "Operations",
+  "sectionPeople": "People",
+  "sectionAdmin": "Admin"
+}
+```
+
+Create `frontend/public/locales/en/common.json`:
+
+```json
+{
+  "back": "← Back",
+  "unassigned": "Unassigned",
+  "noDash": "—",
+  "yes": "Yes",
+  "no": "No",
+  "cancel": "Cancel",
+  "searchByName": "Search by name…",
+  "noExpiry": "No expiry"
+}
+```
+
+Create `frontend/public/locales/en/schedule.json`:
+
+```json
+{
+  "pageTitle": "Schedule",
+  "backLabel": "← Schedule",
+  "newShift": "+ New Shift",
+  "broadcastOpen": "Broadcast Open",
+  "broadcastOpenAlert": "Broadcast Open: confirms then broadcasts all unassigned shifts",
+  "prevWeek": "←",
+  "nextWeek": "→",
+  "alertStripToday": "Today:",
+  "alertRedEvv": "RED EVV",
+  "alertYellowEvv": "YELLOW EVV",
+  "alertUncovered": "Uncovered",
+  "alertLateClockIn": "Late clock-in",
+  "settingsComingSoon": "Settings — coming soon",
+  "newShiftAt": "New shift at {{hour}}:00"
+}
+```
+
+Create `frontend/public/locales/en/shiftDetail.json`:
+
+```json
+{
+  "notFound": "Shift not found.",
+  "sectionVisitDetails": "Visit Details",
+  "sectionEvvRecord": "EVV Record",
+  "sectionAiMatch": "AI Match — Top Candidates",
+  "fieldClient": "Client",
+  "fieldCaregiver": "Caregiver",
+  "fieldService": "Service",
+  "fieldStatus": "Status",
+  "fieldClockIn": "Clock-in",
+  "fieldClockOut": "Clock-out",
+  "fieldMethod": "Method",
+  "fieldOffline": "Offline",
+  "unknownClient": "Unknown Client",
+  "staticService": "PCS",
+  "visitNotStarted": " — Visit not yet started",
+  "evvCompliant": "Compliant",
+  "evvAttention": "Attention Required",
+  "evvNonCompliant": "Non-Compliant",
+  "evvNotStarted": "Not Started",
+  "evvExempt": "Exempt",
+  "evvPortalSubmit": "Portal Submit",
+  "assignCaregiver": "Assign Caregiver",
+  "addManualClockIn": "Add Manual Clock-in",
+  "editShift": "Edit Shift",
+  "markAsMissed": "Mark as Missed",
+  "viewCareNotes": "View Care Notes",
+  "candidate1Name": "Maria Garcia",
+  "candidate1Reason": "0.8 mi · 12 prior visits · no OT risk",
+  "candidate2Name": "Sarah Davis",
+  "candidate2Reason": "1.4 mi · 5 prior visits · no OT risk",
+  "assign": "Assign →"
+}
+```
+
+Create `frontend/public/locales/en/newShift.json`:
+
+```json
+{
+  "panelTitle": "New Shift",
+  "labelClient": "Client",
+  "labelServiceType": "Service Type",
+  "labelDate": "Date",
+  "labelStartTime": "Start Time",
+  "labelEndTime": "End Time",
+  "labelCaregiver": "Caregiver (optional)",
+  "selectClient": "Select client…",
+  "selectServiceType": "Select service type…",
+  "serviceTypePcs": "PCS — Personal Care Services",
+  "caregiverUnassigned": "Leave unassigned (broadcast after)",
+  "caregiverPhaseNote": "Phase 4 will populate this list from the API.",
+  "validationClientRequired": "Client is required",
+  "validationServiceTypeRequired": "Service type is required",
+  "validationDateRequired": "Date is required",
+  "saveShift": "Save Shift",
+  "mockAlert": "Mock: shift for client {{clientId}} on {{date}} created.\n\nPhase 4 will wire this to POST /shifts."
+}
+```
+
+Create `frontend/public/locales/en/dashboard.json`:
+
+```json
+{
+  "pageTitle": "Dashboard",
+  "backLabel": "← Dashboard",
+  "tileRedEvv": "RED EVV",
+  "tileRedEvvSub": "Missing elements",
+  "tileYellowEvv": "YELLOW EVV",
+  "tileYellowEvvSub": "Attention needed",
+  "tileUncovered": "UNCOVERED",
+  "tileUncoveredSub": "No caregiver",
+  "tileOnTrack": "ON TRACK",
+  "tileOnTrackSub": "Compliant",
+  "noVisits": "No visits today.",
+  "noAlerts": "No active alerts.",
+  "alertsHeader": "Alerts",
+  "due": "Due {{date}}"
+}
+```
+
+Create `frontend/public/locales/en/clients.json`:
+
+```json
+{
+  "pageTitle": "Clients",
+  "backLabel": "← Clients",
+  "addClient": "+ Add Client",
+  "addClientAlert": "Add Client — Phase 6 will wire this form.",
+  "notFound": "Client not found.",
+  "noResults": "No clients found.",
+  "colClient": "Client",
+  "colMedicaidId": "Medicaid ID",
+  "colState": "State",
+  "colStatus": "Status",
+  "tabOverview": "Overview",
+  "tabCarePlan": "Care Plan",
+  "tabAuthorizations": "Authorizations",
+  "tabDocuments": "Documents",
+  "tabFamilyPortal": "Family Portal",
+  "fieldPhone": "Phone",
+  "fieldAddress": "Address",
+  "fieldServiceState": "Service State",
+  "fieldStatus": "Status",
+  "fieldPreferredLanguage": "Preferred Language",
+  "fieldNoPetCaregiver": "No Pet Caregiver",
+  "noAuthorizations": "No authorizations.",
+  "carePlanPhaseNote": "Care plan — Phase 6 wires to real API.",
+  "documentsPhaseNote": "Documents — Phase 6 wires to real API.",
+  "familyPortalPhaseNote": "Family portal — Phase 6 wires to real API.",
+  "authHeader": "Auth #{{authNumber}}",
+  "authUnitsUsed": "{{used}}/{{authorized}} {{unitType}}s used"
+}
+```
+
+Create `frontend/public/locales/en/caregivers.json`:
+
+```json
+{
+  "pageTitle": "Caregivers",
+  "backLabel": "← Caregivers",
+  "addCaregiver": "+ Add Caregiver",
+  "addCaregiverAlert": "Add Caregiver — Phase 7 will wire this form.",
+  "notFound": "Caregiver not found.",
+  "noResults": "No caregivers found.",
+  "colCaregiver": "Caregiver",
+  "colEmail": "Email",
+  "colPhone": "Phone",
+  "colStatus": "Status",
+  "colHireDate": "Hire Date",
+  "tabOverview": "Overview",
+  "tabCredentials": "Credentials",
+  "tabBackgroundChecks": "Background Checks",
+  "tabAvailability": "Availability",
+  "tabShiftHistory": "Shift History",
+  "fieldPhone": "Phone",
+  "fieldAddress": "Address",
+  "fieldHireDate": "Hire Date",
+  "fieldStatus": "Status",
+  "fieldHasPet": "Has Pet",
+  "noCredentials": "No credentials on file.",
+  "credExpires": "Expires:",
+  "credExpiringSoon": "Expiring soon",
+  "credVerified": "Verified",
+  "credUnverified": "Unverified",
+  "backgroundPhaseNote": "Background checks — Phase 7 wires to real API.",
+  "availabilityPhaseNote": "Availability — Phase 7 wires to real API.",
+  "shiftHistoryPhaseNote": "Shift history — Phase 7 wires to real API."
+}
+```
+
+Create `frontend/public/locales/en/payers.json`:
+
+```json
+{
+  "pageTitle": "Payers",
+  "addPayer": "+ Add Payer",
+  "addPayerAlert": "Phase 8 will wire this to the API.",
+  "colPayerName": "Payer Name",
+  "colType": "Type",
+  "colState": "State",
+  "colEvvAggregator": "EVV Aggregator",
+  "typeMedicaid": "Medicaid",
+  "typePrivatePay": "Private Pay",
+  "typeLtcInsurance": "LTC Insurance",
+  "typeVa": "VA",
+  "typeMedicare": "Medicare"
+}
+```
+
+Create `frontend/public/locales/en/evvStatus.json`:
+
+```json
+{
+  "pageTitle": "EVV Status",
+  "backLabel": "← EVV Status",
+  "subtitle": "Last 30 days — computed live from Core API",
+  "colClient": "Client",
+  "colCaregiver": "Caregiver",
+  "colService": "Service",
+  "colDate": "Date",
+  "colClockIn": "Clock-in",
+  "colClockOut": "Clock-out",
+  "colStatus": "Status"
+}
+```
+
+- [ ] **Step 3.5.3: Verify no TypeScript errors**
+
+```bash
+cd frontend && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: no output.
+
+- [ ] **Step 3.5.4: Commit**
+
+```bash
+cd ..
+git add frontend/src/i18n.ts frontend/public/locales/
+git commit -m "feat(frontend): add react-i18next setup with translation JSON files"
+```
+
+---
+
 ### Task 4: Mock Data
 
 **Files:**
 - Create: `frontend/src/mock/data.ts`
 
-Mock data uses fixed IDs and today's date (2026-04-06). All shifts are within 6am–10pm.
+Mock data uses fixed IDs and today's date (2026-04-07). All shifts are within 6am–10pm.
 
 - [ ] **Step 4.1: Create mock data**
 
@@ -658,7 +1200,7 @@ export const mockCaregivers: CaregiverResponse[] = [
 
 export const mockCaregiverMap = new Map(mockCaregivers.map((c) => [c.id, c]))
 
-// ── Shifts (this week: Apr 6–12, 2026) ────────────────────────────────────────
+// ── Shifts (this week: Apr 6–12, 2026; today = Apr 7 Tuesday) ─────────────────
 
 export const mockShifts: ShiftDetailResponse[] = [
   {
@@ -669,14 +1211,14 @@ export const mockShifts: ShiftDetailResponse[] = [
     serviceTypeId: IDS.serviceType1,
     authorizationId: null,
     sourcePatternId: null,
-    scheduledStart: '2026-04-06T08:00:00',
-    scheduledEnd: '2026-04-06T12:00:00',
+    scheduledStart: '2026-04-07T08:00:00',
+    scheduledEnd: '2026-04-07T12:00:00',
     status: 'COMPLETED',
     notes: null,
     evv: {
       evvRecordId: 'evv00001-0000-0000-0000-000000000001',
       complianceStatus: 'RED',
-      timeIn: '2026-04-06T08:05:00',
+      timeIn: '2026-04-07T08:05:00',
       timeOut: null,
       verificationMethod: 'GPS',
       capturedOffline: false,
@@ -690,14 +1232,14 @@ export const mockShifts: ShiftDetailResponse[] = [
     serviceTypeId: IDS.serviceType1,
     authorizationId: null,
     sourcePatternId: null,
-    scheduledStart: '2026-04-06T09:00:00',
-    scheduledEnd: '2026-04-06T13:00:00',
+    scheduledStart: '2026-04-07T09:00:00',
+    scheduledEnd: '2026-04-07T13:00:00',
     status: 'IN_PROGRESS',
     notes: null,
     evv: {
       evvRecordId: 'evv00002-0000-0000-0000-000000000002',
       complianceStatus: 'YELLOW',
-      timeIn: '2026-04-06T09:12:00',
+      timeIn: '2026-04-07T09:12:00',
       timeOut: null,
       verificationMethod: 'GPS',
       capturedOffline: false,
@@ -711,8 +1253,8 @@ export const mockShifts: ShiftDetailResponse[] = [
     serviceTypeId: IDS.serviceType1,
     authorizationId: null,
     sourcePatternId: null,
-    scheduledStart: '2026-04-06T10:00:00',
-    scheduledEnd: '2026-04-06T14:00:00',
+    scheduledStart: '2026-04-07T10:00:00',
+    scheduledEnd: '2026-04-07T14:00:00',
     status: 'OPEN',
     notes: null,
     evv: null,
@@ -725,8 +1267,8 @@ export const mockShifts: ShiftDetailResponse[] = [
     serviceTypeId: IDS.serviceType1,
     authorizationId: null,
     sourcePatternId: null,
-    scheduledStart: '2026-04-06T14:00:00',
-    scheduledEnd: '2026-04-06T18:00:00',
+    scheduledStart: '2026-04-07T14:00:00',
+    scheduledEnd: '2026-04-07T18:00:00',
     status: 'ASSIGNED',
     notes: null,
     evv: null,
@@ -739,8 +1281,8 @@ export const mockShifts: ShiftDetailResponse[] = [
     serviceTypeId: IDS.serviceType1,
     authorizationId: null,
     sourcePatternId: null,
-    scheduledStart: '2026-04-07T09:00:00',
-    scheduledEnd: '2026-04-07T13:00:00',
+    scheduledStart: '2026-04-08T09:00:00',
+    scheduledEnd: '2026-04-08T13:00:00',
     status: 'ASSIGNED',
     notes: null,
     evv: null,
@@ -753,8 +1295,8 @@ export const mockShifts: ShiftDetailResponse[] = [
     serviceTypeId: IDS.serviceType1,
     authorizationId: null,
     sourcePatternId: null,
-    scheduledStart: '2026-04-08T11:00:00',
-    scheduledEnd: '2026-04-08T15:00:00',
+    scheduledStart: '2026-04-09T11:00:00',
+    scheduledEnd: '2026-04-09T15:00:00',
     status: 'ASSIGNED',
     notes: null,
     evv: null,
@@ -842,8 +1384,8 @@ export const mockDashboard: DashboardTodayResponse = {
       caregiverFirstName: 'Maria',
       caregiverLastName: 'Garcia',
       serviceTypeName: 'PCS',
-      scheduledStart: '2026-04-06T08:00:00',
-      scheduledEnd: '2026-04-06T12:00:00',
+      scheduledStart: '2026-04-07T08:00:00',
+      scheduledEnd: '2026-04-07T12:00:00',
       status: 'COMPLETED',
       evvStatus: 'RED',
       evvStatusReason: 'No clock-out recorded',
@@ -856,8 +1398,8 @@ export const mockDashboard: DashboardTodayResponse = {
       caregiverFirstName: 'James',
       caregiverLastName: 'Wilson',
       serviceTypeName: 'PCS',
-      scheduledStart: '2026-04-06T09:00:00',
-      scheduledEnd: '2026-04-06T13:00:00',
+      scheduledStart: '2026-04-07T09:00:00',
+      scheduledEnd: '2026-04-07T13:00:00',
       status: 'IN_PROGRESS',
       evvStatus: 'YELLOW',
       evvStatusReason: 'Clock-in 12 min late',
@@ -870,8 +1412,8 @@ export const mockDashboard: DashboardTodayResponse = {
       caregiverFirstName: null,
       caregiverLastName: null,
       serviceTypeName: 'PCS',
-      scheduledStart: '2026-04-06T10:00:00',
-      scheduledEnd: '2026-04-06T14:00:00',
+      scheduledStart: '2026-04-07T10:00:00',
+      scheduledEnd: '2026-04-07T14:00:00',
       status: 'OPEN',
       evvStatus: 'GREY',
       evvStatusReason: null,
@@ -884,8 +1426,8 @@ export const mockDashboard: DashboardTodayResponse = {
       caregiverFirstName: 'Sarah',
       caregiverLastName: 'Davis',
       serviceTypeName: 'PCS',
-      scheduledStart: '2026-04-06T14:00:00',
-      scheduledEnd: '2026-04-06T18:00:00',
+      scheduledStart: '2026-04-07T14:00:00',
+      scheduledEnd: '2026-04-07T18:00:00',
       status: 'ASSIGNED',
       evvStatus: 'GREY',
       evvStatusReason: null,
@@ -921,11 +1463,11 @@ export const mockEvvHistory: EvvHistoryRow[] = [
     caregiverFirstName: 'Maria',
     caregiverLastName: 'Garcia',
     serviceTypeName: 'PCS',
-    scheduledStart: '2026-04-06T08:00:00',
-    scheduledEnd: '2026-04-06T12:00:00',
+    scheduledStart: '2026-04-07T08:00:00',
+    scheduledEnd: '2026-04-07T12:00:00',
     evvStatus: 'RED',
     evvStatusReason: 'No clock-out recorded',
-    timeIn: '2026-04-06T08:05:00',
+    timeIn: '2026-04-07T08:05:00',
     timeOut: null,
     verificationMethod: 'GPS',
   },
@@ -936,11 +1478,11 @@ export const mockEvvHistory: EvvHistoryRow[] = [
     caregiverFirstName: 'James',
     caregiverLastName: 'Wilson',
     serviceTypeName: 'PCS',
-    scheduledStart: '2026-04-06T09:00:00',
-    scheduledEnd: '2026-04-06T13:00:00',
+    scheduledStart: '2026-04-07T09:00:00',
+    scheduledEnd: '2026-04-07T13:00:00',
     evvStatus: 'YELLOW',
     evvStatusReason: 'Clock-in 12 min late',
-    timeIn: '2026-04-06T09:12:00',
+    timeIn: '2026-04-07T09:12:00',
     timeOut: null,
     verificationMethod: 'GPS',
   },
@@ -1059,38 +1601,18 @@ Create `frontend/src/components/layout/Sidebar.tsx`:
 
 ```tsx
 import { NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
 interface NavItem {
   label: string
   to: string
   icon: string       // emoji placeholder — replace with real icons in P2
-  badge?: number     // red dot count (Dashboard only)
 }
 
-const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
-  {
-    section: 'Operations',
-    items: [
-      { label: 'Schedule', to: '/schedule', icon: '📅' },
-      { label: 'Dashboard', to: '/dashboard', icon: '📊' },
-    ],
-  },
-  {
-    section: 'People',
-    items: [
-      { label: 'Clients', to: '/clients', icon: '👤' },
-      { label: 'Caregivers', to: '/caregivers', icon: '🏥' },
-    ],
-  },
-  {
-    section: 'Admin',
-    items: [
-      { label: 'Payers', to: '/payers', icon: '💳' },
-      { label: 'EVV Status', to: '/evv', icon: '✅' },
-      { label: 'Settings', to: '/settings', icon: '⚙️' },
-    ],
-  },
-]
+interface NavSection {
+  section: string
+  items: NavItem[]
+}
 
 interface SidebarProps {
   /** RED EVV count — drives the Dashboard badge. Passed by Shell from dashboard data. */
@@ -1101,6 +1623,33 @@ interface SidebarProps {
 }
 
 export function Sidebar({ redEvvCount = 0, userName = 'Admin User', userRole = 'ADMIN' }: SidebarProps) {
+  const { t } = useTranslation('nav')
+
+  const NAV_SECTIONS: NavSection[] = [
+    {
+      section: t('sectionOperations'),
+      items: [
+        { label: t('schedule'), to: '/schedule', icon: '📅' },
+        { label: t('dashboard'), to: '/dashboard', icon: '📊' },
+      ],
+    },
+    {
+      section: t('sectionPeople'),
+      items: [
+        { label: t('clients'), to: '/clients', icon: '👤' },
+        { label: t('caregivers'), to: '/caregivers', icon: '🏥' },
+      ],
+    },
+    {
+      section: t('sectionAdmin'),
+      items: [
+        { label: t('payers'), to: '/payers', icon: '💳' },
+        { label: t('evvStatus'), to: '/evv', icon: '✅' },
+        { label: t('settings'), to: '/settings', icon: '⚙️' },
+      ],
+    },
+  ]
+
   const initials = userName
     .split(' ')
     .map((n) => n[0])
@@ -1116,12 +1665,12 @@ export function Sidebar({ redEvvCount = 0, userName = 'Admin User', userRole = '
       {/* Logo */}
       <div className="px-5 py-6">
         <div className="text-base font-bold tracking-tight">
-          <span className="text-white">h</span>
-          <span style={{ color: '#1a9afa' }}>.</span>
-          <span className="text-white">care</span>
+          <span className="text-white">{t('wordmarkPrefix')}</span>
+          <span style={{ color: '#1a9afa' }}>{t('wordmarkDot')}</span>
+          <span className="text-white">{t('wordmarkSuffix')}</span>
         </div>
         <div className="text-[11px] mt-0.5" style={{ color: '#94a3b8' }}>
-          Agency Management
+          {t('agencySubtitle')}
         </div>
       </div>
 
@@ -1136,7 +1685,8 @@ export function Sidebar({ redEvvCount = 0, userName = 'Admin User', userRole = '
               {section}
             </div>
             {items.map((item) => {
-              const showBadge = item.label === 'Dashboard' && redEvvCount > 0
+              // Use stable route path (not translated label) to detect dashboard item
+              const showBadge = item.to === '/dashboard' && redEvvCount > 0
               return (
                 <NavLink
                   key={item.to}
@@ -1217,7 +1767,7 @@ function PanelContent() {
     return <ClientDetailPanel clientId={selectedId} backLabel={backLabel} />
   }
   if (type === 'caregiver' && selectedId) {
-    return <CaregiverDetailPanel caregiverVId={selectedId} backLabel={backLabel} />
+    return <CaregiverDetailPanel caregiverId={selectedId} backLabel={backLabel} />
   }
   return null
 }
@@ -1245,7 +1795,7 @@ export function Shell() {
 ```bash
 cd ..
 git add frontend/src/components/layout/
-git commit -m "feat(frontend): add Shell layout and Sidebar"
+git commit -m "feat(frontend): add Shell layout and Sidebar (react-i18next)"
 ```
 
 ---
@@ -1392,7 +1942,8 @@ git commit -m "feat(frontend): add SlidePanel component with animation + tests"
 Replace `frontend/src/main.tsx`:
 
 ```tsx
-import { StrictMode } from 'react'
+import './i18n'
+import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
@@ -1410,11 +1961,13 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </BrowserRouter>
+    <Suspense fallback={<div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>Loading…</div>}>
+      <BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </BrowserRouter>
+    </Suspense>
   </StrictMode>
 )
 ```
@@ -1425,6 +1978,7 @@ Create `frontend/src/App.tsx`:
 
 ```tsx
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Shell } from './components/layout/Shell'
 import { SchedulePage } from './components/schedule/SchedulePage'
 import { DashboardPage } from './components/dashboard/DashboardPage'
@@ -1432,6 +1986,11 @@ import { ClientsPage } from './components/clients/ClientsPage'
 import { CaregiversPage } from './components/caregivers/CaregiversPage'
 import { PayersPage } from './components/payers/PayersPage'
 import { EvvStatusPage } from './components/evv/EvvStatusPage'
+
+function SettingsPlaceholder() {
+  const { t } = useTranslation('nav')
+  return <div className="p-8 text-text-secondary">{t('settingsComingSoon')}</div>
+}
 
 export default function App() {
   return (
@@ -1444,7 +2003,7 @@ export default function App() {
         <Route path="/caregivers" element={<CaregiversPage />} />
         <Route path="/payers" element={<PayersPage />} />
         <Route path="/evv" element={<EvvStatusPage />} />
-        <Route path="/settings" element={<div className="p-8 text-text-secondary">Settings — coming soon</div>} />
+        <Route path="/settings" element={<SettingsPlaceholder />} />
       </Route>
     </Routes>
   )
@@ -1464,7 +2023,7 @@ Expected: errors referencing missing page components — that's fine, they don't
 ```bash
 cd ..
 git add frontend/src/main.tsx frontend/src/App.tsx
-git commit -m "feat(frontend): add app routing (Shell + all route placeholders)"
+git commit -m "feat(frontend): add app routing with i18n import and Suspense wrapper"
 ```
 
 ---
@@ -1512,6 +2071,7 @@ describe('ShiftBlock', () => {
 
   it('shows "Unassigned" when no caregiver', () => {
     render(<ShiftBlock {...baseBlock} caregiverName={null} />)
+    // 'Unassigned' comes from the common namespace loaded in test setup
     expect(screen.getByText('Unassigned')).toBeInTheDocument()
   })
 
@@ -1549,6 +2109,7 @@ Expected: FAIL — `ShiftBlock` not found.
 Create `frontend/src/components/schedule/ShiftBlock.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus } from '../../types/api'
 
 const EVV_BORDER_COLOR: Record<EvvComplianceStatus, string> = {
@@ -1580,6 +2141,7 @@ export function ShiftBlock({
   height,
   onClick,
 }: ShiftBlockProps) {
+  const { t } = useTranslation('common')
   const borderColor = EVV_BORDER_COLOR[evvStatus]
 
   return (
@@ -1601,7 +2163,7 @@ export function ShiftBlock({
         {clientName}
       </div>
       <div className="text-[10px] text-text-secondary truncate leading-tight">
-        {caregiverName ?? 'Unassigned'}
+        {caregiverName ?? t('unassigned')}
       </div>
     </button>
   )
@@ -1621,6 +2183,8 @@ Expected: `Tests 6 passed (6)`.
 Create `frontend/src/components/schedule/AlertStrip.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
+
 interface AlertStripProps {
   redCount: number
   yellowCount: number
@@ -1636,18 +2200,20 @@ interface Chip {
 }
 
 export function AlertStrip({ redCount, yellowCount, uncoveredCount, lateClockInCount }: AlertStripProps) {
+  const { t } = useTranslation('schedule')
+
   const chips: Chip[] = [
-    { label: 'RED EVV', count: redCount, borderColor: '#dc2626', textColor: '#dc2626' },
-    { label: 'YELLOW EVV', count: yellowCount, borderColor: '#ca8a04', textColor: '#ca8a04' },
-    { label: 'Uncovered', count: uncoveredCount, borderColor: '#94a3b8', textColor: '#747480' },
-    { label: 'Late clock-in', count: lateClockInCount, borderColor: '#ca8a04', textColor: '#ca8a04' },
+    { label: t('alertRedEvv'), count: redCount, borderColor: '#dc2626', textColor: '#dc2626' },
+    { label: t('alertYellowEvv'), count: yellowCount, borderColor: '#ca8a04', textColor: '#ca8a04' },
+    { label: t('alertUncovered'), count: uncoveredCount, borderColor: '#94a3b8', textColor: '#747480' },
+    { label: t('alertLateClockIn'), count: lateClockInCount, borderColor: '#ca8a04', textColor: '#ca8a04' },
   ].filter((c) => c.count > 0)
 
   if (chips.length === 0) return null
 
   return (
     <div className="flex items-center gap-3 px-6 py-2 bg-surface border-b border-border">
-      <span className="text-[11px] text-text-secondary font-medium">Today:</span>
+      <span className="text-[11px] text-text-secondary font-medium">{t('alertStripToday')}</span>
       {chips.map((chip) => (
         <span
           key={chip.label}
@@ -1672,6 +2238,7 @@ Create `frontend/src/components/schedule/WeekCalendar.tsx`:
 
 ```tsx
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ShiftDetailResponse, EvvComplianceStatus } from '../../types/api'
 import { ShiftBlock } from './ShiftBlock'
 
@@ -1708,8 +2275,6 @@ function evvStatus(shift: ShiftDetailResponse): EvvComplianceStatus {
   return shift.evv?.complianceStatus ?? 'GREY'
 }
 
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
 function isToday(d: Date): boolean {
   const now = new Date()
   return (
@@ -1736,6 +2301,7 @@ export function WeekCalendar({
   onShiftClick,
   onEmptySlotClick,
 }: WeekCalendarProps) {
+  const { t, i18n } = useTranslation('schedule')
   const days = useMemo(() => getWeekDays(weekStart), [weekStart])
 
   return (
@@ -1744,7 +2310,7 @@ export function WeekCalendar({
       <div className="shrink-0 w-16 bg-surface border-r border-border">
         {/* Header spacer */}
         <div className="h-10 border-b border-border" />
-        {/* Time labels */}
+        {/* Time labels — formatted with Intl using the active i18n locale */}
         {HOURS.map((h) => (
           <div
             key={h}
@@ -1754,7 +2320,7 @@ export function WeekCalendar({
             <span
               className="absolute -top-2 right-2 text-[10px] text-text-secondary"
             >
-              {h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`}
+              {new Date(2000, 0, 1, h).toLocaleTimeString(i18n.language, { hour: 'numeric' })}
             </span>
           </div>
         ))}
@@ -1772,10 +2338,10 @@ export function WeekCalendar({
             className="flex-1 border-r border-border min-w-0"
             style={{ background: today ? '#f0f8ff' : isWeekend ? '#f9f9fc' : '#ffffff' }}
           >
-            {/* Day header */}
+            {/* Day header — weekday via Intl, date number via getDate() */}
             <div className="h-10 flex flex-col items-center justify-center border-b border-border">
               <span className="text-[9px] font-bold uppercase text-text-secondary">
-                {DAY_NAMES[dayIdx]}
+                {day.toLocaleDateString(i18n.language, { weekday: 'short' })}
               </span>
               <span
                 className={[
@@ -1813,7 +2379,7 @@ export function WeekCalendar({
                     height: PX_PER_HOUR,
                   }}
                   onClick={() => onEmptySlotClick(day, h)}
-                  aria-label={`New shift at ${h}:00`}
+                  aria-label={t('newShiftAt', { hour: h })}
                 />
               ))}
 
@@ -1854,6 +2420,7 @@ Create `frontend/src/components/schedule/SchedulePage.tsx`:
 
 ```tsx
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { WeekCalendar } from './WeekCalendar'
 import { AlertStrip } from './AlertStrip'
 import { mockShifts, mockClientMap, mockCaregiverMap, mockDashboard } from '../../mock/data'
@@ -1868,15 +2435,16 @@ function getMonday(d: Date): Date {
   return date
 }
 
-function formatWeekRange(monday: Date): string {
+function formatWeekRange(monday: Date, locale: string): string {
   const sunday = new Date(monday)
   sunday.setDate(sunday.getDate() + 6)
   const fmt = (d: Date) =>
-    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
   return `${fmt(monday)} – ${fmt(sunday)}`
 }
 
 export function SchedulePage() {
+  const { t, i18n } = useTranslation('schedule')
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const { openPanel } = usePanelStore()
 
@@ -1897,11 +2465,17 @@ export function SchedulePage() {
   }
 
   function handleNewShift(date: Date, hour: number) {
-    const dateStr = date.toISOString().split('T')[0]
+    // Use local date parts — toISOString() returns UTC and would give the wrong date
+    // for users in UTC−N timezones clicking late-evening slots.
+    const dateStr = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
     const timeStr = `${String(hour).padStart(2, '0')}:00`
     openPanel('newShift', undefined, {
       prefill: { date: dateStr, time: timeStr },
-      backLabel: '← Schedule',
+      backLabel: t('backLabel'),
     })
   }
 
@@ -1909,36 +2483,36 @@ export function SchedulePage() {
     <div className="flex flex-col h-full">
       {/* Top bar */}
       <div className="flex items-center gap-4 px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark mr-2">Schedule</h1>
-        <span className="text-[13px] text-text-secondary">{formatWeekRange(weekStart)}</span>
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark mr-2">{t('pageTitle')}</h1>
+        <span className="text-[13px] text-text-secondary">{formatWeekRange(weekStart, i18n.language)}</span>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={prevWeek}
             className="px-3 py-1.5 text-[12px] font-semibold border border-border text-dark hover:brightness-95 transition-[filter]"
           >
-            ←
+            {t('prevWeek')}
           </button>
           <button
             type="button"
             onClick={nextWeek}
             className="px-3 py-1.5 text-[12px] font-semibold border border-border text-dark hover:brightness-95 transition-[filter]"
           >
-            →
+            {t('nextWeek')}
           </button>
           <button
             type="button"
             className="px-3 py-1.5 text-[12px] font-semibold border border-border text-dark hover:brightness-95 ml-2"
-            onClick={() => alert('Broadcast Open: confirms then broadcasts all unassigned shifts')}
+            onClick={() => alert(t('broadcastOpenAlert'))}
           >
-            Broadcast Open
+            {t('broadcastOpen')}
           </button>
           <button
             type="button"
             className="px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-            onClick={() => openPanel('newShift', undefined, { backLabel: '← Schedule' })}
+            onClick={() => openPanel('newShift', undefined, { backLabel: t('backLabel') })}
           >
-            + New Shift
+            {t('newShift')}
           </button>
         </div>
       </div>
@@ -1958,7 +2532,7 @@ export function SchedulePage() {
           shifts={mockShifts}
           clientMap={mockClientMap}
           caregiverMap={mockCaregiverMap}
-          onShiftClick={(id) => openPanel('shift', id, { backLabel: '← Schedule' })}
+          onShiftClick={(id) => openPanel('shift', id, { backLabel: t('backLabel') })}
           onEmptySlotClick={handleNewShift}
         />
       </div>
@@ -1972,7 +2546,7 @@ export function SchedulePage() {
 ```bash
 cd ..
 git add frontend/src/components/schedule/
-git commit -m "feat(frontend): add Schedule page — WeekCalendar, ShiftBlock, AlertStrip"
+git commit -m "feat(frontend): add Schedule page — WeekCalendar, ShiftBlock, AlertStrip (react-i18next)"
 ```
 
 ---
@@ -1988,6 +2562,7 @@ git commit -m "feat(frontend): add Schedule page — WeekCalendar, ShiftBlock, A
 Create `frontend/src/components/schedule/ShiftDetailPanel.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus, ShiftDetailResponse } from '../../types/api'
 import { mockShifts, mockClientMap, mockCaregiverMap } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
@@ -2010,22 +2585,13 @@ const EVV_TEXT: Record<EvvComplianceStatus, string> = {
   PORTAL_SUBMIT: '#16a34a',
 }
 
-const EVV_LABEL: Record<EvvComplianceStatus, string> = {
-  RED: 'Non-Compliant',
-  YELLOW: 'Attention Required',
-  GREEN: 'Compliant',
-  GREY: 'Not Started',
-  EXEMPT: 'Exempt',
-  PORTAL_SUBMIT: 'Portal Submit',
-}
-
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null, locale: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+function formatDate(iso: string, locale: string): string {
+  return new Date(iso).toLocaleDateString(locale, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -2039,7 +2605,19 @@ interface ShiftDetailPanelProps {
 }
 
 export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) {
-  const { closePanel, openPanel } = usePanelStore()
+  const { t, i18n } = useTranslation('shiftDetail')
+  const tCommon = useTranslation('common').t
+  const { closePanel } = usePanelStore()
+
+  const EVV_LABEL: Record<EvvComplianceStatus, string> = {
+    RED: t('evvNonCompliant'),
+    YELLOW: t('evvAttention'),
+    GREEN: t('evvCompliant'),
+    GREY: t('evvNotStarted'),
+    EXEMPT: t('evvExempt'),
+    PORTAL_SUBMIT: t('evvPortalSubmit'),
+  }
+
   const shift: ShiftDetailResponse | undefined = mockShifts.find((s) => s.id === shiftId)
 
   if (!shift) {
@@ -2048,7 +2626,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
         <button type="button" className="text-blue text-[13px] mb-4" onClick={closePanel}>
           {backLabel}
         </button>
-        <p>Shift not found.</p>
+        <p>{t('notFound')}</p>
       </div>
     )
   }
@@ -2070,10 +2648,10 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
           {backLabel}
         </button>
         <h2 className="text-[16px] font-bold text-dark">
-          {client ? `${client.firstName} ${client.lastName}` : 'Unknown Client'}
+          {client ? `${client.firstName} ${client.lastName}` : t('unknownClient')}
         </h2>
         <p className="text-[12px] text-text-secondary mt-0.5">
-          {formatDate(shift.scheduledStart)} · {formatTime(shift.scheduledStart)} – {formatTime(shift.scheduledEnd)} · PCS
+          {formatDate(shift.scheduledStart, i18n.language)} · {formatTime(shift.scheduledStart, i18n.language)} – {formatTime(shift.scheduledEnd, i18n.language)} · {t('staticService')}
         </p>
       </div>
 
@@ -2083,7 +2661,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
         style={{ background: EVV_BG[status], color: EVV_TEXT[status] }}
       >
         {EVV_LABEL[status]}
-        {shift.evv === null && ' — Visit not yet started'}
+        {shift.evv === null && t('visitNotStarted')}
       </div>
 
       {/* Body */}
@@ -2092,27 +2670,27 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
           {/* Left: Visit Details */}
           <div>
             <h3 className="text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-3">
-              Visit Details
+              {t('sectionVisitDetails')}
             </h3>
             <div className="space-y-2">
               <div>
-                <div className="text-[10px] text-text-secondary">Client</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldClient')}</div>
                 <div className="text-[13px] text-dark">
-                  {client ? `${client.firstName} ${client.lastName}` : '—'}
+                  {client ? `${client.firstName} ${client.lastName}` : tCommon('noDash')}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-text-secondary">Caregiver</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldCaregiver')}</div>
                 <div className="text-[13px] text-dark">
-                  {caregiver ? `${caregiver.firstName} ${caregiver.lastName}` : 'Unassigned'}
+                  {caregiver ? `${caregiver.firstName} ${caregiver.lastName}` : tCommon('unassigned')}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-text-secondary">Service</div>
-                <div className="text-[13px] text-dark">PCS</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldService')}</div>
+                <div className="text-[13px] text-dark">{t('staticService')}</div>
               </div>
               <div>
-                <div className="text-[10px] text-text-secondary">Status</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldStatus')}</div>
                 <div className="text-[13px] text-dark">{shift.status.replace('_', ' ')}</div>
               </div>
             </div>
@@ -2121,25 +2699,25 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
           {/* Right: EVV Record */}
           <div>
             <h3 className="text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-3">
-              EVV Record
+              {t('sectionEvvRecord')}
             </h3>
             <div className="space-y-2">
               <div>
-                <div className="text-[10px] text-text-secondary">Clock-in</div>
-                <div className="text-[13px] text-dark">{formatTime(shift.evv?.timeIn ?? null)}</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldClockIn')}</div>
+                <div className="text-[13px] text-dark">{formatTime(shift.evv?.timeIn ?? null, i18n.language)}</div>
               </div>
               <div>
-                <div className="text-[10px] text-text-secondary">Clock-out</div>
-                <div className="text-[13px] text-dark">{formatTime(shift.evv?.timeOut ?? null)}</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldClockOut')}</div>
+                <div className="text-[13px] text-dark">{formatTime(shift.evv?.timeOut ?? null, i18n.language)}</div>
               </div>
               <div>
-                <div className="text-[10px] text-text-secondary">Method</div>
-                <div className="text-[13px] text-dark">{shift.evv?.verificationMethod ?? '—'}</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldMethod')}</div>
+                <div className="text-[13px] text-dark">{shift.evv?.verificationMethod ?? tCommon('noDash')}</div>
               </div>
               <div>
-                <div className="text-[10px] text-text-secondary">Offline</div>
+                <div className="text-[10px] text-text-secondary">{t('fieldOffline')}</div>
                 <div className="text-[13px] text-dark">
-                  {shift.evv?.capturedOffline ? 'Yes' : 'No'}
+                  {shift.evv?.capturedOffline ? tCommon('yes') : tCommon('no')}
                 </div>
               </div>
             </div>
@@ -2150,11 +2728,11 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
         {shift.status === 'OPEN' && (
           <div className="mt-6">
             <h3 className="text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-3">
-              AI Match — Top Candidates
+              {t('sectionAiMatch')}
             </h3>
             {[
-              { rank: 1, name: 'Maria Garcia', reason: '0.8 mi · 12 prior visits · no OT risk' },
-              { rank: 2, name: 'Sarah Davis', reason: '1.4 mi · 5 prior visits · no OT risk' },
+              { rank: 1, name: t('candidate1Name'), reason: t('candidate1Reason') },
+              { rank: 2, name: t('candidate2Name'), reason: t('candidate2Reason') },
             ].map((c) => (
               <div key={c.rank} className="flex items-center gap-3 py-2 border-b border-border">
                 <span
@@ -2168,7 +2746,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
                   <div className="text-[11px] text-text-secondary">{c.reason}</div>
                 </div>
                 <button type="button" className="text-[12px] font-semibold" style={{ color: '#1a9afa' }}>
-                  Assign →
+                  {t('assign')}
                 </button>
               </div>
             ))}
@@ -2183,7 +2761,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
             type="button"
             className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110"
           >
-            Assign Caregiver
+            {t('assignCaregiver')}
           </button>
         )}
         {(shift.status === 'COMPLETED' || shift.status === 'IN_PROGRESS') &&
@@ -2193,19 +2771,19 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
                 type="button"
                 className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110"
               >
-                Add Manual Clock-in
+                {t('addManualClockIn')}
               </button>
               <button
                 type="button"
                 className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
               >
-                Edit Shift
+                {t('editShift')}
               </button>
               <button
                 type="button"
                 className="ml-auto px-4 py-2 text-[12px] font-semibold text-red-600 border border-red-200"
               >
-                Mark as Missed
+                {t('markAsMissed')}
               </button>
             </>
           )}
@@ -2214,7 +2792,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
             type="button"
             className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
           >
-            Edit Shift
+            {t('editShift')}
           </button>
         )}
         {shift.status === 'COMPLETED' && status === 'GREEN' && (
@@ -2223,13 +2801,13 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
               type="button"
               className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
             >
-              Edit Shift
+              {t('editShift')}
             </button>
             <button
               type="button"
               className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
             >
-              View Care Notes
+              {t('viewCareNotes')}
             </button>
           </>
         )}
@@ -2244,6 +2822,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
 Create `frontend/src/components/schedule/NewShiftPanel.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { mockClients } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
@@ -2263,6 +2842,8 @@ interface NewShiftPanelProps {
 }
 
 export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
+  const { t } = useTranslation('newShift')
+  const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
   const {
     register,
@@ -2270,7 +2851,11 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
     formState: { errors },
   } = useForm<FormValues>({
     defaultValues: {
-      date: prefill?.date ?? new Date().toISOString().split('T')[0],
+      date: prefill?.date ?? [
+        new Date().getFullYear(),
+        String(new Date().getMonth() + 1).padStart(2, '0'),
+        String(new Date().getDate()).padStart(2, '0'),
+      ].join('-'),
       startTime: prefill?.time ?? '09:00',
       endTime: '13:00',
     },
@@ -2279,7 +2864,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
   function onSubmit(values: FormValues) {
     // Phase 4: replace with API call
     console.log('Creating shift:', values)
-    alert(`Mock: shift for client ${values.clientId} on ${values.date} created.\n\nPhase 4 will wire this to POST /shifts.`)
+    alert(t('mockAlert', { clientId: values.clientId, date: values.date }))
     closePanel()
   }
 
@@ -2295,7 +2880,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         >
           {backLabel}
         </button>
-        <h2 className="text-[16px] font-bold text-dark">New Shift</h2>
+        <h2 className="text-[16px] font-bold text-dark">{t('panelTitle')}</h2>
       </div>
 
       {/* Form */}
@@ -2306,13 +2891,13 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         {/* Client */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
-            Client
+            {t('labelClient')}
           </label>
           <select
-            {...register('clientId', { required: 'Client is required' })}
+            {...register('clientId', { required: t('validationClientRequired') })}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
-            <option value="">Select client…</option>
+            <option value="">{t('selectClient')}</option>
             {mockClients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.firstName} {c.lastName}
@@ -2327,25 +2912,28 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         {/* Service Type (static for Phase 1) */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
-            Service Type
+            {t('labelServiceType')}
           </label>
           <select
-            {...register('serviceTypeId', { required: 'Service type is required' })}
+            {...register('serviceTypeId', { required: t('validationServiceTypeRequired') })}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
-            <option value="">Select service type…</option>
-            <option value="st000000-0000-0000-0000-000000000001">PCS — Personal Care Services</option>
+            <option value="">{t('selectServiceType')}</option>
+            <option value="st000000-0000-0000-0000-000000000001">{t('serviceTypePcs')}</option>
           </select>
+          {errors.serviceTypeId && (
+            <p className="text-[11px] text-red-600 mt-1">{errors.serviceTypeId.message}</p>
+          )}
         </div>
 
         {/* Date */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
-            Date
+            {t('labelDate')}
           </label>
           <input
             type="date"
-            {...register('date', { required: 'Date is required' })}
+            {...register('date', { required: t('validationDateRequired') })}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark"
           />
         </div>
@@ -2354,7 +2942,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
-              Start Time
+              {t('labelStartTime')}
             </label>
             <input
               type="time"
@@ -2364,7 +2952,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
           </div>
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
-              End Time
+              {t('labelEndTime')}
             </label>
             <input
               type="time"
@@ -2377,16 +2965,16 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         {/* Caregiver (optional) */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
-            Caregiver (optional)
+            {t('labelCaregiver')}
           </label>
           <select
             {...register('caregiverId')}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
-            <option value="">Leave unassigned (broadcast after)</option>
+            <option value="">{t('caregiverUnassigned')}</option>
           </select>
           <p className="text-[10px] text-text-secondary mt-1">
-            Phase 4 will populate this list from the API.
+            {t('caregiverPhaseNote')}
           </p>
         </div>
 
@@ -2396,14 +2984,14 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
             type="submit"
             className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110"
           >
-            Save Shift
+            {t('saveShift')}
           </button>
           <button
             type="button"
             onClick={closePanel}
             className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
           >
-            Cancel
+            {tCommon('cancel')}
           </button>
         </div>
       </form>
@@ -2418,7 +3006,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
 cd ..
 git add frontend/src/components/schedule/ShiftDetailPanel.tsx \
   frontend/src/components/schedule/NewShiftPanel.tsx
-git commit -m "feat(frontend): add ShiftDetailPanel and NewShiftPanel (mock)"
+git commit -m "feat(frontend): add ShiftDetailPanel and NewShiftPanel (mock, react-i18next)"
 ```
 
 ---
@@ -2436,6 +3024,8 @@ git commit -m "feat(frontend): add ShiftDetailPanel and NewShiftPanel (mock)"
 Create `frontend/src/components/dashboard/StatTiles.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
+
 interface StatTilesProps {
   redEvvCount: number
   yellowEvvCount: number
@@ -2452,29 +3042,31 @@ interface Tile {
 }
 
 export function StatTiles({ redEvvCount, yellowEvvCount, uncoveredCount, onTrackCount }: StatTilesProps) {
+  const { t } = useTranslation('dashboard')
+
   const tiles: Tile[] = [
     {
-      label: 'RED EVV',
-      sublabel: 'Missing elements',
+      label: t('tileRedEvv'),
+      sublabel: t('tileRedEvvSub'),
       count: redEvvCount,
       numColor: '#dc2626',
       bgColor: redEvvCount > 0 ? '#fef2f2' : undefined,
     },
     {
-      label: 'YELLOW EVV',
-      sublabel: 'Attention needed',
+      label: t('tileYellowEvv'),
+      sublabel: t('tileYellowEvvSub'),
       count: yellowEvvCount,
       numColor: '#ca8a04',
     },
     {
-      label: 'UNCOVERED',
-      sublabel: 'No caregiver',
+      label: t('tileUncovered'),
+      sublabel: t('tileUncoveredSub'),
       count: uncoveredCount,
       numColor: '#94a3b8',
     },
     {
-      label: 'ON TRACK',
-      sublabel: 'Compliant',
+      label: t('tileOnTrack'),
+      sublabel: t('tileOnTrackSub'),
       count: onTrackCount,
       numColor: '#16a34a',
     },
@@ -2510,6 +3102,7 @@ export function StatTiles({ redEvvCount, yellowEvvCount, uncoveredCount, onTrack
 Create `frontend/src/components/dashboard/VisitList.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { DashboardVisitRow, EvvComplianceStatus } from '../../types/api'
 import { usePanelStore } from '../../store/panelStore'
 
@@ -2540,8 +3133,8 @@ const STATUS_PILL_COLOR: Record<EvvComplianceStatus, string> = {
   PORTAL_SUBMIT: '#16a34a',
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+function formatTime(iso: string, locale: string): string {
+  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
 }
 
 interface VisitListProps {
@@ -2549,10 +3142,12 @@ interface VisitListProps {
 }
 
 export function VisitList({ visits }: VisitListProps) {
+  const { t, i18n } = useTranslation('dashboard')
+  const tCommon = useTranslation('common').t
   const { openPanel } = usePanelStore()
 
   if (visits.length === 0) {
-    return <p className="px-6 py-8 text-text-secondary text-[13px]">No visits today.</p>
+    return <p className="px-6 py-8 text-text-secondary text-[13px]">{t('noVisits')}</p>
   }
 
   return (
@@ -2561,7 +3156,7 @@ export function VisitList({ visits }: VisitListProps) {
         <button
           key={row.shiftId}
           type="button"
-          onClick={() => openPanel('shift', row.shiftId, { backLabel: '← Dashboard' })}
+          onClick={() => openPanel('shift', row.shiftId, { backLabel: t('backLabel') })}
           className="w-full flex items-center gap-3 px-6 py-3 border-b border-border hover:bg-surface text-left transition-colors"
           style={{ borderLeft: `3px solid ${STATUS_BORDER[row.evvStatus]}` }}
         >
@@ -2578,12 +3173,12 @@ export function VisitList({ visits }: VisitListProps) {
             <div className="text-[11px] text-text-secondary truncate">
               {row.caregiverFirstName
                 ? `${row.caregiverFirstName} ${row.caregiverLastName} · ${row.serviceTypeName}`
-                : `Unassigned · ${row.serviceTypeName}`}
+                : `${tCommon('unassigned')} · ${row.serviceTypeName}`}
             </div>
           </div>
           {/* Time */}
           <div className="text-[11px] text-text-secondary shrink-0">
-            {formatTime(row.scheduledStart)} – {formatTime(row.scheduledEnd)}
+            {formatTime(row.scheduledStart, i18n.language)} – {formatTime(row.scheduledEnd, i18n.language)}
           </div>
           {/* EVV pill */}
           <span
@@ -2607,8 +3202,16 @@ export function VisitList({ visits }: VisitListProps) {
 Create `frontend/src/components/dashboard/AlertsColumn.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { DashboardAlert } from '../../types/api'
 import { useNavigate } from 'react-router-dom'
+
+// Date-only ISO strings (e.g. '2026-04-10') are parsed as UTC-midnight by the spec,
+// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
+// in the correct calendar day across all UTC-14 to UTC+14 zones.
+function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
+}
 
 function isUrgent(dueDate: string): boolean {
   const days = (new Date(dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
@@ -2620,11 +3223,12 @@ interface AlertsColumnProps {
 }
 
 export function AlertsColumn({ alerts }: AlertsColumnProps) {
+  const { t } = useTranslation('dashboard')
   const navigate = useNavigate()
 
   if (alerts.length === 0) {
     return (
-      <div className="p-4 text-[12px] text-text-secondary">No active alerts.</div>
+      <div className="p-4 text-[12px] text-text-secondary">{t('noAlerts')}</div>
     )
   }
 
@@ -2632,7 +3236,7 @@ export function AlertsColumn({ alerts }: AlertsColumnProps) {
     <div>
       <div className="px-4 py-3 border-b border-border">
         <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary">
-          Alerts
+          {t('alertsHeader')}
         </span>
       </div>
       <div>
@@ -2659,7 +3263,7 @@ export function AlertsColumn({ alerts }: AlertsColumnProps) {
               </div>
               <div className="text-[11px] text-text-secondary mt-0.5">{alert.detail}</div>
               <div className="text-[10px] mt-0.5" style={{ color: urgent ? '#dc2626' : '#94a3b8' }}>
-                Due {new Date(alert.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {t('due', { date: formatLocalDate(alert.dueDate, { month: 'short', day: 'numeric' }) })}
               </div>
             </button>
           )
@@ -2675,14 +3279,16 @@ export function AlertsColumn({ alerts }: AlertsColumnProps) {
 Create `frontend/src/components/dashboard/DashboardPage.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import { mockDashboard } from '../../mock/data'
 import { StatTiles } from './StatTiles'
 import { VisitList } from './VisitList'
 import { AlertsColumn } from './AlertsColumn'
 
 export function DashboardPage() {
+  const { t, i18n } = useTranslation('dashboard')
   const data = mockDashboard
-  const today = new Date().toLocaleDateString('en-US', {
+  const today = new Date().toLocaleDateString(i18n.language, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -2693,7 +3299,7 @@ export function DashboardPage() {
     <div className="flex flex-col h-full">
       {/* Top bar */}
       <div className="flex items-center px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">Dashboard</h1>
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
         <span className="ml-3 text-[13px] text-text-secondary">{today}</span>
       </div>
 
@@ -2730,7 +3336,7 @@ export function DashboardPage() {
 ```bash
 cd ..
 git add frontend/src/components/dashboard/
-git commit -m "feat(frontend): add Dashboard page — StatTiles, VisitList, AlertsColumn"
+git commit -m "feat(frontend): add Dashboard page — StatTiles, VisitList, AlertsColumn (react-i18next)"
 ```
 
 ---
@@ -2747,6 +3353,7 @@ git commit -m "feat(frontend): add Dashboard page — StatTiles, VisitList, Aler
 Create `frontend/src/components/clients/ClientsTable.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { ClientResponse } from '../../types/api'
 import { usePanelStore } from '../../store/panelStore'
 
@@ -2756,6 +3363,8 @@ interface ClientsTableProps {
 }
 
 export function ClientsTable({ clients, search }: ClientsTableProps) {
+  const { t } = useTranslation('clients')
+  const tCommon = useTranslation('common').t
   const { openPanel } = usePanelStore()
 
   const filtered = clients.filter((c) => {
@@ -2764,7 +3373,7 @@ export function ClientsTable({ clients, search }: ClientsTableProps) {
   })
 
   if (filtered.length === 0) {
-    return <p className="px-6 py-8 text-text-secondary text-[13px]">No clients found.</p>
+    return <p className="px-6 py-8 text-text-secondary text-[13px]">{t('noResults')}</p>
   }
 
   return (
@@ -2772,16 +3381,16 @@ export function ClientsTable({ clients, search }: ClientsTableProps) {
       <thead>
         <tr className="border-b border-border bg-surface">
           <th className="text-left px-6 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary">
-            Client
+            {t('colClient')}
           </th>
           <th className="text-left px-4 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary">
-            Medicaid ID
+            {t('colMedicaidId')}
           </th>
           <th className="text-left px-4 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary">
-            State
+            {t('colState')}
           </th>
           <th className="text-left px-4 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary">
-            Status
+            {t('colStatus')}
           </th>
         </tr>
       </thead>
@@ -2790,13 +3399,13 @@ export function ClientsTable({ clients, search }: ClientsTableProps) {
           <tr
             key={client.id}
             className="border-b border-border hover:bg-surface cursor-pointer"
-            onClick={() => openPanel('client', client.id, { backLabel: '← Clients' })}
+            onClick={() => openPanel('client', client.id, { backLabel: t('backLabel') })}
           >
             <td className="px-6 py-3 font-medium text-dark">
               {client.firstName} {client.lastName}
             </td>
-            <td className="px-4 py-3 text-text-secondary">{client.medicaidId ?? '—'}</td>
-            <td className="px-4 py-3 text-text-secondary">{client.serviceState ?? '—'}</td>
+            <td className="px-4 py-3 text-text-secondary">{client.medicaidId ?? tCommon('noDash')}</td>
+            <td className="px-4 py-3 text-text-secondary">{client.serviceState ?? tCommon('noDash')}</td>
             <td className="px-4 py-3">
               <span
                 className="text-[11px] font-semibold px-2 py-0.5"
@@ -2822,21 +3431,22 @@ Create `frontend/src/components/clients/ClientsPage.tsx`:
 
 ```tsx
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { mockClients } from '../../mock/data'
-import { usePanelStore } from '../../store/panelStore'
 import { ClientsTable } from './ClientsTable'
 
 export function ClientsPage() {
+  const { t } = useTranslation('clients')
+  const tCommon = useTranslation('common').t
   const [search, setSearch] = useState('')
-  const { openPanel } = usePanelStore()
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-4 px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">Clients</h1>
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
         <input
           type="search"
-          placeholder="Search by name…"
+          placeholder={tCommon('searchByName')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="ml-4 border border-border px-3 py-1.5 text-[13px] w-64 focus:outline-none focus:border-dark"
@@ -2844,9 +3454,9 @@ export function ClientsPage() {
         <button
           type="button"
           className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-          onClick={() => openPanel('client', undefined, { backLabel: '← Clients' })}
+          onClick={() => alert(t('addClientAlert'))}
         >
-          + Add Client
+          {t('addClient')}
         </button>
       </div>
       <div className="flex-1 overflow-auto">
@@ -2863,18 +3473,18 @@ Create `frontend/src/components/clients/ClientDetailPanel.tsx`:
 
 ```tsx
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { mockClients, mockAuthorizations } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
 
-type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPortal'
+// Date-only ISO strings (e.g. '1942-03-15') are parsed as UTC-midnight by the spec,
+// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
+// in the correct calendar day across all UTC-14 to UTC+14 zones.
+function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
+}
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'carePlan', label: 'Care Plan' },
-  { id: 'authorizations', label: 'Authorizations' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'familyPortal', label: 'Family Portal' },
-]
+type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPortal'
 
 interface ClientDetailPanelProps {
   clientId: string | undefined
@@ -2882,9 +3492,19 @@ interface ClientDetailPanelProps {
 }
 
 export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProps) {
+  const { t } = useTranslation('clients')
+  const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const client = mockClients.find((c) => c.id === clientId)
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'overview', label: t('tabOverview') },
+    { id: 'carePlan', label: t('tabCarePlan') },
+    { id: 'authorizations', label: t('tabAuthorizations') },
+    { id: 'documents', label: t('tabDocuments') },
+    { id: 'familyPortal', label: t('tabFamilyPortal') },
+  ]
 
   if (!client) {
     return (
@@ -2892,7 +3512,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
         <button type="button" className="text-blue text-[13px] mb-4" onClick={closePanel}>
           {backLabel}
         </button>
-        <p className="text-text-secondary">Client not found.</p>
+        <p className="text-text-secondary">{t('notFound')}</p>
       </div>
     )
   }
@@ -2915,7 +3535,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
           {client.firstName} {client.lastName}
         </h2>
         <p className="text-[12px] text-text-secondary mt-0.5">
-          DOB: {new Date(client.dateOfBirth).toLocaleDateString('en-US')} ·{' '}
+          DOB: {formatLocalDate(client.dateOfBirth)} ·{' '}
           {client.medicaidId ?? 'No Medicaid ID'}
         </p>
       </div>
@@ -2944,12 +3564,12 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
         {activeTab === 'overview' && (
           <div className="grid grid-cols-2 gap-4">
             {[
-              ['Phone', client.phone ?? '—'],
-              ['Address', client.address ?? '—'],
-              ['Service State', client.serviceState ?? '—'],
-              ['Status', client.status],
-              ['Preferred Language', client.preferredLanguages ?? '—'],
-              ['No Pet Caregiver', client.noPetCaregiver ? 'Yes' : 'No'],
+              [t('fieldPhone'), client.phone ?? tCommon('noDash')],
+              [t('fieldAddress'), client.address ?? tCommon('noDash')],
+              [t('fieldServiceState'), client.serviceState ?? tCommon('noDash')],
+              [t('fieldStatus'), client.status],
+              [t('fieldPreferredLanguage'), client.preferredLanguages ?? tCommon('noDash')],
+              [t('fieldNoPetCaregiver'), client.noPetCaregiver ? tCommon('yes') : tCommon('no')],
             ].map(([label, value]) => (
               <div key={label}>
                 <div className="text-[10px] text-text-secondary">{label}</div>
@@ -2959,21 +3579,21 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
           </div>
         )}
         {activeTab === 'carePlan' && (
-          <p className="text-text-secondary text-[13px]">Care plan — Phase 6 wires to real API.</p>
+          <p className="text-text-secondary text-[13px]">{t('carePlanPhaseNote')}</p>
         )}
         {activeTab === 'authorizations' && (
           <div>
             {authorizations.length === 0 ? (
-              <p className="text-text-secondary text-[13px]">No authorizations.</p>
+              <p className="text-text-secondary text-[13px]">{t('noAuthorizations')}</p>
             ) : (
               authorizations.map((auth) => {
                 const pct = (auth.usedUnits / auth.authorizedUnits) * 100
                 return (
                   <div key={auth.id} className="border border-border p-4 mb-3">
                     <div className="flex justify-between mb-2">
-                      <span className="text-[13px] font-medium text-dark">Auth #{auth.authNumber}</span>
+                      <span className="text-[13px] font-medium text-dark">{t('authHeader', { authNumber: auth.authNumber })}</span>
                       <span className="text-[12px] text-text-secondary">
-                        {auth.usedUnits}/{auth.authorizedUnits} {auth.unitType.toLowerCase()}s used
+                        {t('authUnitsUsed', { used: auth.usedUnits, authorized: auth.authorizedUnits, unitType: auth.unitType.toLowerCase() })}
                       </span>
                     </div>
                     <div className="w-full bg-border h-2">
@@ -2986,7 +3606,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
                       />
                     </div>
                     <div className="text-[10px] text-text-secondary mt-1">
-                      {auth.startDate} – {auth.endDate}
+                      {formatLocalDate(auth.startDate, { month: 'short', day: 'numeric', year: 'numeric' })} – {formatLocalDate(auth.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
                     </div>
                   </div>
                 )
@@ -2995,10 +3615,10 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
           </div>
         )}
         {activeTab === 'documents' && (
-          <p className="text-text-secondary text-[13px]">Documents — Phase 6 wires to real API.</p>
+          <p className="text-text-secondary text-[13px]">{t('documentsPhaseNote')}</p>
         )}
         {activeTab === 'familyPortal' && (
-          <p className="text-text-secondary text-[13px]">Family portal — Phase 6 wires to real API.</p>
+          <p className="text-text-secondary text-[13px]">{t('familyPortalPhaseNote')}</p>
         )}
       </div>
     </div>
@@ -3011,7 +3631,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
 ```bash
 cd ..
 git add frontend/src/components/clients/
-git commit -m "feat(frontend): add Clients page and ClientDetailPanel (mock)"
+git commit -m "feat(frontend): add Clients page and ClientDetailPanel (mock, react-i18next)"
 ```
 
 ---
@@ -3028,8 +3648,16 @@ git commit -m "feat(frontend): add Clients page and ClientDetailPanel (mock)"
 Create `frontend/src/components/caregivers/CaregiversTable.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { CaregiverResponse } from '../../types/api'
 import { usePanelStore } from '../../store/panelStore'
+
+// Date-only ISO strings (e.g. '2023-04-01') are parsed as UTC-midnight by the spec,
+// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
+// in the correct calendar day across all UTC-14 to UTC+14 zones.
+function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
+}
 
 interface CaregiversTableProps {
   caregivers: CaregiverResponse[]
@@ -3037,6 +3665,8 @@ interface CaregiversTableProps {
 }
 
 export function CaregiversTable({ caregivers, search }: CaregiversTableProps) {
+  const { t } = useTranslation('caregivers')
+  const tCommon = useTranslation('common').t
   const { openPanel } = usePanelStore()
 
   const filtered = caregivers.filter((c) => {
@@ -3045,14 +3675,14 @@ export function CaregiversTable({ caregivers, search }: CaregiversTableProps) {
   })
 
   if (filtered.length === 0) {
-    return <p className="px-6 py-8 text-text-secondary text-[13px]">No caregivers found.</p>
+    return <p className="px-6 py-8 text-text-secondary text-[13px]">{t('noResults')}</p>
   }
 
   return (
     <table className="w-full text-[13px]">
       <thead>
         <tr className="border-b border-border bg-surface">
-          {['Caregiver', 'Email', 'Phone', 'Status', 'Hire Date'].map((h) => (
+          {[t('colCaregiver'), t('colEmail'), t('colPhone'), t('colStatus'), t('colHireDate')].map((h) => (
             <th
               key={h}
               className="text-left px-6 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary first:pl-6"
@@ -3067,13 +3697,13 @@ export function CaregiversTable({ caregivers, search }: CaregiversTableProps) {
           <tr
             key={cg.id}
             className="border-b border-border hover:bg-surface cursor-pointer"
-            onClick={() => openPanel('caregiver', cg.id, { backLabel: '← Caregivers' })}
+            onClick={() => openPanel('caregiver', cg.id, { backLabel: t('backLabel') })}
           >
             <td className="px-6 py-3 font-medium text-dark">
               {cg.firstName} {cg.lastName}
             </td>
             <td className="px-6 py-3 text-text-secondary">{cg.email}</td>
-            <td className="px-6 py-3 text-text-secondary">{cg.phone ?? '—'}</td>
+            <td className="px-6 py-3 text-text-secondary">{cg.phone ?? tCommon('noDash')}</td>
             <td className="px-6 py-3">
               <span
                 className="text-[11px] font-semibold px-2 py-0.5"
@@ -3087,8 +3717,8 @@ export function CaregiversTable({ caregivers, search }: CaregiversTableProps) {
             </td>
             <td className="px-6 py-3 text-text-secondary">
               {cg.hireDate
-                ? new Date(cg.hireDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                : '—'}
+                ? formatLocalDate(cg.hireDate, { month: 'short', day: 'numeric', year: 'numeric' })
+                : tCommon('noDash')}
             </td>
           </tr>
         ))}
@@ -3104,21 +3734,22 @@ Create `frontend/src/components/caregivers/CaregiversPage.tsx`:
 
 ```tsx
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { mockCaregivers } from '../../mock/data'
-import { usePanelStore } from '../../store/panelStore'
 import { CaregiversTable } from './CaregiversTable'
 
 export function CaregiversPage() {
+  const { t } = useTranslation('caregivers')
+  const tCommon = useTranslation('common').t
   const [search, setSearch] = useState('')
-  const { openPanel } = usePanelStore()
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-4 px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">Caregivers</h1>
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
         <input
           type="search"
-          placeholder="Search by name…"
+          placeholder={tCommon('searchByName')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="ml-4 border border-border px-3 py-1.5 text-[13px] w-64 focus:outline-none focus:border-dark"
@@ -3126,9 +3757,9 @@ export function CaregiversPage() {
         <button
           type="button"
           className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-          onClick={() => openPanel('caregiver', undefined, { backLabel: '← Caregivers' })}
+          onClick={() => alert(t('addCaregiverAlert'))}
         >
-          + Add Caregiver
+          {t('addCaregiver')}
         </button>
       </div>
       <div className="flex-1 overflow-auto">
@@ -3145,28 +3776,38 @@ Create `frontend/src/components/caregivers/CaregiverDetailPanel.tsx`:
 
 ```tsx
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { mockCaregivers, mockCredentials } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
 
+// Date-only ISO strings (e.g. '2023-04-01') are parsed as UTC-midnight by the spec,
+// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
+// in the correct calendar day across all UTC-14 to UTC+14 zones.
+function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
+}
+
 type Tab = 'overview' | 'credentials' | 'backgroundChecks' | 'availability' | 'shiftHistory'
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'credentials', label: 'Credentials' },
-  { id: 'backgroundChecks', label: 'Background Checks' },
-  { id: 'availability', label: 'Availability' },
-  { id: 'shiftHistory', label: 'Shift History' },
-]
-
 interface CaregiverDetailPanelProps {
-  caregiverVId: string
+  caregiverId: string
   backLabel: string
 }
 
-export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetailPanelProps) {
+export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetailPanelProps) {
+  const { t } = useTranslation('caregivers')
+  const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const caregiver = mockCaregivers.find((c) => c.id === caregiverVId)
+  const caregiver = mockCaregivers.find((c) => c.id === caregiverId)
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'overview', label: t('tabOverview') },
+    { id: 'credentials', label: t('tabCredentials') },
+    { id: 'backgroundChecks', label: t('tabBackgroundChecks') },
+    { id: 'availability', label: t('tabAvailability') },
+    { id: 'shiftHistory', label: t('tabShiftHistory') },
+  ]
 
   if (!caregiver) {
     return (
@@ -3174,12 +3815,12 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
         <button type="button" className="text-[13px] mb-4" style={{ color: '#1a9afa' }} onClick={closePanel}>
           {backLabel}
         </button>
-        <p className="text-text-secondary">Caregiver not found.</p>
+        <p className="text-text-secondary">{t('notFound')}</p>
       </div>
     )
   }
 
-  const credentials = mockCredentials.filter((c) => c.caregiverId === caregiverVId)
+  const credentials = mockCredentials.filter((c) => c.caregiverId === caregiverId)
 
   function isExpiringSoon(expiryDate: string | null): boolean {
     if (!expiryDate) return false
@@ -3229,11 +3870,11 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
         {activeTab === 'overview' && (
           <div className="grid grid-cols-2 gap-4">
             {[
-              ['Phone', caregiver.phone ?? '—'],
-              ['Address', caregiver.address ?? '—'],
-              ['Hire Date', caregiver.hireDate ? new Date(caregiver.hireDate).toLocaleDateString('en-US') : '—'],
-              ['Status', caregiver.status],
-              ['Has Pet', caregiver.hasPet ? 'Yes' : 'No'],
+              [t('fieldPhone'), caregiver.phone ?? tCommon('noDash')],
+              [t('fieldAddress'), caregiver.address ?? tCommon('noDash')],
+              [t('fieldHireDate'), caregiver.hireDate ? formatLocalDate(caregiver.hireDate) : tCommon('noDash')],
+              [t('fieldStatus'), caregiver.status],
+              [t('fieldHasPet'), caregiver.hasPet ? tCommon('yes') : tCommon('no')],
             ].map(([label, value]) => (
               <div key={label}>
                 <div className="text-[10px] text-text-secondary">{label}</div>
@@ -3245,7 +3886,7 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
         {activeTab === 'credentials' && (
           <div>
             {credentials.length === 0 ? (
-              <p className="text-text-secondary text-[13px]">No credentials on file.</p>
+              <p className="text-text-secondary text-[13px]">{t('noCredentials')}</p>
             ) : (
               credentials.map((cred) => {
                 const expiring = isExpiringSoon(cred.expiryDate)
@@ -3259,12 +3900,12 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
                         {cred.credentialType}
                       </div>
                       <div className="text-[11px] text-text-secondary">
-                        Expires:{' '}
+                        {t('credExpires')}{' '}
                         {cred.expiryDate
-                          ? new Date(cred.expiryDate).toLocaleDateString('en-US')
-                          : 'No expiry'}
+                          ? formatLocalDate(cred.expiryDate)
+                          : tCommon('noExpiry')}
                         {expiring && (
-                          <span className="ml-2 text-red-600 font-semibold">Expiring soon</span>
+                          <span className="ml-2 text-red-600 font-semibold">{t('credExpiringSoon')}</span>
                         )}
                       </div>
                     </div>
@@ -3275,7 +3916,7 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
                         color: cred.verified ? '#16a34a' : '#dc2626',
                       }}
                     >
-                      {cred.verified ? 'Verified' : 'Unverified'}
+                      {cred.verified ? t('credVerified') : t('credUnverified')}
                     </span>
                   </div>
                 )
@@ -3284,13 +3925,13 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
           </div>
         )}
         {activeTab === 'backgroundChecks' && (
-          <p className="text-text-secondary text-[13px]">Background checks — Phase 7 wires to real API.</p>
+          <p className="text-text-secondary text-[13px]">{t('backgroundPhaseNote')}</p>
         )}
         {activeTab === 'availability' && (
-          <p className="text-text-secondary text-[13px]">Availability — Phase 7 wires to real API.</p>
+          <p className="text-text-secondary text-[13px]">{t('availabilityPhaseNote')}</p>
         )}
         {activeTab === 'shiftHistory' && (
-          <p className="text-text-secondary text-[13px]">Shift history — Phase 7 wires to real API.</p>
+          <p className="text-text-secondary text-[13px]">{t('shiftHistoryPhaseNote')}</p>
         )}
       </div>
     </div>
@@ -3303,7 +3944,7 @@ export function CaregiverDetailPanel({ caregiverVId, backLabel }: CaregiverDetai
 ```bash
 cd ..
 git add frontend/src/components/caregivers/
-git commit -m "feat(frontend): add Caregivers page and CaregiverDetailPanel (mock)"
+git commit -m "feat(frontend): add Caregivers page and CaregiverDetailPanel (mock, react-i18next)"
 ```
 
 ---
@@ -3319,34 +3960,38 @@ git commit -m "feat(frontend): add Caregivers page and CaregiverDetailPanel (moc
 Create `frontend/src/components/payers/PayersPage.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import { mockPayers } from '../../mock/data'
 
-const PAYER_TYPE_LABEL: Record<string, string> = {
-  MEDICAID: 'Medicaid',
-  PRIVATE_PAY: 'Private Pay',
-  LTC_INSURANCE: 'LTC Insurance',
-  VA: 'VA',
-  MEDICARE: 'Medicare',
-}
-
 export function PayersPage() {
+  const { t } = useTranslation('payers')
+  const tCommon = useTranslation('common').t
+
+  const PAYER_TYPE_LABEL: Record<string, string> = {
+    MEDICAID: t('typeMedicaid'),
+    PRIVATE_PAY: t('typePrivatePay'),
+    LTC_INSURANCE: t('typeLtcInsurance'),
+    VA: t('typeVa'),
+    MEDICARE: t('typeMedicare'),
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">Payers</h1>
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
         <button
           type="button"
           className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-          onClick={() => alert('Phase 8 will wire this to the API.')}
+          onClick={() => alert(t('addPayerAlert'))}
         >
-          + Add Payer
+          {t('addPayer')}
         </button>
       </div>
       <div className="flex-1 overflow-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-border bg-surface">
-              {['Payer Name', 'Type', 'State', 'EVV Aggregator'].map((h) => (
+              {[t('colPayerName'), t('colType'), t('colState'), t('colEvvAggregator')].map((h) => (
                 <th
                   key={h}
                   className="text-left px-6 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary"
@@ -3364,7 +4009,7 @@ export function PayersPage() {
                   {PAYER_TYPE_LABEL[payer.payerType] ?? payer.payerType}
                 </td>
                 <td className="px-6 py-3 text-text-secondary">{payer.state}</td>
-                <td className="px-6 py-3 text-text-secondary">{payer.evvAggregator ?? '—'}</td>
+                <td className="px-6 py-3 text-text-secondary">{payer.evvAggregator ?? tCommon('noDash')}</td>
               </tr>
             ))}
           </tbody>
@@ -3380,6 +4025,7 @@ export function PayersPage() {
 Create `frontend/src/components/evv/EvvStatusPage.tsx`:
 
 ```tsx
+import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus } from '../../types/api'
 import { mockEvvHistory } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
@@ -3393,25 +4039,27 @@ const STATUS_COLOR: Record<EvvComplianceStatus, string> = {
   PORTAL_SUBMIT: '#16a34a',
 }
 
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null, locale: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
 }
 
 export function EvvStatusPage() {
+  const { t, i18n } = useTranslation('evvStatus')
+  const tCommon = useTranslation('common').t
   const { openPanel } = usePanelStore()
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">EVV Status</h1>
-        <span className="ml-3 text-[12px] text-text-secondary">Last 30 days — computed live from Core API</span>
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
+        <span className="ml-3 text-[12px] text-text-secondary">{t('subtitle')}</span>
       </div>
       <div className="flex-1 overflow-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-border bg-surface">
-              {['Client', 'Caregiver', 'Service', 'Date', 'Clock-in', 'Clock-out', 'Status'].map((h) => (
+              {[t('colClient'), t('colCaregiver'), t('colService'), t('colDate'), t('colClockIn'), t('colClockOut'), t('colStatus')].map((h) => (
                 <th
                   key={h}
                   className="text-left px-6 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary"
@@ -3427,7 +4075,7 @@ export function EvvStatusPage() {
                 key={row.shiftId}
                 className="border-b border-border hover:bg-surface cursor-pointer"
                 style={{ borderLeft: `3px solid ${STATUS_COLOR[row.evvStatus]}` }}
-                onClick={() => openPanel('shift', row.shiftId, { backLabel: '← EVV Status' })}
+                onClick={() => openPanel('shift', row.shiftId, { backLabel: t('backLabel') })}
               >
                 <td className="px-6 py-3 font-medium text-dark">
                   {row.clientFirstName} {row.clientLastName}
@@ -3435,17 +4083,17 @@ export function EvvStatusPage() {
                 <td className="px-6 py-3 text-text-secondary">
                   {row.caregiverFirstName
                     ? `${row.caregiverFirstName} ${row.caregiverLastName}`
-                    : '—'}
+                    : tCommon('noDash')}
                 </td>
                 <td className="px-6 py-3 text-text-secondary">{row.serviceTypeName}</td>
                 <td className="px-6 py-3 text-text-secondary">
-                  {new Date(row.scheduledStart).toLocaleDateString('en-US', {
+                  {new Date(row.scheduledStart).toLocaleDateString(i18n.language, {
                     month: 'short',
                     day: 'numeric',
                   })}
                 </td>
-                <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeIn)}</td>
-                <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeOut)}</td>
+                <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeIn, i18n.language)}</td>
+                <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeOut, i18n.language)}</td>
                 <td className="px-6 py-3">
                   <span
                     className="text-[11px] font-bold px-2 py-0.5"
@@ -3467,11 +4115,7 @@ export function EvvStatusPage() {
 }
 ```
 
-- [ ] **Step 14.3: Fix Shell.tsx caregiver prop typo**
-
-In `frontend/src/components/layout/Shell.tsx`, the `CaregiverDetailPanel` prop is named `caregiverVId` (see Task 13). This matches the component definition. No change needed.
-
-- [ ] **Step 14.4: Verify full build**
+- [ ] **Step 14.3: Verify full build**
 
 ```bash
 cd frontend && npx tsc --noEmit 2>&1
@@ -3479,12 +4123,12 @@ cd frontend && npx tsc --noEmit 2>&1
 
 Expected: no errors. Fix any type errors before proceeding.
 
-- [ ] **Step 14.5: Commit**
+- [ ] **Step 14.4: Commit**
 
 ```bash
 cd ..
 git add frontend/src/components/payers/ frontend/src/components/evv/
-git commit -m "feat(frontend): add Payers and EVV Status pages (mock)"
+git commit -m "feat(frontend): add Payers and EVV Status pages (mock, react-i18next)"
 ```
 
 ---
@@ -3502,6 +4146,9 @@ Create `frontend/src/components/layout/Sidebar.test.tsx`:
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+
+// i18next is initialized synchronously in src/test/setup.ts with real English strings.
+// No mock needed — useTranslation returns actual translations in tests.
 
 function renderSidebar(initialPath = '/schedule') {
   return render(
@@ -3632,7 +4279,9 @@ test('redirects / to /schedule', async ({ page }) => {
 
 test('renders sidebar with h.care wordmark', async ({ page }) => {
   await page.goto('/schedule')
-  await expect(page.getByText('care')).toBeVisible()
+  // Use exact match on the <span>care</span> within the logo to avoid
+  // matching "Caregivers" nav link which also contains the substring "care".
+  await expect(page.locator('aside span').filter({ hasText: /^care$/ }).first()).toBeVisible()
 })
 
 test('schedule page shows week calendar', async ({ page }) => {
@@ -3688,17 +4337,13 @@ test('navigating to /caregivers shows caregiver table', async ({ page }) => {
 cd frontend && npx playwright install chromium
 ```
 
-- [ ] **Step 16.4: Run e2e tests (dev server must be running)**
+- [ ] **Step 16.4: Run e2e tests**
 
-Open a second terminal:
-```bash
-cd frontend && npm run dev
-```
-
-In the original terminal:
 ```bash
 cd frontend && npx playwright test 2>&1 | tail -15
 ```
+
+> The `webServer` block in `playwright.config.ts` starts `npm run dev` automatically (`reuseExistingServer: true` reuses port 5173 if already running). No separate terminal needed.
 
 Expected: `9 passed`.
 
@@ -3727,7 +4372,7 @@ Open `http://localhost:5173` in a browser.
 | Root `/` redirects to `/schedule` | ✅ |
 | Sidebar shows h.care wordmark | ✅ |
 | Schedule shows week calendar with today highlighted in blue | ✅ |
-| Shift blocks visible for today (Alice Johnson — RED, Robert Martinez — YELLOW, Dorothy Chen — GREY uncovered) | ✅ |
+| Shift blocks visible for today Apr 7 (Alice Johnson — RED, Robert Martinez — YELLOW, Dorothy Chen — GREY uncovered, James Williams — GREY assigned) | ✅ |
 | Clicking a shift block slides in ShiftDetailPanel — sidebar stays visible | ✅ |
 | Escape key closes the panel | ✅ |
 | "← Schedule" back link closes the panel | ✅ |
@@ -3742,5 +4387,7 @@ Open `http://localhost:5173` in a browser.
 | Clicking caregiver opens CaregiverDetailPanel — credentials tab shows expiry warning for M. Garcia | ✅ |
 | `/payers` shows payer table | ✅ |
 | `/evv` shows EVV history table with status colors | ✅ |
+
+> **Note:** If two shifts overlap in the same day column (e.g., after manually creating a conflicting shift via New Shift), their blocks will visually stack on top of each other. This is expected — overlap detection is not implemented in Phase 1.
 
 **When all checks pass:** Proceed to `2026-04-06-frontend-phase-2-dashboard-endpoint.md`.
