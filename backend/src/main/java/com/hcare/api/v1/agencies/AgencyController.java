@@ -22,6 +22,7 @@ public class AgencyController {
         this.agencyService = agencyService;
     }
 
+    // Public — no auth required. Permitted in SecurityConfig.
     @PostMapping("/register")
     public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterAgencyRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(agencyService.register(req));

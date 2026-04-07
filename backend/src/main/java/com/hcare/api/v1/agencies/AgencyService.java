@@ -57,6 +57,9 @@ public class AgencyService {
 
     @Transactional
     public AgencyResponse updateAgency(UUID agencyId, UpdateAgencyRequest req) {
+        if (req.name() != null && req.name().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agency name cannot be blank");
+        }
         Agency agency = agencyRepository.findById(agencyId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agency not found"));
         if (req.name() != null) agency.setName(req.name());
