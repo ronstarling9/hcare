@@ -102,6 +102,7 @@ i18n.use(initReactI18next).init({
         serviceTypePcs: 'PCS — Personal Care Services',
         caregiverUnassigned: 'Leave unassigned (broadcast after)',
         caregiverPhaseNote: 'Phase 4 will populate this list from the API.',
+        validationRequired: 'This field is required',
         validationClientRequired: 'Client is required',
         validationServiceTypeRequired: 'Service type is required',
         validationDateRequired: 'Date is required',

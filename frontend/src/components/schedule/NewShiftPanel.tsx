@@ -65,10 +65,11 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
       >
         {/* Client */}
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+          <label htmlFor="ns-client" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
             {t('labelClient')}
           </label>
           <select
+            id="ns-client"
             {...register('clientId', { required: t('validationClientRequired') })}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
@@ -86,10 +87,11 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
 
         {/* Service Type (static for Phase 1) */}
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+          <label htmlFor="ns-service-type" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
             {t('labelServiceType')}
           </label>
           <select
+            id="ns-service-type"
             {...register('serviceTypeId', { required: t('validationServiceTypeRequired') })}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
@@ -103,10 +105,11 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
 
         {/* Date */}
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+          <label htmlFor="ns-date" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
             {t('labelDate')}
           </label>
           <input
+            id="ns-date"
             type="date"
             {...register('date', { required: t('validationDateRequired') })}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark"
@@ -116,33 +119,42 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         {/* Start / End time */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+            <label htmlFor="ns-start-time" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
               {t('labelStartTime')}
             </label>
             <input
+              id="ns-start-time"
               type="time"
-              {...register('startTime', { required: true })}
+              {...register('startTime', { required: t('validationRequired') })}
               className="w-full border border-border px-3 py-2 text-[13px] text-dark"
             />
+            {errors.startTime && (
+              <p className="text-[11px] text-red-600 mt-1">{errors.startTime.message}</p>
+            )}
           </div>
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+            <label htmlFor="ns-end-time" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
               {t('labelEndTime')}
             </label>
             <input
+              id="ns-end-time"
               type="time"
-              {...register('endTime', { required: true })}
+              {...register('endTime', { required: t('validationRequired') })}
               className="w-full border border-border px-3 py-2 text-[13px] text-dark"
             />
+            {errors.endTime && (
+              <p className="text-[11px] text-red-600 mt-1">{errors.endTime.message}</p>
+            )}
           </div>
         </div>
 
         {/* Caregiver (optional) */}
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+          <label htmlFor="ns-notes" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
             {t('labelCaregiver')}
           </label>
           <select
+            id="ns-notes"
             {...register('caregiverId')}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
           >
