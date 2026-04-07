@@ -6,7 +6,7 @@ import { formatLocalDate } from '../../utils/dateFormat'
 
 function isExpiringSoon(expiryDate: string | null): boolean {
   if (!expiryDate) return false
-  const days = (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  const days = (new Date(`${expiryDate}T12:00:00`).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   return days <= 30
 }
 

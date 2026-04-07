@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { formatLocalDate } from '../../utils/dateFormat'
 
 function isUrgent(dueDate: string): boolean {
-  const days = (new Date(dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  const days = (new Date(`${dueDate}T12:00:00`).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   return days <= 7
 }
 
