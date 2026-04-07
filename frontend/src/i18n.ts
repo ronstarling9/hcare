@@ -22,6 +22,7 @@ i18n
       'caregivers',
       'payers',
       'evvStatus',
+      'auth',
     ],
     backend: {
       loadPath: '/locales/{{lng}}/{{ns}}.json',
