@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next'
 import { mockPayers } from '../../mock/data'
+import { usePanelStore } from '../../store/panelStore'
 
 export function PayersPage() {
   const { t } = useTranslation('payers')
   const tCommon = useTranslation('common').t
+  const { openPanel } = usePanelStore()
 
   const PAYER_TYPE_LABEL: Record<string, string> = {
     MEDICAID: t('typeMedicaid'),
@@ -41,7 +43,7 @@ export function PayersPage() {
           </thead>
           <tbody>
             {mockPayers.map((payer) => (
-              <tr key={payer.id} className="border-b border-border hover:bg-surface cursor-pointer">
+              <tr key={payer.id} className="border-b border-border hover:bg-surface cursor-pointer" onClick={() => openPanel('payer', payer.id)}>
                 <td className="px-6 py-3 font-medium text-dark">{payer.name}</td>
                 <td className="px-6 py-3 text-text-secondary">
                   {PAYER_TYPE_LABEL[payer.payerType] ?? payer.payerType}
