@@ -15,4 +15,5 @@ public interface DocumentStorageService {
     String store(MultipartFile file, UUID agencyId, DocumentOwnerType ownerType, UUID ownerId);
     InputStream loadStream(String storageKey);
     void delete(String storageKey);
+    long getFileSize(String storageKey);
 }

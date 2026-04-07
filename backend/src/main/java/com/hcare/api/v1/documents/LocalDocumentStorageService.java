@@ -124,6 +124,19 @@ public class LocalDocumentStorageService implements DocumentStorageService {
         }
     }
 
+    @Override
+    public long getFileSize(String storageKey) {
+        try {
+            Path resolved = baseDir.resolve(storageKey).normalize();
+            if (!resolved.startsWith(baseDir.normalize())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid storage key");
+            }
+            return Files.size(resolved);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to determine file size", e);
+        }
+    }
+
     private String hmac(String data) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
