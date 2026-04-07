@@ -39,17 +39,16 @@ export function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: '#1a1a24' }}
+      className="min-h-screen flex items-center justify-center bg-dark"
     >
       <div
-        className="w-full max-w-sm p-8"
-        style={{ backgroundColor: '#2e2e38', border: '1px solid #3a3a4a' }}
+        className="w-full max-w-sm p-8 bg-dark-mid"
+        style={{ border: '1px solid #3a3a4a' }}
       >
         {/* Logo / App name */}
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold tracking-tight text-white">{t('appName')}</h1>
-          <p className="mt-1 text-sm" style={{ color: '#747480' }}>
+          <p className="mt-1 text-sm text-text-secondary">
             {t('tagline')}
           </p>
         </div>
@@ -59,8 +58,7 @@ export function LoginPage() {
           <div className="mb-4">
             <label
               htmlFor="email"
-              className="block text-sm font-medium mb-1"
-              style={{ color: '#747480' }}
+              className="block text-sm font-medium mb-1 text-text-secondary"
             >
               {t('emailLabel')}
             </label>
@@ -68,11 +66,8 @@ export function LoginPage() {
               id="email"
               type="email"
               autoComplete="email"
-              className="w-full px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-[#1a9afa]"
-              style={{
-                backgroundColor: '#1a1a24',
-                border: '1px solid #3a3a4a',
-              }}
+              className="w-full px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-[#1a9afa] bg-dark"
+              style={{ border: '1px solid #3a3a4a' }}
               {...register('email', {
                 required: t('emailRequired'),
                 pattern: {
@@ -82,7 +77,7 @@ export function LoginPage() {
               })}
             />
             {errors.email && (
-              <p className="mt-1 text-xs" style={{ color: '#dc2626' }}>
+              <p className="mt-1 text-xs text-red-600">
                 {errors.email.message}
               </p>
             )}
@@ -92,8 +87,7 @@ export function LoginPage() {
           <div className="mb-6">
             <label
               htmlFor="password"
-              className="block text-sm font-medium mb-1"
-              style={{ color: '#747480' }}
+              className="block text-sm font-medium mb-1 text-text-secondary"
             >
               {t('passwordLabel')}
             </label>
@@ -101,15 +95,12 @@ export function LoginPage() {
               id="password"
               type="password"
               autoComplete="current-password"
-              className="w-full px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-[#1a9afa]"
-              style={{
-                backgroundColor: '#1a1a24',
-                border: '1px solid #3a3a4a',
-              }}
+              className="w-full px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-[#1a9afa] bg-dark"
+              style={{ border: '1px solid #3a3a4a' }}
               {...register('password', { required: t('passwordRequired') })}
             />
             {errors.password && (
-              <p className="mt-1 text-xs" style={{ color: '#dc2626' }}>
+              <p className="mt-1 text-xs text-red-600">
                 {errors.password.message}
               </p>
             )}
@@ -118,8 +109,8 @@ export function LoginPage() {
           {/* Server error */}
           {serverError && (
             <div
-              className="mb-4 px-3 py-2 text-sm"
-              style={{ backgroundColor: '#dc262620', color: '#dc2626', border: '1px solid #dc2626' }}
+              className="mb-4 px-3 py-2 text-sm bg-red-600/10 text-red-600 border border-red-600"
+              role="alert"
             >
               {serverError}
             </div>
@@ -129,8 +120,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-2 text-sm font-bold text-white transition-opacity disabled:opacity-50"
-            style={{ backgroundColor: '#1a9afa' }}
+            className="w-full py-2 text-sm font-bold text-white transition-opacity disabled:opacity-50 bg-blue"
           >
             {isSubmitting ? t('signingIn') : t('signIn')}
           </button>
