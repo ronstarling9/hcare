@@ -39,6 +39,7 @@ class CaregiverControllerIT extends AbstractIntegrationTest {
 
     private Agency agency;
     private Caregiver caregiver;
+    private String token;
 
     @BeforeEach
     void seed() {
@@ -46,17 +47,14 @@ class CaregiverControllerIT extends AbstractIntegrationTest {
         userRepo.save(new AgencyUser(agency.getId(), "admin@cgit.com",
             passwordEncoder.encode(TEST_PASSWORD), UserRole.ADMIN));
         caregiver = caregiverRepo.save(new Caregiver(agency.getId(), "John", "Doe", "john@test.com"));
-    }
-
-    private String token() {
-        return restTemplate.postForEntity("/api/v1/auth/login",
+        token = restTemplate.postForEntity("/api/v1/auth/login",
             new LoginRequest("admin@cgit.com", TEST_PASSWORD), LoginResponse.class)
             .getBody().token();
     }
 
     private HttpHeaders auth() {
         HttpHeaders h = new HttpHeaders();
-        h.setBearerAuth(token());
+        h.setBearerAuth(token);
         h.setContentType(MediaType.APPLICATION_JSON);
         return h;
     }

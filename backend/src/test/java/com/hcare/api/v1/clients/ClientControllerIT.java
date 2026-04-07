@@ -42,6 +42,7 @@ class ClientControllerIT extends AbstractIntegrationTest {
 
     private Agency agency;
     private Client client;
+    private String token;
 
     @BeforeEach
     void seed() {
@@ -49,17 +50,14 @@ class ClientControllerIT extends AbstractIntegrationTest {
         userRepo.save(new AgencyUser(agency.getId(), "admin@clientit.com",
             passwordEncoder.encode(TEST_PASSWORD), UserRole.ADMIN));
         client = clientRepo.save(new Client(agency.getId(), "Alice", "Test", LocalDate.of(1950, 6, 15)));
-    }
-
-    private String token() {
-        return restTemplate.postForEntity("/api/v1/auth/login",
+        token = restTemplate.postForEntity("/api/v1/auth/login",
             new LoginRequest("admin@clientit.com", TEST_PASSWORD), LoginResponse.class)
             .getBody().token();
     }
 
     private HttpHeaders auth() {
         HttpHeaders h = new HttpHeaders();
-        h.setBearerAuth(token());
+        h.setBearerAuth(token);
         h.setContentType(MediaType.APPLICATION_JSON);
         return h;
     }
