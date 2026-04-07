@@ -73,7 +73,7 @@ export function SchedulePage() {
       String(date.getMonth() + 1).padStart(2, '0'),
       String(date.getDate()).padStart(2, '0'),
     ].join('-')
-    const timeStr = `${String(hour).padStart(2, '00')}:00`
+    const timeStr = `${String(hour).padStart(2, '0')}:00`
     openPanel('newShift', undefined, {
       prefill: { date: dateStr, time: timeStr },
       backLabel: t('backLabel'),

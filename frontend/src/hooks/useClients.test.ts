@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MockAdapter from 'axios-mock-adapter'
 import { apiClient } from '../api/client'
-import { useClients } from './useClients'
+import { useClients, useClientDetail } from './useClients'
 import type { PageResponse, ClientResponse } from '../types/api'
 import React from 'react'
 
@@ -45,5 +45,23 @@ describe('useClients', () => {
     const { result } = renderHook(() => useClients(), { wrapper: makeWrapper() })
     expect(result.current.clients).toEqual([])
     expect(result.current.clientMap.size).toBe(0)
+  })
+})
+
+describe('useClientDetail', () => {
+  let mock: MockAdapter
+  beforeEach(() => { mock = new MockAdapter(apiClient) })
+  afterEach(() => { mock.restore() })
+
+  it('fetches client detail when id is provided', async () => {
+    mock.onGet('/clients/c1').reply(200, clientA)
+    const { result } = renderHook(() => useClientDetail('c1'), { wrapper: makeWrapper() })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.id).toBe('c1')
+  })
+
+  it('does not fetch when id is null', () => {
+    const { result } = renderHook(() => useClientDetail(null), { wrapper: makeWrapper() })
+    expect(result.current.fetchStatus).toBe('idle')
   })
 })

@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MockAdapter from 'axios-mock-adapter'
 import { apiClient } from '../api/client'
-import { useCaregivers } from './useCaregivers'
+import { useCaregivers, useCaregiverDetail } from './useCaregivers'
 import type { PageResponse, CaregiverResponse } from '../types/api'
 import React from 'react'
 
@@ -36,5 +36,30 @@ describe('useCaregivers', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.caregivers).toHaveLength(1)
     expect(result.current.caregiverMap.get('g1')?.firstName).toBe('Maria')
+  })
+
+  it('returns empty caregivers and empty map before data loads', () => {
+    mock.onGet('/caregivers').reply(200, { content: [], totalElements: 0, totalPages: 0, number: 0, size: 100, first: true, last: true })
+    const { result } = renderHook(() => useCaregivers(), { wrapper: makeWrapper() })
+    expect(result.current.caregivers).toEqual([])
+    expect(result.current.caregiverMap.size).toBe(0)
+  })
+})
+
+describe('useCaregiverDetail', () => {
+  let mock: MockAdapter
+  beforeEach(() => { mock = new MockAdapter(apiClient) })
+  afterEach(() => { mock.restore() })
+
+  it('fetches caregiver detail when id is provided', async () => {
+    mock.onGet('/caregivers/g1').reply(200, caregiverA)
+    const { result } = renderHook(() => useCaregiverDetail('g1'), { wrapper: makeWrapper() })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.id).toBe('g1')
+  })
+
+  it('does not fetch when id is null', () => {
+    const { result } = renderHook(() => useCaregiverDetail(null), { wrapper: makeWrapper() })
+    expect(result.current.fetchStatus).toBe('idle')
   })
 })

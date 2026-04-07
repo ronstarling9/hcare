@@ -44,14 +44,18 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
   })
 
   async function onSubmit(values: FormValues) {
-    await createMutation.mutateAsync({
-      clientId: values.clientId,
-      caregiverId: values.caregiverId || undefined,
-      serviceTypeId: values.serviceTypeId,
-      scheduledStart: `${values.date}T${values.startTime}:00`,
-      scheduledEnd: `${values.date}T${values.endTime}:00`,
-    })
-    closePanel()
+    try {
+      await createMutation.mutateAsync({
+        clientId: values.clientId,
+        caregiverId: values.caregiverId || undefined,
+        serviceTypeId: values.serviceTypeId,
+        scheduledStart: `${values.date}T${values.startTime}:00`,
+        scheduledEnd: `${values.date}T${values.endTime}:00`,
+      })
+      closePanel()
+    } catch {
+      // createMutation.isError displays the error banner; do not close panel
+    }
   }
 
   return (

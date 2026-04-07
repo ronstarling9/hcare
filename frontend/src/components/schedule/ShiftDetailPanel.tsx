@@ -6,22 +6,13 @@ import { useCaregivers } from '../../hooks/useCaregivers'
 import { usePanelStore } from '../../store/panelStore'
 import { formatLocalTime } from '../../utils/dateFormat'
 
-const EVV_BG: Record<EvvComplianceStatus, string> = {
-  RED: '#fef2f2',
-  YELLOW: '#fefce8',
-  GREEN: '#f0fdf4',
-  GREY: '#f8fafc',
-  EXEMPT: '#f8fafc',
-  PORTAL_SUBMIT: '#f0fdf4',
-}
-
-const EVV_TEXT: Record<EvvComplianceStatus, string> = {
-  RED: '#dc2626',
-  YELLOW: '#ca8a04',
-  GREEN: '#16a34a',
-  GREY: '#94a3b8',
-  EXEMPT: '#94a3b8',
-  PORTAL_SUBMIT: '#16a34a',
+const EVV_CLASS: Record<EvvComplianceStatus, string> = {
+  RED: 'bg-red-50 text-red-600',
+  YELLOW: 'bg-yellow-50 text-yellow-600',
+  GREEN: 'bg-green-50 text-green-600',
+  GREY: 'bg-slate-50 text-text-muted',
+  EXEMPT: 'bg-slate-50 text-text-muted',
+  PORTAL_SUBMIT: 'bg-green-50 text-green-600',
 }
 
 function formatDate(iso: string, locale: string): string {
@@ -107,10 +98,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
       </div>
 
       {/* EVV Status badge */}
-      <div
-        className="mx-6 mt-4 px-4 py-3 text-[13px] font-semibold"
-        style={{ background: EVV_BG[evvStatus], color: EVV_TEXT[evvStatus] }}
-      >
+      <div className={`mx-6 mt-4 px-4 py-3 text-[13px] font-semibold ${EVV_CLASS[evvStatus]}`}>
         {EVV_LABEL[evvStatus]}
       </div>
 
@@ -215,7 +203,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
             className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110 disabled:opacity-50"
             onClick={() => broadcastMutation.mutate(shiftId)}
           >
-            {broadcastMutation.isPending ? '…' : t('assignCaregiver')}
+            {broadcastMutation.isPending ? '…' : t('broadcastShift')}
           </button>
         )}
         {shift.status === 'ASSIGNED' && !shift.evv?.timeIn && (
