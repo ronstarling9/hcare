@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { mockCaregivers, mockCredentials } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
+import { formatLocalDate } from '../../utils/dateFormat'
 
-// Date-only ISO strings (e.g. '2023-04-01') are parsed as UTC-midnight by the spec,
-// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
-// in the correct calendar day across all UTC-14 to UTC+14 zones.
-function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
+function isExpiringSoon(expiryDate: string | null): boolean {
+  if (!expiryDate) return false
+  const days = (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  return days <= 30
 }
 
 type Tab = 'overview' | 'credentials' | 'backgroundChecks' | 'availability' | 'shiftHistory'
@@ -18,7 +18,7 @@ interface CaregiverDetailPanelProps {
 }
 
 export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetailPanelProps) {
-  const { t } = useTranslation('caregivers')
+  const { t, i18n } = useTranslation('caregivers')
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -44,12 +44,6 @@ export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetail
   }
 
   const credentials = mockCredentials.filter((c) => c.caregiverId === caregiverId)
-
-  function isExpiringSoon(expiryDate: string | null): boolean {
-    if (!expiryDate) return false
-    const days = (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-    return days <= 30
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -95,7 +89,7 @@ export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetail
             {[
               [t('fieldPhone'), caregiver.phone ?? tCommon('noDash')],
               [t('fieldAddress'), caregiver.address ?? tCommon('noDash')],
-              [t('fieldHireDate'), caregiver.hireDate ? formatLocalDate(caregiver.hireDate) : tCommon('noDash')],
+              [t('fieldHireDate'), caregiver.hireDate ? formatLocalDate(caregiver.hireDate, i18n.language) : tCommon('noDash')],
               [t('fieldStatus'), caregiver.status],
               [t('fieldHasPet'), caregiver.hasPet ? tCommon('yes') : tCommon('no')],
             ].map(([label, value]) => (
@@ -125,7 +119,7 @@ export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetail
                       <div className="text-[11px] text-text-secondary">
                         {t('credExpires')}{' '}
                         {cred.expiryDate
-                          ? formatLocalDate(cred.expiryDate)
+                          ? formatLocalDate(cred.expiryDate, i18n.language)
                           : tCommon('noExpiry')}
                         {expiring && (
                           <span className="ml-2 text-red-600 font-semibold">{t('credExpiringSoon')}</span>

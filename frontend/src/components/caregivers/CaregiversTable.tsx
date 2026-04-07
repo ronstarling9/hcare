@@ -1,13 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { CaregiverResponse } from '../../types/api'
 import { usePanelStore } from '../../store/panelStore'
-
-// Date-only ISO strings (e.g. '2023-04-01') are parsed as UTC-midnight by the spec,
-// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
-// in the correct calendar day across all UTC-14 to UTC+14 zones.
-function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
-}
+import { formatLocalDate } from '../../utils/dateFormat'
 
 interface CaregiversTableProps {
   caregivers: CaregiverResponse[]
@@ -15,7 +9,7 @@ interface CaregiversTableProps {
 }
 
 export function CaregiversTable({ caregivers, search }: CaregiversTableProps) {
-  const { t } = useTranslation('caregivers')
+  const { t, i18n } = useTranslation('caregivers')
   const tCommon = useTranslation('common').t
   const { openPanel } = usePanelStore()
 
@@ -67,7 +61,7 @@ export function CaregiversTable({ caregivers, search }: CaregiversTableProps) {
             </td>
             <td className="px-6 py-3 text-text-secondary">
               {cg.hireDate
-                ? formatLocalDate(cg.hireDate, { month: 'short', day: 'numeric', year: 'numeric' })
+                ? formatLocalDate(cg.hireDate, i18n.language)
                 : tCommon('noDash')}
             </td>
           </tr>

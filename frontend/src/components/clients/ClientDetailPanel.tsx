@@ -2,23 +2,17 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { mockClients, mockAuthorizations } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
-
-// Date-only ISO strings (e.g. '1942-03-15') are parsed as UTC-midnight by the spec,
-// causing off-by-one display in UTC-N timezones. Appending T12:00:00 keeps the date
-// in the correct calendar day across all UTC-14 to UTC+14 zones.
-function formatLocalDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', options)
-}
+import { formatLocalDate } from '../../utils/dateFormat'
 
 type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPortal'
 
 interface ClientDetailPanelProps {
-  clientId: string | undefined
+  clientId: string
   backLabel: string
 }
 
 export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProps) {
-  const { t } = useTranslation('clients')
+  const { t, i18n } = useTranslation('clients')
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -61,7 +55,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
           {client.firstName} {client.lastName}
         </h2>
         <p className="text-[12px] text-text-secondary mt-0.5">
-          DOB: {formatLocalDate(client.dateOfBirth)} ·{' '}
+          DOB: {formatLocalDate(client.dateOfBirth, i18n.language)} ·{' '}
           {client.medicaidId ?? 'No Medicaid ID'}
         </p>
       </div>
@@ -132,7 +126,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
                       />
                     </div>
                     <div className="text-[10px] text-text-secondary mt-1">
-                      {formatLocalDate(auth.startDate, { month: 'short', day: 'numeric', year: 'numeric' })} – {formatLocalDate(auth.endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {formatLocalDate(auth.startDate, i18n.language)} – {formatLocalDate(auth.endDate, i18n.language)}
                     </div>
                   </div>
                 )
