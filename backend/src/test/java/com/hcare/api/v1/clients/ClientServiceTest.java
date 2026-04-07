@@ -311,7 +311,7 @@ class ClientServiceTest {
         Client client = makeClient();
         when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
         when(carePlanRepository.findMaxPlanVersionByClientId(clientId)).thenReturn(1);
-        when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(carePlanRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
             ctx.when(TenantContext::get).thenReturn(agencyId);
