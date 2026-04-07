@@ -1,6 +1,6 @@
 # Phase 6: Wire Clients Screen
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace mock data in the clients screen with real API data — paginated client list, client detail panel showing real demographics, and authorization utilization bars sourced from the backend.
 
@@ -16,7 +16,7 @@
 **Files:**
 - Modify: `frontend/src/api/clients.ts`
 
-- [ ] **Step 1.1: Replace clients.ts with expanded version**
+- [x] **Step 1.1: Replace clients.ts with expanded version**
 
 Replace the full contents of `frontend/src/api/clients.ts`:
 
@@ -80,7 +80,7 @@ export async function listFamilyPortalUsers(clientId: string): Promise<PageRespo
 }
 ```
 
-- [ ] **Step 1.2: Ensure AuthorizationResponse type exists in types/api.ts**
+- [x] **Step 1.2: Ensure AuthorizationResponse type exists in types/api.ts**
 
 Open `frontend/src/types/api.ts` and confirm the following type is present. Add if missing:
 
@@ -103,7 +103,7 @@ export interface AuthorizationResponse {
 }
 ```
 
-- [ ] **Step 1.3: Commit**
+- [x] **Step 1.3: Commit**
 
 ```bash
 cd frontend && git add src/api/clients.ts src/types/api.ts
@@ -117,7 +117,7 @@ git commit -m "feat: expand clients API with authorizations, care-plans, diagnos
 **Files:**
 - Modify: `frontend/src/hooks/useClients.ts`
 
-- [ ] **Step 2.1: Replace useClients.ts with expanded version**
+- [x] **Step 2.1: Replace useClients.ts with expanded version**
 
 Replace the full contents of `frontend/src/hooks/useClients.ts`:
 
@@ -192,7 +192,7 @@ export function useClientAuthorizations(clientId: string | null) {
 }
 ```
 
-- [ ] **Step 2.2: Update Schedule-screen imports to use useAllClients**
+- [x] **Step 2.2: Update Schedule-screen imports to use useAllClients**
 
 In `frontend/src/components/schedule/SchedulePage.tsx` and `frontend/src/components/schedule/ShiftDetailPanel.tsx`, update the import of `useClients` to `useAllClients` where the lookup map is needed:
 
@@ -216,7 +216,7 @@ import { useAllClients } from '../../hooks/useClients'
 const { clientMap } = useAllClients()
 ```
 
-- [ ] **Step 2.3: Commit**
+- [x] **Step 2.3: Commit**
 
 ```bash
 cd frontend && git add src/hooks/useClients.ts \
@@ -232,7 +232,7 @@ git commit -m "feat: expand useClients hook with useAllClients and useClientAuth
 **Files:**
 - Modify: `frontend/src/components/clients/ClientsPage.tsx`
 
-- [ ] **Step 3.1: Update ClientsPage**
+- [x] **Step 3.1: Update ClientsPage**
 
 Replace the full contents of `frontend/src/components/clients/ClientsPage.tsx`:
 
@@ -327,7 +327,7 @@ export function ClientsPage() {
 }
 ```
 
-- [ ] **Step 3.2: Commit**
+- [x] **Step 3.2: Commit**
 
 ```bash
 cd frontend && git add src/components/clients/ClientsPage.tsx
@@ -341,7 +341,7 @@ git commit -m "feat: wire ClientsPage to real API with pagination"
 **Files:**
 - Modify: `frontend/src/components/clients/ClientDetailPanel.tsx`
 
-- [ ] **Step 4.1: Update ClientDetailPanel**
+- [x] **Step 4.1: Update ClientDetailPanel**
 
 Replace the full contents of `frontend/src/components/clients/ClientDetailPanel.tsx`:
 
@@ -511,7 +511,7 @@ export function ClientDetailPanel({ clientId, onClose }: ClientDetailPanelProps)
 }
 ```
 
-- [ ] **Step 4.2: Verify TypeScript and build**
+- [x] **Step 4.2: Verify TypeScript and build**
 
 ```bash
 cd frontend && npx tsc --noEmit 2>&1 | head -20
@@ -520,7 +520,7 @@ cd frontend && npm run build 2>&1 | tail -5
 
 Expected: no errors.
 
-- [ ] **Step 4.3: Commit**
+- [x] **Step 4.3: Commit**
 
 ```bash
 cd frontend && git add src/components/clients/ClientDetailPanel.tsx
