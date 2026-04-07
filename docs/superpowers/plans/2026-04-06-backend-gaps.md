@@ -322,15 +322,6 @@ class ClientControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void createCarePlan_returns_409_on_concurrent_version_collision() {
-        // Seed a plan at version 1 directly so the next create attempt collides
-        carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 1));
-        // Manually insert a duplicate to force the constraint
-        carePlanRepo.saveAndFlush(new CarePlan(client.getId(), agency.getId(), 1));
-    }
-    // Note: the above test will need a try/catch or a different approach —
-    // replace with: create two plans sequentially and assert second gets version 2
-    @Test
     void createCarePlan_increments_version_for_second_plan() {
         CreateCarePlanRequest req = new CreateCarePlanRequest(null);
         restTemplate.exchange("/api/v1/clients/" + client.getId() + "/care-plans",
@@ -500,6 +491,32 @@ class CaregiverControllerIT extends AbstractIntegrationTest {
         assertThat(getResp.getBody().blocks()).hasSize(1);
         assertThat(getResp.getBody().blocks().get(0).dayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
     }
+
+    @Test
+    void addAndListCredential_for_caregiver() {
+        AddCredentialRequest req = new AddCredentialRequest(
+            "CPR", LocalDate.of(2024, 1, 1), LocalDate.of(2026, 1, 1));
+        ResponseEntity<CredentialResponse> add = restTemplate.exchange(
+            "/api/v1/caregivers/" + caregiver.getId() + "/credentials", HttpMethod.POST,
+            new HttpEntity<>(req, auth()), CredentialResponse.class);
+        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(add.getBody().credentialType()).isEqualTo("CPR");
+    }
+
+    @Test
+    void deleteCredential_from_other_caregiver_returns_404() {
+        Caregiver other = caregiverRepo.save(new Caregiver(agency.getId(), "A", "B", "ab@test.com"));
+        AddCredentialRequest req = new AddCredentialRequest(
+            "CPR", LocalDate.of(2024, 1, 1), LocalDate.of(2026, 1, 1));
+        CredentialResponse cred = restTemplate.exchange(
+            "/api/v1/caregivers/" + other.getId() + "/credentials", HttpMethod.POST,
+            new HttpEntity<>(req, auth()), CredentialResponse.class).getBody();
+
+        ResponseEntity<String> del = restTemplate.exchange(
+            "/api/v1/caregivers/" + caregiver.getId() + "/credentials/" + cred.id(),
+            HttpMethod.DELETE, new HttpEntity<>(auth()), String.class);
+        assertThat(del.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }
 ```
 
@@ -659,7 +676,7 @@ import jakarta.validation.constraints.*;
 
 public record RegisterAgencyRequest(
     @NotBlank String agencyName,
-    @NotBlank @Size(min = 2, max = 2) @Pattern(regexp = "[A-Z]{2}", message = "state must be 2 uppercase letters") String state,
+    @Size(min = 2, max = 2) @Pattern(regexp = "[A-Z]{2}", message = "state must be 2 uppercase letters") String state,
     @NotBlank @Email String adminEmail,
     @NotBlank @Size(min = 8) String adminPassword
 ) {}
@@ -1195,7 +1212,6 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    @Transactional(readOnly = true)
     public ResponseEntity<List<UserResponse>> listUsers() {
         return ResponseEntity.ok(userService.listUsers());
     }
@@ -1648,7 +1664,9 @@ public class LocalDocumentStorageService implements DocumentStorageService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid download token");
         }
         String payload = parts[0];
-        if (!hmac(payload).equals(parts[1])) {
+        if (!java.security.MessageDigest.isEqual(
+                hmac(payload).getBytes(StandardCharsets.UTF_8),
+                parts[1].getBytes(StandardCharsets.UTF_8))) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid download token");
         }
         String[] payloadParts = payload.split(":", 2);
@@ -1780,6 +1798,8 @@ public class DocumentService {
     private DocumentResponse upload(DocumentOwnerType ownerType, UUID ownerId,
                                      MultipartFile file, String documentType, UUID uploadedBy) {
         UUID agencyId = TenantContext.get();
+        // Note: filesystem write runs before DB commit. If documentRepository.save() fails,
+        // the file is already stored — orphaned file with no DB entry. Acceptable for MVP local storage.
         String storageKey = storageService.store(file, agencyId, ownerType, ownerId);
         Document doc = new Document(agencyId, ownerType, ownerId,
             file.getOriginalFilename(), storageKey);
@@ -1789,21 +1809,15 @@ public class DocumentService {
     }
 
     private void requireClient(UUID clientId) {
-        UUID agencyId = TenantContext.get();
-        Client client = clientRepository.findById(clientId)
+        // Hibernate agencyFilter (TenantFilterAspect) scopes findById to the current tenant.
+        clientRepository.findById(clientId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
-        if (!client.getAgencyId().equals(agencyId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found");
-        }
     }
 
     private void requireCaregiver(UUID caregiverId) {
-        UUID agencyId = TenantContext.get();
-        Caregiver cg = caregiverRepository.findById(caregiverId)
+        // Hibernate agencyFilter (TenantFilterAspect) scopes findById to the current tenant.
+        caregiverRepository.findById(caregiverId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Caregiver not found"));
-        if (!cg.getAgencyId().equals(agencyId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Caregiver not found");
-        }
     }
 
     private Document requireDocument(UUID documentId, UUID expectedOwnerId) {
