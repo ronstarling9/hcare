@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus, ShiftDetailResponse } from '../../types/api'
 import { mockShifts, mockClientMap, mockCaregiverMap } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
+import { formatLocalTime } from '../../utils/dateFormat'
 
 const EVV_BG: Record<EvvComplianceStatus, string> = {
   RED: '#fef2f2',
@@ -19,11 +20,6 @@ const EVV_TEXT: Record<EvvComplianceStatus, string> = {
   GREY: '#94a3b8',
   EXEMPT: '#94a3b8',
   PORTAL_SUBMIT: '#16a34a',
-}
-
-function formatTime(iso: string | null, locale: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
 }
 
 function formatDate(iso: string, locale: string): string {
@@ -87,7 +83,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
           {client ? `${client.firstName} ${client.lastName}` : t('unknownClient')}
         </h2>
         <p className="text-[12px] text-text-secondary mt-0.5">
-          {formatDate(shift.scheduledStart, i18n.language)} · {formatTime(shift.scheduledStart, i18n.language)} – {formatTime(shift.scheduledEnd, i18n.language)} · {t('staticService')}
+          {formatDate(shift.scheduledStart, i18n.language)} · {formatLocalTime(shift.scheduledStart, i18n.language)} – {formatLocalTime(shift.scheduledEnd, i18n.language)} · {t('staticService')}
         </p>
       </div>
 
@@ -140,11 +136,11 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
             <div className="space-y-2">
               <div>
                 <div className="text-[10px] text-text-secondary">{t('fieldClockIn')}</div>
-                <div className="text-[13px] text-dark">{formatTime(shift.evv?.timeIn ?? null, i18n.language)}</div>
+                <div className="text-[13px] text-dark">{formatLocalTime(shift.evv?.timeIn ?? null, i18n.language)}</div>
               </div>
               <div>
                 <div className="text-[10px] text-text-secondary">{t('fieldClockOut')}</div>
-                <div className="text-[13px] text-dark">{formatTime(shift.evv?.timeOut ?? null, i18n.language)}</div>
+                <div className="text-[13px] text-dark">{formatLocalTime(shift.evv?.timeOut ?? null, i18n.language)}</div>
               </div>
               <div>
                 <div className="text-[10px] text-text-secondary">{t('fieldMethod')}</div>

@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { EvvComplianceStatus } from '../../types/api'
 import { mockEvvHistory } from '../../mock/data'
 import { usePanelStore } from '../../store/panelStore'
-import { formatLocalTime } from '../../utils/dateFormat'
+import { formatLocalDate, formatLocalTime } from '../../utils/dateFormat'
 
 const STATUS_COLOR: Record<EvvComplianceStatus, string> = {
   RED: '#dc2626',
@@ -11,11 +11,6 @@ const STATUS_COLOR: Record<EvvComplianceStatus, string> = {
   GREY: '#94a3b8',
   EXEMPT: '#94a3b8',
   PORTAL_SUBMIT: '#16a34a',
-}
-
-function formatTime(iso: string | null, locale: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
 }
 
 export function EvvStatusPage() {
@@ -61,10 +56,10 @@ export function EvvStatusPage() {
                 </td>
                 <td className="px-6 py-3 text-text-secondary">{row.serviceTypeName}</td>
                 <td className="px-6 py-3 text-text-secondary">
-                  {formatLocalTime(row.scheduledStart, i18n.language)}
+                  {formatLocalDate(row.scheduledStart.slice(0, 10), i18n.language, { month: 'short', day: 'numeric' })}
                 </td>
-                <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeIn, i18n.language)}</td>
-                <td className="px-6 py-3 text-text-secondary">{formatTime(row.timeOut, i18n.language)}</td>
+                <td className="px-6 py-3 text-text-secondary">{formatLocalTime(row.timeIn, i18n.language)}</td>
+                <td className="px-6 py-3 text-text-secondary">{formatLocalTime(row.timeOut, i18n.language)}</td>
                 <td className="px-6 py-3">
                   <span
                     className="text-[11px] font-bold px-2 py-0.5"

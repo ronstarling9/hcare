@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { DashboardVisitRow, EvvComplianceStatus } from '../../types/api'
 import { usePanelStore } from '../../store/panelStore'
+import { formatLocalTime } from '../../utils/dateFormat'
 
 const STATUS_BORDER: Record<EvvComplianceStatus, string> = {
   RED: '#dc2626',
@@ -27,10 +28,6 @@ const STATUS_PILL_COLOR: Record<EvvComplianceStatus, string> = {
   GREY: '#94a3b8',
   EXEMPT: '#94a3b8',
   PORTAL_SUBMIT: '#16a34a',
-}
-
-function formatTime(iso: string, locale: string): string {
-  return new Date(iso).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
 }
 
 interface VisitListProps {
@@ -74,7 +71,7 @@ export function VisitList({ visits }: VisitListProps) {
           </div>
           {/* Time */}
           <div className="text-[11px] text-text-secondary shrink-0">
-            {formatTime(row.scheduledStart, i18n.language)} – {formatTime(row.scheduledEnd, i18n.language)}
+            {formatLocalTime(row.scheduledStart, i18n.language)} – {formatLocalTime(row.scheduledEnd, i18n.language)}
           </div>
           {/* EVV pill */}
           <span
