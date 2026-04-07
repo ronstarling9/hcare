@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { ShiftBlock } from './ShiftBlock'
 
 const baseBlock = {
-  shiftId: 's1',
   clientName: 'Alice Johnson',
   caregiverName: 'Maria Garcia',
   evvStatus: 'GREEN' as const,
