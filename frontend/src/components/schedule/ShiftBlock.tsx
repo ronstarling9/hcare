@@ -11,7 +11,6 @@ const EVV_BORDER_COLOR: Record<EvvComplianceStatus, string> = {
 }
 
 interface ShiftBlockProps {
-  shiftId: string
   clientName: string
   caregiverName: string | null
   evvStatus: EvvComplianceStatus

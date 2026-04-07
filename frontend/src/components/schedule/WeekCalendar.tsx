@@ -156,7 +156,6 @@ export function WeekCalendar({
                 return (
                   <ShiftBlock
                     key={shift.id}
-                    shiftId={shift.id}
                     clientName={client ? `${client.firstName} ${client.lastName}` : shift.clientId}
                     caregiverName={caregiver ? `${caregiver.firstName} ${caregiver.lastName}` : null}
                     evvStatus={evvStatus(shift)}
