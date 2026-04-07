@@ -1,0 +1,12 @@
+{
+  "pageTitle": "EVV Status",
+  "backLabel": "← EVV Status",
+  "subtitle": "Last 30 days — computed live from Core API",
+  "colClient": "Client",
+  "colCaregiver": "Caregiver",
+  "colService": "Service",
+  "colDate": "Date",
+  "colClockIn": "Clock-in",
+  "colClockOut": "Clock-out",
+  "colStatus": "Status"
+}

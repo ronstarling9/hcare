@@ -1,0 +1,17 @@
+{
+  "wordmarkPrefix": "h",
+  "wordmarkDot": ".",
+  "wordmarkSuffix": "care",
+  "agencySubtitle": "Agency Management",
+  "schedule": "Schedule",
+  "dashboard": "Dashboard",
+  "clients": "Clients",
+  "caregivers": "Caregivers",
+  "payers": "Payers",
+  "evvStatus": "EVV Status",
+  "settings": "Settings",
+  "settingsComingSoon": "Settings — coming soon",
+  "sectionOperations": "Operations",
+  "sectionPeople": "People",
+  "sectionAdmin": "Admin"
+}

@@ -1,0 +1,19 @@
+{
+  "panelTitle": "New Shift",
+  "labelClient": "Client",
+  "labelServiceType": "Service Type",
+  "labelDate": "Date",
+  "labelStartTime": "Start Time",
+  "labelEndTime": "End Time",
+  "labelCaregiver": "Caregiver (optional)",
+  "selectClient": "Select client…",
+  "selectServiceType": "Select service type…",
+  "serviceTypePcs": "PCS — Personal Care Services",
+  "caregiverUnassigned": "Leave unassigned (broadcast after)",
+  "caregiverPhaseNote": "Phase 4 will populate this list from the API.",
+  "validationClientRequired": "Client is required",
+  "validationServiceTypeRequired": "Service type is required",
+  "validationDateRequired": "Date is required",
+  "saveShift": "Save Shift",
+  "mockAlert": "Mock: shift for client {{clientId}} on {{date}} created.\n\nPhase 4 will wire this to POST /shifts."
+}

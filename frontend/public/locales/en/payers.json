@@ -1,0 +1,14 @@
+{
+  "pageTitle": "Payers",
+  "addPayer": "+ Add Payer",
+  "addPayerAlert": "Phase 8 will wire this to the API.",
+  "colPayerName": "Payer Name",
+  "colType": "Type",
+  "colState": "State",
+  "colEvvAggregator": "EVV Aggregator",
+  "typeMedicaid": "Medicaid",
+  "typePrivatePay": "Private Pay",
+  "typeLtcInsurance": "LTC Insurance",
+  "typeVa": "VA",
+  "typeMedicare": "Medicare"
+}

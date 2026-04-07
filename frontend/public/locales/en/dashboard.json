@@ -1,0 +1,16 @@
+{
+  "pageTitle": "Dashboard",
+  "backLabel": "← Dashboard",
+  "tileRedEvv": "RED EVV",
+  "tileRedEvvSub": "Missing elements",
+  "tileYellowEvv": "YELLOW EVV",
+  "tileYellowEvvSub": "Attention needed",
+  "tileUncovered": "UNCOVERED",
+  "tileUncoveredSub": "No caregiver",
+  "tileOnTrack": "ON TRACK",
+  "tileOnTrackSub": "Compliant",
+  "noVisits": "No visits today.",
+  "noAlerts": "No active alerts.",
+  "alertsHeader": "Alerts",
+  "due": "Due {{date}}"
+}
