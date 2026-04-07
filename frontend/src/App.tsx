@@ -1,5 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import type { ReactNode } from 'react'
 import { Shell } from './components/layout/Shell'
 import { SchedulePage } from './components/schedule/SchedulePage'
 import { DashboardPage } from './components/dashboard/DashboardPage'
@@ -7,6 +8,18 @@ import { ClientsPage } from './components/clients/ClientsPage'
 import { CaregiversPage } from './components/caregivers/CaregiversPage'
 import { PayersPage } from './components/payers/PayersPage'
 import { EvvStatusPage } from './components/evv/EvvStatusPage'
+import { LoginPage } from './pages/LoginPage'
+import { useAuthStore } from './store/authStore'
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  const token = useAuthStore((s) => s.token)
+  const location = useLocation()
+  if (!token) {
+    // Preserve the intended destination so LoginPage can redirect back after login
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+  return <>{children}</>
+}
 
 function SettingsPlaceholder() {
   const { t } = useTranslation('nav')
@@ -16,7 +29,14 @@ function SettingsPlaceholder() {
 export default function App() {
   return (
     <Routes>
-      <Route element={<Shell />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        element={
+          <RequireAuth>
+            <Shell />
+          </RequireAuth>
+        }
+      >
         <Route index element={<Navigate to="/schedule" replace />} />
         <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
