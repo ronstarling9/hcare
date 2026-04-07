@@ -88,6 +88,38 @@ npm run lint --fix      # ESLint + Prettier fix (run before committing)
 - Prefer named exports over default exports.
 - Mobile breakpoints first (`sm:`, `md:`, `lg:`) — never desktop-first overrides.
 
+### API & State Layer
+- `frontend/src/api/client.ts` — Axios instance with JWT request interceptor and 401 session-expiry redirect. The 401 interceptor skips `/auth/` endpoints so login failures propagate to the caller.
+- `frontend/src/api/` — one file per domain (e.g. `auth.ts`, `shifts.ts`); all functions call `apiClient` and return typed response data.
+- `frontend/src/store/authStore.ts` — Zustand store holding `token | userId | agencyId | role`. Read via `useAuthStore.getState()` outside React; via selector hook inside.
+- Use `axios-mock-adapter` (MockAdapter) for unit-testing Axios interceptors — do not access `(apiClient.interceptors.request as any).handlers` (private internal).
+
+### Tailwind Design Tokens
+Always use the project's custom tokens instead of raw hex values:
+
+| Token | Value | Usage |
+|---|---|---|
+| `bg-dark` | `#1a1a24` | Page/app background |
+| `bg-dark-mid` | `#2e2e38` | Card / panel backgrounds |
+| `bg-blue` | `#1a9afa` | Primary CTA / brand |
+| `bg-surface` | `#f6f6fa` | Light-mode surface |
+| `border-border` | `#eaeaf2` | Default borders |
+| `text-text-primary` | `#1a1a24` | Default text |
+| `text-text-secondary` | `#747480` | Muted / helper text |
+| `text-text-muted` | `#94a3b8` | Placeholder / disabled |
+
+### i18n
+- Namespaces live in `frontend/public/locales/en/<namespace>.json`.
+- Register new namespaces in the `ns` array in `frontend/src/i18n.ts`.
+- Default namespace is `common`; use `useTranslation('<ns>')` to access others.
+
+### Dev Credentials (seeded by `DevDataSeeder.java`, `dev` profile only)
+Three agencies are seeded. Credentials follow the pattern:
+- `admin@<slug>.dev` / `Admin1234!` (role: ADMIN)
+- `scheduler@<slug>.dev` / `Admin1234!` (role: SCHEDULER)
+
+Slugs: `sunrise`, `golden`, `harmony`. Example: `admin@sunrise.dev` / `Admin1234!`.
+
 
 ---
 

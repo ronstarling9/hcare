@@ -11,12 +11,171 @@
 
 ---
 
+### Task 0: Fix Backend DTO Contract
+
+**Context:** The backend `GET /api/v1/dashboard/today` response does not match `frontend/src/types/api.ts`. Discovered in review-3 via live curl. Three components are broken at runtime: `StatTiles` (3 of 4 tiles show 0), `VisitList` (service type renders as "undefined"), `AlertsColumn` (all alert fields blank, panel navigation broken).
+
+**Files to modify:**
+- `backend/src/main/java/com/hcare/api/v1/dashboard/dto/DashboardTodayResponse.java`
+- `backend/src/main/java/com/hcare/api/v1/dashboard/dto/DashboardVisitRow.java`
+- `backend/src/main/java/com/hcare/api/v1/dashboard/dto/DashboardAlert.java`
+- `backend/src/main/java/com/hcare/api/v1/dashboard/dto/AlertType.java`
+- `backend/src/main/java/com/hcare/api/v1/dashboard/DashboardService.java`
+- `backend/src/test/java/com/hcare/api/v1/dashboard/DashboardControllerIT.java`
+
+- [x] **Step 0.1: Fix `DashboardTodayResponse.java`**
+
+Replace the record fields to match `frontend/src/types/api.ts` (`DashboardTodayResponse`):
+
+```java
+public record DashboardTodayResponse(
+    int redEvvCount,
+    int yellowEvvCount,
+    int uncoveredCount,   // open shifts with no caregiver
+    int onTrackCount,     // total - red - yellow - uncovered
+    List<DashboardVisitRow> visits,
+    List<DashboardAlert> alerts
+) {}
+```
+
+- [x] **Step 0.2: Fix `DashboardVisitRow.java`**
+
+Add three missing fields (`caregiverId`, `serviceTypeName`, `evvStatusReason`):
+
+```java
+public record DashboardVisitRow(
+    UUID shiftId,
+    String clientFirstName,
+    String clientLastName,
+    UUID caregiverId,           // nullable
+    String caregiverFirstName,  // nullable
+    String caregiverLastName,   // nullable
+    String serviceTypeName,
+    LocalDateTime scheduledStart,
+    LocalDateTime scheduledEnd,
+    ShiftStatus status,
+    EvvComplianceStatus evvStatus,
+    String evvStatusReason      // nullable — pass null until EvvComplianceService returns reasons
+) {}
+```
+
+- [x] **Step 0.3: Fix `DashboardAlert.java`**
+
+Rename fields and add `resourceType` to match `frontend/src/types/api.ts` (`DashboardAlert`):
+
+```java
+public record DashboardAlert(
+    AlertType type,        // was: alertType
+    UUID resourceId,       // was: subjectId
+    String subject,        // was: subjectName
+    String detail,
+    LocalDate dueDate,
+    String resourceType    // "CAREGIVER" or "CLIENT"
+) {}
+```
+
+- [x] **Step 0.4: Rename `AlertType.CREDENTIAL_EXPIRING` → `CREDENTIAL_EXPIRY`**
+
+`frontend/src/types/api.ts` declares `DashboardAlertType` as `'CREDENTIAL_EXPIRY'`. Rename the enum value to match:
+
+```java
+public enum AlertType {
+    CREDENTIAL_EXPIRY,
+    BACKGROUND_CHECK_DUE,
+    AUTHORIZATION_LOW
+}
+```
+
+- [x] **Step 0.5: Update `DashboardService.java`**
+
+Five changes:
+
+1. **Add `ServiceTypeRepository` dependency** (constructor injection) to resolve `serviceTypeName` per shift.
+
+2. **Build a `serviceTypeMap`** after the existing lookup maps:
+   ```java
+   Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepository.findByAgencyId(agencyId).stream()
+       .collect(Collectors.toMap(ServiceType::getId, st -> st));
+   ```
+
+3. **Update counters**: replace `completed / inProgress / open` with `yellow / uncovered / onTrack`:
+   ```java
+   int yellowCount = 0, uncoveredCount = 0;
+   // red is already tracked as redCount
+   // onTrackCount computed at the end as: total - red - yellow - uncovered
+   ```
+   `uncoveredCount` increments when `shift.getStatus() == ShiftStatus.OPEN`.
+   `yellowCount` increments when `evvStatus == EvvComplianceStatus.YELLOW`.
+
+4. **Update `DashboardVisitRow` constructor call** to pass all new fields:
+   ```java
+   String serviceTypeName = serviceTypeMap.containsKey(shift.getServiceTypeId())
+       ? serviceTypeMap.get(shift.getServiceTypeId()).getName()
+       : "Unknown";
+   visitRows.add(new DashboardVisitRow(
+       shift.getId(),
+       client != null ? client.getFirstName() : "Unknown",
+       client != null ? client.getLastName() : "Client",
+       caregiver != null ? caregiver.getId() : null,
+       caregiver != null ? caregiver.getFirstName() : null,
+       caregiver != null ? caregiver.getLastName() : null,
+       serviceTypeName,
+       shift.getScheduledStart(),
+       shift.getScheduledEnd(),
+       shift.getStatus(),
+       evvStatus,
+       null  // evvStatusReason — not yet computed by EvvComplianceService
+   ));
+   ```
+
+5. **Update `DashboardAlert` constructor calls** to use new field names and add `resourceType`:
+   - Credential alerts: `resourceType = "CAREGIVER"`, `type = AlertType.CREDENTIAL_EXPIRY`
+   - Background check alerts: `resourceType = "CAREGIVER"`, `type = AlertType.BACKGROUND_CHECK_DUE`
+   - Authorization alerts: `resourceType = "CLIENT"`, `type = AlertType.AUTHORIZATION_LOW`
+
+6. **Update `DashboardTodayResponse` constructor call**:
+   ```java
+   int onTrackCount = todayShifts.size() - redCount - yellowCount - uncoveredCount;
+   return new DashboardTodayResponse(
+       redCount,
+       yellowCount,
+       uncoveredCount,
+       Math.max(0, onTrackCount),
+       visitRows,
+       alerts
+   );
+   ```
+
+- [x] **Step 0.6: Update `DashboardControllerIT.java`**
+
+Update all assertions to use the new field names. Key changes:
+- Replace `body.totalVisitsToday()` with `body.onTrackCount() + body.redEvvCount() + body.yellowEvvCount() + body.uncoveredCount()` where a total count is needed, or simply assert `body.visits().size()`
+- Replace `alert.alertType()` with `alert.type()`
+- Replace `alert.subjectName()` with `alert.subject()`
+- Replace `AlertType.CREDENTIAL_EXPIRING` with `AlertType.CREDENTIAL_EXPIRY`
+- Add assertion for `serviceTypeName` on visit rows where a `ServiceType` is seeded
+
+- [x] **Step 0.7: Verify and commit**
+
+```bash
+cd backend && mvn test -Dtest=DashboardControllerIT 2>&1 | tail -20
+```
+
+Expected: all tests pass. Then:
+
+```bash
+cd backend && git add src/main/java/com/hcare/api/v1/dashboard/ src/test/java/com/hcare/api/v1/dashboard/
+git commit -m "fix: align DashboardTodayResponse DTO fields with frontend types/api.ts contract"
+```
+
+---
+
 ### Task 1: Create Dashboard API Function
 
 **Files:**
 - Create: `frontend/src/api/dashboard.ts`
 
-- [ ] **Step 1.1: Create dashboard.ts**
+- [x] **Step 1.1: Create dashboard.ts**
 
 Create `frontend/src/api/dashboard.ts`:
 
@@ -30,7 +189,7 @@ export async function getDashboardToday(): Promise<DashboardTodayResponse> {
 }
 ```
 
-- [ ] **Step 1.2: Ensure DashboardTodayResponse type exists in types/api.ts**
+- [x] **Step 1.2: Ensure DashboardTodayResponse type exists in types/api.ts**
 
 Open `frontend/src/types/api.ts` and confirm the following types are present. If they were not added in Phase 1, add them now:
 
@@ -84,7 +243,7 @@ export interface DashboardTodayResponse {
 }
 ```
 
-- [ ] **Step 1.3: Commit**
+- [x] **Step 1.3: Commit**
 
 ```bash
 cd frontend && git add src/api/dashboard.ts src/types/api.ts
@@ -98,7 +257,7 @@ git commit -m "feat: add getDashboardToday API function and DashboardTodayRespon
 **Files:**
 - Create: `frontend/src/hooks/useDashboard.ts`
 
-- [ ] **Step 2.1: Create useDashboard.ts**
+- [x] **Step 2.1: Create useDashboard.ts**
 
 Create `frontend/src/hooks/useDashboard.ts`:
 
@@ -121,7 +280,7 @@ export function useDashboard() {
 }
 ```
 
-- [ ] **Step 2.2: Commit**
+- [x] **Step 2.2: Commit**
 
 ```bash
 cd frontend && git add src/hooks/useDashboard.ts
@@ -135,7 +294,7 @@ git commit -m "feat: add useDashboard hook with 60s polling"
 **Files:**
 - Modify: `frontend/src/components/dashboard/DashboardPage.tsx`
 
-- [ ] **Step 3.1: Update DashboardPage**
+- [x] **Step 3.1: Update DashboardPage**
 
 Replace the full contents of `frontend/src/components/dashboard/DashboardPage.tsx`:
 
@@ -217,7 +376,7 @@ export function DashboardPage() {
 }
 ```
 
-- [ ] **Step 3.2: Verify TypeScript**
+- [x] **Step 3.2: Verify TypeScript**
 
 ```bash
 cd frontend && npx tsc --noEmit 2>&1 | head -20
@@ -225,7 +384,7 @@ cd frontend && npx tsc --noEmit 2>&1 | head -20
 
 Expected: no errors. If `StatTiles`, `VisitList`, or `AlertsColumn` prop types don't match the new data shape, update them to accept the `DashboardTodayResponse` sub-types directly. They should accept strongly-typed props from `types/api.ts` rather than mock shapes.
 
-- [ ] **Step 3.3: Commit**
+- [x] **Step 3.3: Commit**
 
 ```bash
 cd frontend && git add src/components/dashboard/DashboardPage.tsx
@@ -239,7 +398,7 @@ git commit -m "feat: wire DashboardPage to real API via useDashboard"
 **Files:**
 - Modify: `frontend/src/components/layout/Shell.tsx`
 
-- [ ] **Step 4.1: Update Shell.tsx to pass live redEvvCount to Sidebar**
+- [x] **Step 4.1: Update Shell.tsx to pass live redEvvCount to Sidebar**
 
 Open `frontend/src/components/layout/Shell.tsx`. Add the `useDashboard` hook and pass `redEvvCount` to the `Sidebar` component.
 
@@ -265,7 +424,7 @@ export function Shell() {
 }
 ```
 
-- [ ] **Step 4.2: Verify Sidebar accepts redEvvCount prop**
+- [x] **Step 4.2: Verify Sidebar accepts redEvvCount prop**
 
 Open `frontend/src/components/layout/Sidebar.tsx` and confirm the component accepts a `redEvvCount: number` prop and uses it to render the EVV badge. If the prop name differs from Phase 1, reconcile it now.
 
@@ -283,7 +442,7 @@ The Sidebar should show the badge on the EVV nav item when `redEvvCount > 0`. If
 )}
 ```
 
-- [ ] **Step 4.3: Verify TypeScript and build**
+- [x] **Step 4.3: Verify TypeScript and build**
 
 ```bash
 cd frontend && npx tsc --noEmit 2>&1 | head -20
@@ -292,7 +451,7 @@ cd frontend && npm run build 2>&1 | tail -5
 
 Expected: no errors.
 
-- [ ] **Step 4.4: Commit**
+- [x] **Step 4.4: Commit**
 
 ```bash
 cd frontend && git add src/components/layout/Shell.tsx src/components/layout/Sidebar.tsx
