@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ShiftDetailResponse, EvvComplianceStatus } from '../../types/api'
+import type { ShiftSummaryResponse, EvvComplianceStatus } from '../../types/api'
 import { ShiftBlock } from './ShiftBlock'
 
 const CALENDAR_START_HOUR = 6   // 6am
@@ -32,8 +32,8 @@ function sameDay(isoA: string, dateB: Date): boolean {
   )
 }
 
-function evvStatus(shift: ShiftDetailResponse): EvvComplianceStatus {
-  return shift.evv?.complianceStatus ?? 'GREY'
+function evvStatus(_shift: ShiftSummaryResponse): EvvComplianceStatus {
+  return 'GREY'
 }
 
 function isToday(d: Date): boolean {
@@ -47,7 +47,7 @@ function isToday(d: Date): boolean {
 
 interface WeekCalendarProps {
   weekStart: Date
-  shifts: ShiftDetailResponse[]
+  shifts: ShiftSummaryResponse[]
   clientMap: Map<string, { firstName: string; lastName: string }>
   caregiverMap: Map<string, { firstName: string; lastName: string }>
   onShiftClick: (shiftId: string) => void
