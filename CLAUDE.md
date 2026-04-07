@@ -56,7 +56,7 @@ All scoring logic lives in `com.hcare.scoring`. The public interface is `Scoring
 
 `featureFlags.aiSchedulingEnabled` gates scoring: when `false` (Starter tier), `rankCandidates` returns eligible caregivers unsorted with `score=0`. A weekly `@Scheduled` job resets `currentWeekHours` every Monday 00:00 UTC.
 
-Known P2 gaps: `cancelRate` is a lifetime running total, not a true 90-day rolling window. `ShiftCancelledEvent` is wired and tested but not yet published — cancellation counts remain 0 until the Scheduling API (Plan 6) publishes the event.
+Known P2 gaps: `cancelRate` is a lifetime running total, not a true 90-day rolling window.
 
 ---
 
