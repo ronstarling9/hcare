@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next'
-import type { EvvComplianceStatus, ShiftDetailResponse } from '../../types/api'
-import { mockShifts, mockClientMap, mockCaregiverMap } from '../../mock/data'
+import type { EvvComplianceStatus } from '../../types/api'
+import { useShiftDetail, useAssignCaregiver, useBroadcastShift, useClockIn, useGetCandidates } from '../../hooks/useShifts'
+import { useClients } from '../../hooks/useClients'
+import { useCaregivers } from '../../hooks/useCaregivers'
 import { usePanelStore } from '../../store/panelStore'
 import { formatLocalTime } from '../../utils/dateFormat'
 
@@ -41,6 +43,15 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
 
+  const { data: shift, isLoading, error } = useShiftDetail(shiftId)
+  const { clientMap } = useClients()
+  const { caregiverMap } = useCaregivers()
+  const assignMutation = useAssignCaregiver()
+  const broadcastMutation = useBroadcastShift()
+  const clockInMutation = useClockIn()
+
+  const { data: candidates } = useGetCandidates(shiftId)
+
   const EVV_LABEL: Record<EvvComplianceStatus, string> = {
     RED: t('evvNonCompliant'),
     YELLOW: t('evvAttention'),
@@ -50,22 +61,31 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
     PORTAL_SUBMIT: t('evvPortalSubmit'),
   }
 
-  const shift: ShiftDetailResponse | undefined = mockShifts.find((s) => s.id === shiftId)
-
-  if (!shift) {
+  if (isLoading) {
     return (
       <div className="p-8 text-text-secondary">
-        <button type="button" className="text-blue text-[13px] mb-4" onClick={closePanel}>
+        <button type="button" className="text-[13px] mb-4 hover:underline text-blue" onClick={closePanel}>
           {backLabel}
         </button>
-        <p>{t('notFound')}</p>
+        <p className="text-[13px]">{tCommon('loading')}</p>
       </div>
     )
   }
 
-  const client = mockClientMap.get(shift.clientId)
-  const caregiver = shift.caregiverId ? mockCaregiverMap.get(shift.caregiverId) : null
-  const status = shift.evv?.complianceStatus ?? 'GREY'
+  if (error || !shift) {
+    return (
+      <div className="p-8 text-text-secondary">
+        <button type="button" className="text-[13px] mb-4 hover:underline text-blue" onClick={closePanel}>
+          {backLabel}
+        </button>
+        <p className="text-[13px] text-red-600">{t('notFound')}</p>
+      </div>
+    )
+  }
+
+  const client = clientMap.get(shift.clientId)
+  const caregiver = shift.caregiverId ? caregiverMap.get(shift.caregiverId) : null
+  const evvStatus = shift.evv?.complianceStatus ?? 'GREY'
 
   return (
     <div className="flex flex-col h-full">
@@ -73,8 +93,7 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
       <div className="px-6 py-4 border-b border-border">
         <button
           type="button"
-          className="text-[13px] mb-2 hover:underline"
-          style={{ color: '#1a9afa' }}
+          className="text-[13px] mb-2 hover:underline text-blue"
           onClick={closePanel}
         >
           {backLabel}
@@ -90,10 +109,9 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
       {/* EVV Status badge */}
       <div
         className="mx-6 mt-4 px-4 py-3 text-[13px] font-semibold"
-        style={{ background: EVV_BG[status], color: EVV_TEXT[status] }}
+        style={{ background: EVV_BG[evvStatus], color: EVV_TEXT[evvStatus] }}
       >
-        {EVV_LABEL[status]}
-        {shift.evv === null && t('visitNotStarted')}
+        {EVV_LABEL[evvStatus]}
       </div>
 
       {/* Body */}
@@ -116,10 +134,6 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
                 <div className="text-[13px] text-dark">
                   {caregiver ? `${caregiver.firstName} ${caregiver.lastName}` : tCommon('unassigned')}
                 </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-text-secondary">{t('fieldService')}</div>
-                <div className="text-[13px] text-dark">{t('staticService')}</div>
               </div>
               <div>
                 <div className="text-[10px] text-text-secondary">{t('fieldStatus')}</div>
@@ -156,93 +170,83 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
           </div>
         </div>
 
-        {/* AI Candidates (shown when OPEN) */}
-        {shift.status === 'OPEN' && (
+        {/* AI Candidates — shown for OPEN shifts without a caregiver */}
+        {!shift.caregiverId && candidates && candidates.length > 0 && (
           <div className="mt-6">
             <h3 className="text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-3">
               {t('sectionAiMatch')}
             </h3>
-            {[
-              { rank: 1, name: t('candidate1Name'), reason: t('candidate1Reason') },
-              { rank: 2, name: t('candidate2Name'), reason: t('candidate2Reason') },
-            ].map((c) => (
-              <div key={c.rank} className="flex items-center gap-3 py-2 border-b border-border">
-                <span
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-                  style={{ background: c.rank === 1 ? '#1a9afa' : '#94a3b8' }}
-                >
-                  {c.rank}
-                </span>
-                <div className="flex-1">
-                  <div className="text-[13px] font-medium text-dark">{c.name}</div>
-                  <div className="text-[11px] text-text-secondary">{c.reason}</div>
+            {candidates.slice(0, 5).map((candidate, i) => {
+              const cg = caregiverMap.get(candidate.caregiverId)
+              return (
+                <div key={candidate.caregiverId} className="flex items-center gap-3 py-2 border-b border-border">
+                  <span
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 ${i === 0 ? 'bg-blue' : 'bg-text-muted'}`}
+                  >
+                    {i + 1}
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-[13px] font-medium text-dark">
+                      {cg ? `${cg.firstName} ${cg.lastName}` : candidate.caregiverId}
+                    </div>
+                    <div className="text-[11px] text-text-secondary">{candidate.explanation}</div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={assignMutation.isPending}
+                    className="text-[12px] font-semibold disabled:opacity-50 text-blue"
+                    onClick={() => assignMutation.mutate({ shiftId, caregiverId: candidate.caregiverId })}
+                  >
+                    {t('assign')}
+                  </button>
                 </div>
-                <button type="button" className="text-[12px] font-semibold" style={{ color: '#1a9afa' }}>
-                  {t('assign')}
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
 
       {/* Footer actions */}
       <div className="px-6 py-4 border-t border-border flex items-center gap-3">
-        {shift.status === 'OPEN' && (
+        {shift.status === 'OPEN' && !shift.caregiverId && (
+          <button
+            type="button"
+            disabled={broadcastMutation.isPending}
+            className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110 disabled:opacity-50"
+            onClick={() => broadcastMutation.mutate(shiftId)}
+          >
+            {broadcastMutation.isPending ? '…' : t('assignCaregiver')}
+          </button>
+        )}
+        {shift.status === 'ASSIGNED' && !shift.evv?.timeIn && (
+          <button
+            type="button"
+            disabled={clockInMutation.isPending}
+            className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110 disabled:opacity-50"
+            onClick={() =>
+              clockInMutation.mutate({
+                shiftId,
+                req: { locationLat: 0, locationLon: 0, verificationMethod: 'MANUAL', capturedOffline: false },
+              })
+            }
+          >
+            {clockInMutation.isPending ? '…' : t('addManualClockIn')}
+          </button>
+        )}
+        {(shift.status === 'COMPLETED' || shift.status === 'IN_PROGRESS') && evvStatus === 'RED' && (
           <button
             type="button"
             className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110"
           >
-            {t('assignCaregiver')}
+            {t('addManualClockIn')}
           </button>
         )}
-        {(shift.status === 'COMPLETED' || shift.status === 'IN_PROGRESS') &&
-          status === 'RED' && (
-            <>
-              <button
-                type="button"
-                className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-              >
-                {t('addManualClockIn')}
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
-              >
-                {t('editShift')}
-              </button>
-              <button
-                type="button"
-                className="ml-auto px-4 py-2 text-[12px] font-semibold text-red-600 border border-red-200"
-              >
-                {t('markAsMissed')}
-              </button>
-            </>
-          )}
-        {shift.status === 'ASSIGNED' && (
-          <button
-            type="button"
-            className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
-          >
-            {t('editShift')}
-          </button>
-        )}
-        {shift.status === 'COMPLETED' && status === 'GREEN' && (
-          <>
-            <button
-              type="button"
-              className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
-            >
-              {t('editShift')}
-            </button>
-            <button
-              type="button"
-              className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
-            >
-              {t('viewCareNotes')}
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
+        >
+          {t('editShift')}
+        </button>
       </div>
     </div>
   )

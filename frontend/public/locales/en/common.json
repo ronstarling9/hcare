@@ -6,5 +6,6 @@
   "no": "No",
   "cancel": "Cancel",
   "searchByName": "Search by name…",
-  "noExpiry": "No expiry"
+  "noExpiry": "No expiry",
+  "loading": "Loading…"
 }
