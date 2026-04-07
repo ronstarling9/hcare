@@ -139,6 +139,13 @@ class CaregiverControllerIT extends AbstractIntegrationTest {
             new HttpEntity<>(req, auth()), CredentialResponse.class);
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(add.getBody().credentialType()).isEqualTo(CredentialType.CPR);
+
+        ResponseEntity<Map<String, Object>> list = restTemplate.exchange(
+            "/api/v1/caregivers/" + caregiver.getId() + "/credentials", HttpMethod.GET,
+            new HttpEntity<>(auth()), new ParameterizedTypeReference<>() {});
+        assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat((Integer) list.getBody().get("totalElements")).isEqualTo(1);
+        assertThat((List<?>) list.getBody().get("content")).hasSize(1);
     }
 
     @Test
