@@ -17,11 +17,13 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-// Redirect to /login on 401
+// Redirect to /login on 401 — only on session expiry (not failed login attempts)
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isAuthEndpoint = error.config?.url?.startsWith('/auth/')
+    if (error.response?.status === 401 && !isAuthEndpoint) {
+      useAuthStore.getState().logout()
       window.location.href = '/login'
     }
     return Promise.reject(error)
