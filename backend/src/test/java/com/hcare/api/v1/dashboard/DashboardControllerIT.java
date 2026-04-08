@@ -414,6 +414,114 @@ class DashboardControllerIT extends AbstractIntegrationTest {
     }
 
     // -------------------------------------------------------------------------
+    // Bug: alert resourceId must be the caregiver/client UUID for panel nav
+    // -------------------------------------------------------------------------
+
+    @Test
+    void getDashboardToday_credential_alert_resourceId_is_caregiverId() {
+        Caregiver caregiver = caregiverRepo.save(
+            new Caregiver(agency.getId(), "Nav", "Test", "nav.cred@test.com"));
+
+        credentialRepo.save(new CaregiverCredential(
+            caregiver.getId(), agency.getId(),
+            CredentialType.CPR,
+            LocalDate.now(ZoneOffset.UTC).minusYears(2),
+            LocalDate.now(ZoneOffset.UTC).plusDays(10)));
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+
+        DashboardAlert alert = body.alerts().stream()
+            .filter(a -> a.type() == AlertType.CREDENTIAL_EXPIRY)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Expected CREDENTIAL_EXPIRY alert"));
+
+        assertThat(alert.resourceId())
+            .as("CREDENTIAL_EXPIRY alert resourceId must be the caregiver UUID, not the credential UUID")
+            .isEqualTo(caregiver.getId());
+    }
+
+    @Test
+    void getDashboardToday_background_check_alert_resourceId_is_caregiverId() {
+        Caregiver caregiver = caregiverRepo.save(
+            new Caregiver(agency.getId(), "Nav", "BgTest", "nav.bg@test.com"));
+
+        BackgroundCheck bc = new BackgroundCheck(
+            caregiver.getId(), agency.getId(),
+            BackgroundCheckType.STATE_REGISTRY,
+            BackgroundCheckResult.CLEAR,
+            LocalDate.now(ZoneOffset.UTC).minusYears(2));
+        bc.setRenewalDueDate(LocalDate.now(ZoneOffset.UTC).plusDays(15));
+        backgroundCheckRepo.save(bc);
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+
+        DashboardAlert alert = body.alerts().stream()
+            .filter(a -> a.type() == AlertType.BACKGROUND_CHECK_DUE)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Expected BACKGROUND_CHECK_DUE alert"));
+
+        assertThat(alert.resourceId())
+            .as("BACKGROUND_CHECK_DUE alert resourceId must be the caregiver UUID, not the background check UUID")
+            .isEqualTo(caregiver.getId());
+    }
+
+    @Test
+    void getDashboardToday_authorization_low_alert_resourceId_is_clientId() {
+        Client client = clientRepo.save(new Client(
+            agency.getId(), "Nav", "AuthTest", LocalDate.of(1960, 1, 1)));
+
+        Payer payer = payerRepo.save(
+            new Payer(agency.getId(), "Medicaid TX", PayerType.MEDICAID, "TX"));
+
+        ServiceType serviceType = serviceTypeRepo.save(
+            new ServiceType(agency.getId(), "PCS", "PCS-V1", true, "[]"));
+
+        Authorization auth = new Authorization(
+            client.getId(), payer.getId(), serviceType.getId(), agency.getId(),
+            "AUTH-NAV", new BigDecimal("100"),
+            UnitType.HOURS,
+            LocalDate.now(ZoneOffset.UTC).minusMonths(1),
+            LocalDate.now(ZoneOffset.UTC).plusMonths(5));
+        auth.addUsedUnits(new BigDecimal("85"));
+        authorizationRepository.save(auth);
+
+        ResponseEntity<DashboardTodayResponse> resp = restTemplate.exchange(
+            "/api/v1/dashboard/today",
+            HttpMethod.GET,
+            new HttpEntity<>(authHeaders(token())),
+            DashboardTodayResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DashboardTodayResponse body = resp.getBody();
+        assertThat(body).isNotNull();
+
+        DashboardAlert alert = body.alerts().stream()
+            .filter(a -> a.type() == AlertType.AUTHORIZATION_LOW)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Expected AUTHORIZATION_LOW alert"));
+
+        assertThat(alert.resourceId())
+            .as("AUTHORIZATION_LOW alert resourceId must be the client UUID, not the authorization UUID")
+            .isEqualTo(client.getId());
+    }
+
+    // -------------------------------------------------------------------------
     // Fix 6: SCHEDULER role can access dashboard
     // -------------------------------------------------------------------------
 

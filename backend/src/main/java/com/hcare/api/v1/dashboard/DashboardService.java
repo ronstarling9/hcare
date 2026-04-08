@@ -205,7 +205,7 @@ public class DashboardService {
             String name = cg != null ? cg.getFirstName() + " " + cg.getLastName() : "Unknown Caregiver";
             alerts.add(new DashboardAlert(
                     AlertType.CREDENTIAL_EXPIRY,
-                    cred.getId(),
+                    cg != null ? cg.getId() : cred.getCaregiverId(),
                     name,
                     cred.getCredentialType().name() + " expires",
                     cred.getExpiryDate(),
@@ -221,7 +221,7 @@ public class DashboardService {
             String name = cg != null ? cg.getFirstName() + " " + cg.getLastName() : "Unknown Caregiver";
             alerts.add(new DashboardAlert(
                     AlertType.BACKGROUND_CHECK_DUE,
-                    bc.getId(),
+                    cg != null ? cg.getId() : bc.getCaregiverId(),
                     name,
                     bc.getCheckType().name() + " renewal due",
                     bc.getRenewalDueDate(),
@@ -241,7 +241,7 @@ public class DashboardService {
                     int pct = utilization.multiply(new BigDecimal("100")).intValue();
                     alerts.add(new DashboardAlert(
                             AlertType.AUTHORIZATION_LOW,
-                            auth.getId(),
+                            cl != null ? cl.getId() : auth.getClientId(),
                             name,
                             "Auth " + auth.getAuthNumber() + " at " + pct + "% utilization",
                             auth.getEndDate(),
