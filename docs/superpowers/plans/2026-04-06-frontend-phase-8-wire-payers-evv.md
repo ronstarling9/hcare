@@ -146,7 +146,8 @@ public class PayerService {
         String aggregatorName = null;
         if (payer.getState() != null) {
             EvvStateConfig config = cache.computeIfAbsent(
-                payer.getState(), evvStateConfigRepository::findByStateCode);
+                payer.getState(),
+                code -> evvStateConfigRepository.findByStateCode(code).orElse(null));
             if (config != null) {
                 AggregatorType aggregator = config.getDefaultAggregator();
                 aggregatorName = aggregator != null ? aggregator.name() : null;
@@ -319,8 +320,29 @@ Create `backend/src/main/java/com/hcare/api/v1/evv/EvvHistoryService.java`:
 package com.hcare.api.v1.evv;
 
 import com.hcare.api.v1.evv.dto.EvvHistoryRow;
-import com.hcare.domain.*;
-import com.hcare.evv.*;
+import com.hcare.domain.Agency;
+import com.hcare.domain.AgencyRepository;
+import com.hcare.domain.Authorization;
+import com.hcare.domain.AuthorizationRepository;
+import com.hcare.domain.Caregiver;
+import com.hcare.domain.CaregiverRepository;
+import com.hcare.domain.Client;
+import com.hcare.domain.ClientRepository;
+import com.hcare.domain.EvvRecord;
+import com.hcare.domain.EvvRecordRepository;
+import com.hcare.domain.Payer;
+import com.hcare.domain.PayerRepository;
+import com.hcare.domain.PayerType;
+import com.hcare.domain.ServiceType;
+import com.hcare.domain.ServiceTypeRepository;
+import com.hcare.domain.Shift;
+import com.hcare.domain.ShiftRepository;
+import com.hcare.evv.AggregatorType;
+import com.hcare.evv.EvvComplianceService;
+import com.hcare.evv.EvvComplianceStatus;
+import com.hcare.evv.EvvStateConfig;
+import com.hcare.evv.EvvStateConfigRepository;
+import com.hcare.evv.VerificationMethod;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -330,7 +352,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -344,6 +371,7 @@ public class EvvHistoryService {
     private final EvvStateConfigRepository evvStateConfigRepository;
     private final AuthorizationRepository authorizationRepository;
     private final PayerRepository payerRepository;
+    private final AgencyRepository agencyRepository;
     private final EvvComplianceService evvComplianceService;
 
     public EvvHistoryService(
@@ -355,6 +383,7 @@ public class EvvHistoryService {
             EvvStateConfigRepository evvStateConfigRepository,
             AuthorizationRepository authorizationRepository,
             PayerRepository payerRepository,
+            AgencyRepository agencyRepository,
             EvvComplianceService evvComplianceService) {
         this.shiftRepository = shiftRepository;
         this.clientRepository = clientRepository;
@@ -364,6 +393,7 @@ public class EvvHistoryService {
         this.evvStateConfigRepository = evvStateConfigRepository;
         this.authorizationRepository = authorizationRepository;
         this.payerRepository = payerRepository;
+        this.agencyRepository = agencyRepository;
         this.evvComplianceService = evvComplianceService;
     }
 
@@ -384,27 +414,44 @@ public class EvvHistoryService {
             return Page.empty(pageable);
         }
 
-        // Build lookup maps
-        Map<UUID, Client> clientMap = clientRepository.findByAgencyId(agencyId).stream()
+        // Resolve the agency's own state as a fallback for clients without serviceState override
+        String agencyState = agencyRepository.findById(agencyId)
+            .map(com.hcare.domain.Agency::getState)
+            .orElse(null);
+
+        // Build lookup maps — fetch only the IDs present on this page, not all agency entities
+        Set<UUID> clientIds = shifts.stream().map(Shift::getClientId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<UUID> caregiverIds = shifts.stream().map(Shift::getCaregiverId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<UUID> serviceTypeIds = shifts.stream().map(Shift::getServiceTypeId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+
+        Map<UUID, Client> clientMap = clientRepository.findAllById(clientIds).stream()
             .collect(Collectors.toMap(Client::getId, c -> c));
 
-        Map<UUID, Caregiver> caregiverMap = caregiverRepository.findByAgencyId(agencyId).stream()
+        Map<UUID, Caregiver> caregiverMap = caregiverRepository.findAllById(caregiverIds).stream()
             .collect(Collectors.toMap(Caregiver::getId, c -> c));
 
-        Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepository.findByAgencyId(agencyId).stream()
+        Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepository.findAllById(serviceTypeIds).stream()
             .collect(Collectors.toMap(ServiceType::getId, s -> s));
 
         // Fetch EVV records for these shifts
         Set<UUID> shiftIds = shifts.stream().map(Shift::getId).collect(Collectors.toSet());
-        Map<UUID, EvvRecord> evvByShiftId = evvRecordRepository.findAll().stream()
-            .filter(r -> shiftIds.contains(r.getShiftId()))
+        Map<UUID, EvvRecord> evvByShiftId = evvRecordRepository.findByShiftIdIn(shiftIds).stream()
             .collect(Collectors.toMap(EvvRecord::getShiftId, r -> r));
 
-        // Authorization and payer lookup
-        Map<UUID, Authorization> authById = authorizationRepository.findByAgencyId(agencyId).stream()
+        // Authorization and payer lookup — only auth IDs referenced by this page's shifts
+        Set<UUID> authIds = shifts.stream().map(Shift::getAuthorizationId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+
+        Map<UUID, Authorization> authById = authorizationRepository.findAllById(authIds).stream()
             .collect(Collectors.toMap(Authorization::getId, a -> a));
 
-        Map<UUID, Payer> payerById = payerRepository.findByAgencyId(agencyId).stream()
+        Set<UUID> payerIds = authById.values().stream().map(Authorization::getPayerId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+
+        Map<UUID, Payer> payerById = payerRepository.findAllById(payerIds).stream()
             .collect(Collectors.toMap(Payer::getId, p -> p));
 
         // EVV state config cache
@@ -433,18 +480,25 @@ public class EvvHistoryService {
             EvvComplianceStatus status = EvvComplianceStatus.GREY;
             String statusReason = null;
 
-            if (client != null && client.getServiceState() != null) {
+            String effectiveState = null;
+            if (client != null) {
+                effectiveState = client.getServiceState() != null
+                    ? client.getServiceState()
+                    : agencyState;
+            }
+            if (effectiveState != null) {
                 EvvStateConfig stateConfig = stateConfigCache.computeIfAbsent(
-                    client.getServiceState(), evvStateConfigRepository::findByStateCode);
+                    effectiveState,
+                    code -> evvStateConfigRepository.findByStateCode(code).orElse(null));
                 if (stateConfig != null) {
                     status = evvComplianceService.compute(
                         evvRecord, stateConfig, shift, payerType,
                         client.getLat(), client.getLng());
                 } else {
-                    statusReason = "No EVV state config for state: " + client.getServiceState();
+                    statusReason = "No EVV state config for state: " + effectiveState;
                 }
             } else {
-                statusReason = client == null ? "Client not found" : "No service state on client";
+                statusReason = client == null ? "Client not found" : "Agency state not configured";
             }
 
             return new EvvHistoryRow(
@@ -591,12 +645,12 @@ export async function getPayer(id: string): Promise<PayerResponse> {
 }
 ```
 
-- [ ] **Step 7.2: Ensure PayerResponse type exists in types/api.ts**
+- [ ] **Step 7.2: Confirm PayerResponse type exists in types/api.ts**
 
-Open `frontend/src/types/api.ts` and confirm the following types are present. Add if missing:
+Confirm `PayerResponse` is already present in `types/api.ts` (added in a prior phase). If somehow missing, add:
 
 ```ts
-// Add to frontend/src/types/api.ts if not already present
+// Add to frontend/src/types/api.ts only if somehow missing
 
 export type PayerType = 'MEDICAID' | 'PRIVATE_PAY' | 'LTC_INSURANCE' | 'VA' | 'MEDICARE'
 
@@ -667,15 +721,12 @@ const PAYER_TYPE_LABELS: Record<string, string> = {
 
 function PayerRow({ payer }: { payer: PayerResponse }) {
   return (
-    <div
-      className="flex items-center justify-between px-4 py-3 rounded-xl"
-      style={{ backgroundColor: '#ffffff', border: '1px solid #eaeaf2' }}
-    >
+    <div className="flex items-center justify-between px-4 py-3 bg-white border border-border rounded">
       <div>
-        <p className="text-sm font-medium" style={{ color: '#1a1a24' }}>
+        <p className="text-sm font-medium text-dark">
           {payer.name}
         </p>
-        <p className="text-xs mt-0.5" style={{ color: '#747480' }}>
+        <p className="text-xs mt-0.5 text-text-secondary">
           {PAYER_TYPE_LABELS[payer.payerType] ?? payer.payerType}
           {' · '}
           {payer.state}
@@ -683,14 +734,11 @@ function PayerRow({ payer }: { payer: PayerResponse }) {
       </div>
       <div className="text-right">
         {payer.evvAggregator ? (
-          <span
-            className="inline-block text-xs px-2 py-0.5 rounded"
-            style={{ backgroundColor: '#f6f6fa', color: '#747480', border: '1px solid #eaeaf2' }}
-          >
+          <span className="inline-block text-xs px-2 py-0.5 rounded bg-surface text-text-secondary border border-border">
             {payer.evvAggregator}
           </span>
         ) : (
-          <span className="text-xs" style={{ color: '#94a3b8' }}>No EVV aggregator</span>
+          <span className="text-xs text-text-muted">No EVV aggregator</span>
         )}
       </div>
     </div>
@@ -703,36 +751,27 @@ export function PayersPage() {
 
   if (isLoading) {
     return (
-      <div
-        className="flex items-center justify-center h-full"
-        style={{ backgroundColor: '#f6f6fa' }}
-      >
-        <span className="text-sm" style={{ color: '#94a3b8' }}>Loading payers…</span>
+      <div className="flex items-center justify-center h-full bg-surface">
+        <span className="text-sm text-text-muted">Loading payers…</span>
       </div>
     )
   }
 
   if (isError) {
     return (
-      <div
-        className="flex items-center justify-center h-full"
-        style={{ backgroundColor: '#f6f6fa' }}
-      >
-        <p className="text-sm" style={{ color: '#dc2626' }}>Failed to load payers.</p>
+      <div className="flex items-center justify-center h-full bg-surface">
+        <p className="text-sm text-red-600">Failed to load payers.</p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#f6f6fa' }}>
+    <div className="flex flex-col h-full bg-surface">
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-6 py-4 border-b"
-        style={{ backgroundColor: '#ffffff', borderColor: '#eaeaf2' }}
-      >
+      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-border">
         <div>
-          <h1 className="text-lg font-semibold" style={{ color: '#1a1a24' }}>Payers</h1>
-          <p className="text-xs mt-0.5" style={{ color: '#94a3b8' }}>
+          <h1 className="text-lg font-semibold text-dark">Payers</h1>
+          <p className="text-xs mt-0.5 text-text-muted">
             {totalElements} total
           </p>
         </div>
@@ -742,7 +781,7 @@ export function PayersPage() {
       <div className="flex-1 overflow-auto p-6">
         {payers.length === 0 ? (
           <div className="flex items-center justify-center h-32">
-            <p className="text-sm" style={{ color: '#94a3b8' }}>No payers configured yet.</p>
+            <p className="text-sm text-text-muted">No payers configured yet.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -758,19 +797,17 @@ export function PayersPage() {
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-              style={{ border: '1px solid #eaeaf2', color: '#747480' }}
+              className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
             >
               Prev
             </button>
-            <span className="text-sm" style={{ color: '#747480' }}>
+            <span className="text-sm text-text-secondary">
               Page {page + 1} of {totalPages}
             </span>
             <button
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={page === totalPages - 1}
-              className="px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-              style={{ border: '1px solid #eaeaf2', color: '#747480' }}
+              className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
             >
               Next
             </button>
@@ -797,12 +834,12 @@ git commit -m "feat: wire PayersPage to real API via usePayers"
 - Create: `frontend/src/api/evv.ts`
 - Create: `frontend/src/hooks/useEvvHistory.ts`
 
-- [ ] **Step 9.1: Ensure EvvHistoryRow type exists in types/api.ts**
+- [ ] **Step 9.1: Fix EvvHistoryRow type in types/api.ts**
 
-Open `frontend/src/types/api.ts` and confirm the following type is present. Add if missing:
+Open `frontend/src/types/api.ts` and **replace** the existing `EvvHistoryRow` interface (it already exists from a prior phase but has incorrect nullability on `serviceTypeName`). The correct definition is:
 
 ```ts
-// Add to frontend/src/types/api.ts if not already present
+// Replace the existing EvvHistoryRow interface in frontend/src/types/api.ts
 
 export interface EvvHistoryRow {
   shiftId: string
@@ -915,17 +952,17 @@ function EvvRow({ row }: { row: EvvHistoryRow }) {
       : 'Unassigned'
 
   return (
-    <tr style={{ borderBottom: '1px solid #eaeaf2' }}>
-      <td className="px-4 py-3 text-sm" style={{ color: '#1a1a24' }}>
+    <tr className="border-b border-border">
+      <td className="px-4 py-3 text-sm text-dark">
         {clientName}
       </td>
-      <td className="px-4 py-3 text-sm" style={{ color: '#747480' }}>
+      <td className="px-4 py-3 text-sm text-text-secondary">
         {caregiverName}
       </td>
-      <td className="px-4 py-3 text-sm" style={{ color: '#747480' }}>
+      <td className="px-4 py-3 text-sm text-text-secondary">
         {row.serviceTypeName ?? '—'}
       </td>
-      <td className="px-4 py-3 text-sm" style={{ color: '#747480' }}>
+      <td className="px-4 py-3 text-sm text-text-secondary">
         {new Date(row.scheduledStart).toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -939,12 +976,12 @@ function EvvRow({ row }: { row: EvvHistoryRow }) {
       <td className="px-4 py-3">
         <EvvStatusBadge status={row.evvStatus} />
         {row.evvStatusReason && (
-          <p className="text-xs mt-0.5" style={{ color: '#94a3b8' }}>
+          <p className="text-xs mt-0.5 text-text-muted">
             {row.evvStatusReason}
           </p>
         )}
       </td>
-      <td className="px-4 py-3 text-xs" style={{ color: '#747480' }}>
+      <td className="px-4 py-3 text-xs text-text-secondary">
         {row.timeIn
           ? new Date(row.timeIn).toLocaleTimeString('en-US', {
               hour: 'numeric',
@@ -959,7 +996,7 @@ function EvvRow({ row }: { row: EvvHistoryRow }) {
             })
           : '—'}
       </td>
-      <td className="px-4 py-3 text-xs" style={{ color: '#747480' }}>
+      <td className="px-4 py-3 text-xs text-text-secondary">
         {row.verificationMethod ?? '—'}
       </td>
     </tr>
@@ -1022,18 +1059,15 @@ export function EvvStatusPage() {
   const toDateInputValue = (d: Date) => d.toISOString().split('T')[0]
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#f6f6fa' }}>
+    <div className="flex flex-col h-full bg-surface">
       {/* Header */}
-      <div
-        className="px-6 py-4 border-b"
-        style={{ backgroundColor: '#ffffff', borderColor: '#eaeaf2' }}
-      >
+      <div className="px-6 py-4 border-b bg-white border-border">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-lg font-semibold" style={{ color: '#1a1a24' }}>
+            <h1 className="text-lg font-semibold text-dark">
               EVV Compliance History
             </h1>
-            <p className="text-xs mt-0.5" style={{ color: '#94a3b8' }}>
+            <p className="text-xs mt-0.5 text-text-muted">
               {totalElements} visits in range
             </p>
           </div>
@@ -1041,38 +1075,35 @@ export function EvvStatusPage() {
           {/* Date range pickers */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-xs" style={{ color: '#747480' }}>From</label>
+              <label className="text-xs text-text-secondary">From</label>
               <input
                 type="date"
                 value={toDateInputValue(rangeStart)}
                 onChange={(e) => handleDateChange('start', e.target.value)}
-                className="rounded-lg px-2 py-1 text-xs"
-                style={{ border: '1px solid #eaeaf2', color: '#1a1a24' }}
+                className="rounded-lg px-2 py-1 text-xs border border-border text-dark"
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs" style={{ color: '#747480' }}>To</label>
+              <label className="text-xs text-text-secondary">To</label>
               <input
                 type="date"
                 value={toDateInputValue(rangeEnd)}
                 onChange={(e) => handleDateChange('end', e.target.value)}
-                className="rounded-lg px-2 py-1 text-xs"
-                style={{ border: '1px solid #eaeaf2', color: '#1a1a24' }}
+                className="rounded-lg px-2 py-1 text-xs border border-border text-dark"
               />
             </div>
           </div>
         </div>
 
-        {/* Status filter chips */}
+        {/* Status filter chips — "ALL" uses brand token; EVV-status chips keep semantic colours */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <button
             onClick={() => setStatusFilter('ALL')}
-            className="text-xs px-3 py-1 rounded-full font-medium transition-colors"
-            style={{
-              backgroundColor: statusFilter === 'ALL' ? '#1a9afa' : '#f6f6fa',
-              color: statusFilter === 'ALL' ? '#ffffff' : '#747480',
-              border: '1px solid #eaeaf2',
-            }}
+            className={`text-xs px-3 py-1 rounded-full font-medium transition-colors border border-border ${
+              statusFilter === 'ALL'
+                ? 'bg-blue text-white'
+                : 'bg-surface text-text-secondary'
+            }`}
           >
             All ({totalElements})
           </button>
@@ -1085,7 +1116,7 @@ export function EvvStatusPage() {
                 className="text-xs px-3 py-1 rounded-full font-medium transition-colors"
                 style={{
                   backgroundColor:
-                    statusFilter === status ? EVV_COLORS[status] : '#f6f6fa',
+                    statusFilter === status ? EVV_COLORS[status] : undefined,
                   color: statusFilter === status ? '#ffffff' : EVV_COLORS[status],
                   border: `1px solid ${EVV_COLORS[status]}`,
                 }}
@@ -1101,26 +1132,25 @@ export function EvvStatusPage() {
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-32">
-            <span className="text-sm" style={{ color: '#94a3b8' }}>Loading EVV history…</span>
+            <span className="text-sm text-text-muted">Loading EVV history…</span>
           </div>
         ) : isError ? (
           <div className="flex items-center justify-center h-32">
-            <p className="text-sm" style={{ color: '#dc2626' }}>Failed to load EVV history.</p>
+            <p className="text-sm text-red-600">Failed to load EVV history.</p>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-32">
-            <p className="text-sm" style={{ color: '#94a3b8' }}>No visits found for this range.</p>
+            <p className="text-sm text-text-muted">No visits found for this range.</p>
           </div>
         ) : (
           <table className="w-full text-left">
-            <thead style={{ backgroundColor: '#f6f6fa', borderBottom: '1px solid #eaeaf2' }}>
+            <thead className="bg-surface border-b border-border">
               <tr>
                 {['Client', 'Caregiver', 'Service', 'Date / Start', 'EVV Status', 'In / Out', 'Method'].map(
                   (h) => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-xs font-semibold uppercase"
-                      style={{ color: '#94a3b8' }}
+                      className="px-4 py-3 text-xs font-semibold uppercase text-text-muted"
                     >
                       {h}
                     </th>
@@ -1128,7 +1158,7 @@ export function EvvStatusPage() {
                 )}
               </tr>
             </thead>
-            <tbody style={{ backgroundColor: '#ffffff' }}>
+            <tbody className="bg-white">
               {filteredRows.map((row) => (
                 <EvvRow key={row.shiftId} row={row} />
               ))}
@@ -1139,26 +1169,21 @@ export function EvvStatusPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div
-          className="flex items-center justify-end gap-2 px-6 py-3 border-t"
-          style={{ borderColor: '#eaeaf2', backgroundColor: '#ffffff' }}
-        >
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border bg-white">
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-            style={{ border: '1px solid #eaeaf2', color: '#747480' }}
+            className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
           >
             Prev
           </button>
-          <span className="text-sm" style={{ color: '#747480' }}>
+          <span className="text-sm text-text-secondary">
             Page {page + 1} of {totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page === totalPages - 1}
-            className="px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-            style={{ border: '1px solid #eaeaf2', color: '#747480' }}
+            className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
           >
             Next
           </button>
@@ -1229,7 +1254,7 @@ cd frontend && npm run dev
 # Smoke-test the new endpoints manually
 TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@test.com","password":"password123"}' \
+  -d '{"email":"admin@sunrise.dev","password":"Admin1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 # Payers list
