@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
@@ -137,5 +138,22 @@ class CarePlanDomainIT extends AbstractIntegrationTest {
         java.util.Optional<CarePlan> draft =
             carePlanRepo.findByClientIdAndStatus(client.getId(), CarePlanStatus.DRAFT);
         assertThat(draft).isEmpty();
+    }
+
+    @Test
+    void findActiveByClientId_returns_active_plan_and_empty_when_none() {
+        CarePlan plan = carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 1));
+        plan.activate();
+        carePlanRepo.save(plan);
+
+        Optional<CarePlan> found = carePlanRepo.findActiveByClientId(
+            client.getId(), CarePlanStatus.ACTIVE);
+        assertThat(found).isPresent();
+        assertThat(found.get().getId()).isEqualTo(plan.getId());
+        assertThat(found.get().getStatus()).isEqualTo(CarePlanStatus.ACTIVE);
+
+        Optional<CarePlan> missing = carePlanRepo.findActiveByClientId(
+            UUID.randomUUID(), CarePlanStatus.ACTIVE);
+        assertThat(missing).isEmpty();
     }
 }

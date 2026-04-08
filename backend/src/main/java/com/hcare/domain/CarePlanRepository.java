@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +18,11 @@ public interface CarePlanRepository extends JpaRepository<CarePlan, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<CarePlan> findByClientIdAndStatus(UUID clientId, CarePlanStatus status);
+
+    // Read-only — no lock. Used by getActiveCarePlan() for the admin GET endpoint.
+    @Query("SELECT p FROM CarePlan p WHERE p.clientId = :clientId AND p.status = :status")
+    Optional<CarePlan> findActiveByClientId(@Param("clientId") UUID clientId,
+                                            @Param("status") CarePlanStatus status);
 
     @Query("SELECT COALESCE(MAX(p.planVersion), 0) FROM CarePlan p WHERE p.clientId = :clientId")
     int findMaxPlanVersionByClientId(UUID clientId);

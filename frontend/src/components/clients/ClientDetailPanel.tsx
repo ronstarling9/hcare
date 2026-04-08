@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { usePanelStore } from '../../store/panelStore'
 import { formatLocalDate } from '../../utils/dateFormat'
 import { useClientDetail, useClientAuthorizations } from '../../hooks/useClients'
+import { CarePlanTab } from './CarePlanTab'
 
 type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPortal'
 
@@ -131,7 +132,7 @@ export function ClientDetailPanel({ clientId, backLabel, initialTab }: ClientDet
           </div>
         )}
         {activeTab === 'carePlan' && (
-          <p className="text-text-secondary text-[13px]">{t('carePlanPhaseNote')}</p>
+          <CarePlanTab clientId={clientId} clientFirstName={client?.firstName ?? ''} />
         )}
         {activeTab === 'authorizations' && (
           <div>

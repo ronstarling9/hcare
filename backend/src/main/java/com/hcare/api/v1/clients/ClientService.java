@@ -251,6 +251,15 @@ public class ClientService {
         return CarePlanResponse.from(carePlanRepository.save(plan));
     }
 
+    @Transactional(readOnly = true)
+    public CarePlanResponse getActiveCarePlan(UUID clientId) {
+        requireClient(clientId);
+        return carePlanRepository.findActiveByClientId(clientId, CarePlanStatus.ACTIVE)
+            .map(CarePlanResponse::from)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "No active care plan for client: " + clientId));
+    }
+
     // --- ADL tasks ---
 
     @Transactional(readOnly = true)
