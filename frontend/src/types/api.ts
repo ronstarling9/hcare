@@ -168,11 +168,23 @@ export interface CaregiverResponse {
 export interface CredentialResponse {
   id: string
   caregiverId: string
+  agencyId: string
   credentialType: string
   issueDate: string | null
   expiryDate: string | null
   verified: boolean
   verifiedBy: string | null
+  createdAt: string
+}
+
+export interface BackgroundCheckResponse {
+  id: string
+  caregiverId: string
+  agencyId: string
+  checkType: string
+  result: 'PASS' | 'FAIL' | 'PENDING' | 'EXPIRED'
+  checkedAt: string          // ISO-8601 LocalDate
+  renewalDueDate: string | null
   createdAt: string
 }
 

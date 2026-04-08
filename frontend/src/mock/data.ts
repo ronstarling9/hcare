@@ -271,6 +271,7 @@ export const mockCredentials: CredentialResponse[] = [
   {
     id: 'cred0001-0000-0000-0000-000000000001',
     caregiverId: IDS.caregiver1,
+    agencyId: IDS.agency,
     credentialType: 'HHA',
     issueDate: '2023-04-01',
     expiryDate: '2026-04-10',
@@ -281,6 +282,7 @@ export const mockCredentials: CredentialResponse[] = [
   {
     id: 'cred0002-0000-0000-0000-000000000002',
     caregiverId: IDS.caregiver2,
+    agencyId: IDS.agency,
     credentialType: 'CPR',
     issueDate: '2024-01-15',
     expiryDate: '2026-06-15',
