@@ -6,6 +6,7 @@ export type PanelType =
   | 'newClient'
   | 'client'
   | 'caregiver'
+  | 'newCaregiver'
   | 'payer'
   | null
 
