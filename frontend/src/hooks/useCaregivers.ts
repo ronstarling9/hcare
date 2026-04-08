@@ -6,6 +6,7 @@ import {
   listBackgroundChecks,
   listShiftHistory,
   verifyCredential,
+  createCaregiver,
 } from '../api/caregivers'
 import type { CaregiverResponse } from '../types/api'
 import { useMemo } from 'react'
@@ -99,6 +100,16 @@ export function useVerifyCredential(caregiverId: string) {
     mutationFn: (credentialId: string) => verifyCredential(caregiverId, credentialId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caregiver-credentials', caregiverId] })
+    },
+  })
+}
+
+export function useCreateCaregiver() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: createCaregiver,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['caregivers'] })
     },
   })
 }

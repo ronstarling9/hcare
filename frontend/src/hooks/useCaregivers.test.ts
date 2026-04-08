@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MockAdapter from 'axios-mock-adapter'
 import { apiClient } from '../api/client'
-import { useCaregivers, useCaregiverDetail } from './useCaregivers'
+import { useCaregivers, useCaregiverDetail, useCreateCaregiver } from './useCaregivers'
 import type { PageResponse, CaregiverResponse } from '../types/api'
 import React from 'react'
 
@@ -61,5 +61,45 @@ describe('useCaregiverDetail', () => {
   it('does not fetch when id is null', () => {
     const { result } = renderHook(() => useCaregiverDetail(null), { wrapper: makeWrapper() })
     expect(result.current.fetchStatus).toBe('idle')
+  })
+})
+
+describe('useCreateCaregiver', () => {
+  let mock: MockAdapter
+  beforeEach(() => { mock = new MockAdapter(apiClient) })
+  afterEach(() => { mock.restore() })
+
+  it('calls POST /caregivers and invalidates the caregivers query key prefix on success', async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries')
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: qc }, children)
+
+    mock.onPost('/caregivers').reply(201, {
+      id: '00000000-0000-0000-0000-000000000099',
+      firstName: 'Maria',
+      lastName: 'Santos',
+      email: 'maria@sunrise.dev',
+      phone: null,
+      address: null,
+      hireDate: null,
+      hasPet: false,
+      status: 'ACTIVE',
+      createdAt: '2026-04-08T10:00:00',
+    })
+
+    const { result } = renderHook(() => useCreateCaregiver(), { wrapper })
+
+    result.current.mutate({
+      firstName: 'Maria',
+      lastName: 'Santos',
+      email: 'maria@sunrise.dev',
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['caregivers'] })
   })
 })
