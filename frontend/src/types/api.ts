@@ -174,6 +174,16 @@ export interface CreateClientRequest {
 
 // ── Caregivers ────────────────────────────────────────────────────────────────
 
+export interface CreateCaregiverRequest {
+  firstName: string
+  lastName: string
+  email: string
+  phone?: string
+  address?: string
+  hireDate?: string    // YYYY-MM-DD — Jackson reads directly as LocalDate
+  hasPet?: boolean     // defaults false on backend; omit to accept default
+}
+
 export interface CaregiverResponse {
   id: string
   firstName: string

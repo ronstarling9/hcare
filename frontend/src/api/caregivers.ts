@@ -5,6 +5,7 @@ import type {
   BackgroundCheckResponse,
   ShiftSummaryResponse,
   PageResponse,
+  CreateCaregiverRequest,
 } from '../types/api'
 
 export async function listCaregivers(
@@ -70,4 +71,9 @@ export async function verifyCredential(
   credentialId: string,
 ): Promise<void> {
   await apiClient.post(`/caregivers/${caregiverId}/credentials/${credentialId}/verify`)
+}
+
+export async function createCaregiver(req: CreateCaregiverRequest): Promise<CaregiverResponse> {
+  const response = await apiClient.post<CaregiverResponse>('/caregivers', req)
+  return response.data
 }
