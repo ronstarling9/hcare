@@ -4,6 +4,7 @@ import { useAllClients } from '../../hooks/useClients'
 import { useAllCaregivers } from '../../hooks/useCaregivers'
 import { useCreateShift } from '../../hooks/useShifts'
 import { usePanelStore } from '../../store/panelStore'
+import { useServiceTypes } from '../../hooks/useServiceTypes'
 
 interface FormValues {
   clientId: string
@@ -26,6 +27,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
   const { clients } = useAllClients()
   const { caregivers } = useAllCaregivers()
   const createMutation = useCreateShift()
+  const { serviceTypes, isLoading: serviceTypesLoading, isError: serviceTypesError } = useServiceTypes()
 
   const {
     register,
@@ -99,19 +101,53 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
           )}
         </div>
 
-        {/* Service Type — hardcoded until Phase 6 adds service-types API */}
+        {/* Service Type */}
         <div>
-          <label htmlFor="ns-service-type" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1">
+          <label
+            htmlFor="ns-service-type"
+            className="block text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary mb-1"
+          >
             {t('labelServiceType')}
           </label>
           <select
             id="ns-service-type"
             {...register('serviceTypeId', { required: t('validationServiceTypeRequired') })}
-            className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white"
+            disabled={serviceTypesLoading || serviceTypesError || serviceTypes.length === 0}
+            aria-busy={serviceTypesLoading ? "true" : "false"}
+            aria-describedby={
+              serviceTypesError || (!serviceTypesLoading && serviceTypes.length === 0)
+                ? "ns-service-type-hint"
+                : undefined
+            }
+            className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white disabled:opacity-50"
           >
-            <option value="">{t('selectServiceType')}</option>
-            <option value="st000000-0000-0000-0000-000000000001">{t('serviceTypePcs')}</option>
+            {serviceTypesLoading ? (
+              <option value="">{t('loadingServiceTypes')}</option>
+            ) : serviceTypesError ? (
+              <option value="">{t('serviceTypesLoadError')}</option>
+            ) : serviceTypes.length === 0 ? (
+              <option value="">{t('noServiceTypesOption')}</option>
+            ) : (
+              <>
+                <option value="">{t('selectServiceType')}</option>
+                {serviceTypes.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                  </option>
+                ))}
+              </>
+            )}
           </select>
+          {serviceTypesError && (
+            <p id="ns-service-type-hint" className="text-[11px] text-red-600 mt-1">
+              {t('serviceTypesLoadErrorRetry')}
+            </p>
+          )}
+          {!serviceTypesError && serviceTypes.length === 0 && !serviceTypesLoading && (
+            <p id="ns-service-type-hint" className="text-[11px] text-text-muted mt-1">
+              {t('noServiceTypesHint')}
+            </p>
+          )}
           {errors.serviceTypeId && (
             <p className="text-[11px] text-red-600 mt-1">{errors.serviceTypeId.message}</p>
           )}
@@ -190,7 +226,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         <div className="pt-4 border-t border-border flex gap-3">
           <button
             type="submit"
-            disabled={isSubmitting || createMutation.isPending}
+            disabled={isSubmitting || createMutation.isPending || serviceTypesLoading || serviceTypesError || serviceTypes.length === 0}
             className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110 disabled:opacity-50"
           >
             {isSubmitting || createMutation.isPending ? '…' : t('saveShift')}

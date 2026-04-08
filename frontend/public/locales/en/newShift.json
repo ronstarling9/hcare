@@ -8,7 +8,6 @@
   "labelCaregiver": "Caregiver (optional)",
   "selectClient": "Select client…",
   "selectServiceType": "Select service type…",
-  "serviceTypePcs": "PCS — Personal Care Services",
   "loadingServiceTypes": "Loading service types…",
   "noServiceTypesOption": "No service types — configure in Settings",
   "noServiceTypesHint": "No service types have been added for your agency.",
