@@ -9,12 +9,15 @@
   "selectClient": "Select client…",
   "selectServiceType": "Select service type…",
   "serviceTypePcs": "PCS — Personal Care Services",
+  "loadingServiceTypes": "Loading service types…",
+  "noServiceTypesOption": "No service types — configure in Settings",
+  "noServiceTypesHint": "No service types have been added for your agency.",
+  "serviceTypesLoadError": "Failed to load service types",
+  "serviceTypesLoadErrorRetry": "Could not load service types. Please close and reopen the form to retry.",
   "caregiverUnassigned": "Leave unassigned (broadcast after)",
-  "caregiverPhaseNote": "Phase 4 will populate this list from the API.",
   "validationRequired": "This field is required",
   "validationClientRequired": "Client is required",
   "validationServiceTypeRequired": "Service type is required",
   "validationDateRequired": "Date is required",
-  "saveShift": "Save Shift",
-  "mockAlert": "Mock: shift for client {{clientId}} on {{date}} created.\n\nPhase 4 will wire this to POST /shifts."
+  "saveShift": "Save Shift"
 }
