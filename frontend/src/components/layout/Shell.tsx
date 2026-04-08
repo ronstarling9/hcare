@@ -5,11 +5,13 @@ import { SlidePanel } from '../panel/SlidePanel'
 import { usePanelStore } from '../../store/panelStore'
 import { ShiftDetailPanel } from '../schedule/ShiftDetailPanel'
 import { NewShiftPanel } from '../schedule/NewShiftPanel'
+import { NewClientPanel } from '../clients/NewClientPanel'
 import { ClientDetailPanel } from '../clients/ClientDetailPanel'
 import { CaregiverDetailPanel } from '../caregivers/CaregiverDetailPanel'
+import { Toast } from '../common/Toast'
 
 function PanelContent() {
-  const { type, selectedId, prefill, backLabel } = usePanelStore()
+  const { type, selectedId, prefill, backLabel, initialTab } = usePanelStore()
 
   if (type === 'shift' && selectedId) {
     return <ShiftDetailPanel shiftId={selectedId} backLabel={backLabel} />
@@ -17,8 +19,11 @@ function PanelContent() {
   if (type === 'newShift') {
     return <NewShiftPanel prefill={prefill} backLabel={backLabel} />
   }
+  if (type === 'newClient') {
+    return <NewClientPanel backLabel={backLabel} />
+  }
   if (type === 'client' && selectedId) {
-    return <ClientDetailPanel clientId={selectedId} backLabel={backLabel} />
+    return <ClientDetailPanel clientId={selectedId} backLabel={backLabel} initialTab={initialTab} />
   }
   if (type === 'caregiver' && selectedId) {
     return <CaregiverDetailPanel caregiverId={selectedId} backLabel={backLabel} />
@@ -47,6 +52,7 @@ export function Shell() {
         <SlidePanel isOpen={open} onClose={closePanel}>
           <PanelContent />
         </SlidePanel>
+        <Toast />
       </div>
     </div>
   )

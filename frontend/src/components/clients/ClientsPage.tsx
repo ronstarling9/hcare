@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useClients } from '../../hooks/useClients'
 import { ClientsTable } from './ClientsTable'
+import { usePanelStore } from '../../store/panelStore'
 
 export function ClientsPage() {
   const { t } = useTranslation('clients')
@@ -9,6 +10,7 @@ export function ClientsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const { clients, isLoading, isError, totalPages, totalElements } = useClients(page, 20)
+  const { openPanel } = usePanelStore()
 
   if (isLoading && clients.length === 0) {
     return (
@@ -43,7 +45,7 @@ export function ClientsPage() {
         <button
           type="button"
           className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-          onClick={() => alert(t('addClientAlert'))}
+          onClick={() => openPanel('newClient', undefined, { backLabel: t('backLabel') })}
         >
           {t('addClient')}
         </button>
