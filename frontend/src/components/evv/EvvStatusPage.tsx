@@ -70,6 +70,19 @@ function EvvRow({
       </td>
       <td className="px-4 py-3">
         <EvvStatusBadge status={row.evvStatus} />
+        {row.shiftStatus && (
+          <span
+            className={`inline-block text-xs px-1.5 py-0.5 rounded mt-1 font-medium ${
+              row.shiftStatus === 'CANCELLED'
+                ? 'bg-dark-mid text-text-secondary'
+                : row.shiftStatus === 'MISSED'
+                  ? 'bg-red-100 text-red-600'
+                  : 'text-text-muted'
+            }`}
+          >
+            {row.shiftStatus}
+          </span>
+        )}
         {row.evvStatusReason && (
           <p className="text-xs mt-0.5 text-text-muted">
             {row.evvStatusReason}

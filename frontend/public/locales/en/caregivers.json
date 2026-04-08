@@ -25,6 +25,8 @@
   "credExpiringSoon": "Expiring soon",
   "credVerified": "Verified",
   "credUnverified": "Unverified",
+  "credVerify": "Verify",
+  "credVerifyError": "Failed to verify. Please try again.",
   "backgroundPhaseNote": "Background checks — Phase 7 wires to real API.",
   "availabilityPhaseNote": "Availability — Phase 7 wires to real API.",
   "shiftHistoryPhaseNote": "Shift history — Phase 7 wires to real API.",

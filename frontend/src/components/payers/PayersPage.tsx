@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { usePayers } from '../../hooks/usePayers'
+import { PayerAuthorizationsModal } from './PayerAuthorizationsModal'
 import type { PayerResponse } from '../../types/api'
 
 const PAYER_TYPE_KEYS: Record<string, string> = {
@@ -11,13 +12,25 @@ const PAYER_TYPE_KEYS: Record<string, string> = {
   MEDICARE: 'typeMedicare',
 }
 
-function PayerRow({ payer, t }: { payer: PayerResponse; t: (key: string) => string }) {
+function PayerRow({
+  payer,
+  t,
+  onSelect,
+}: {
+  payer: PayerResponse
+  t: (key: string) => string
+  onSelect: (payer: PayerResponse) => void
+}) {
   const typeLabel = PAYER_TYPE_KEYS[payer.payerType]
     ? t(PAYER_TYPE_KEYS[payer.payerType])
     : payer.payerType
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 bg-white border border-border rounded">
+    <button
+      type="button"
+      onClick={() => onSelect(payer)}
+      className="w-full text-left flex items-center justify-between px-4 py-3 bg-white border border-border rounded hover:bg-surface transition-colors cursor-pointer"
+    >
       <div>
         <p className="text-sm font-medium text-dark">
           {payer.name}
@@ -28,7 +41,7 @@ function PayerRow({ payer, t }: { payer: PayerResponse; t: (key: string) => stri
           {payer.state}
         </p>
       </div>
-      <div className="text-right">
+      <div className="flex items-center gap-2">
         {payer.evvAggregator ? (
           <span className="inline-block text-xs px-2 py-0.5 rounded bg-surface text-text-secondary border border-border">
             {payer.evvAggregator}
@@ -36,8 +49,21 @@ function PayerRow({ payer, t }: { payer: PayerResponse; t: (key: string) => stri
         ) : (
           <span className="text-xs text-text-muted">No EVV aggregator</span>
         )}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-4 w-4 text-text-muted flex-shrink-0"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fillRule="evenodd"
+            d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+            clipRule="evenodd"
+          />
+        </svg>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -45,6 +71,7 @@ export function PayersPage() {
   const { t } = useTranslation('payers')
   const [page, setPage] = useState(0)
   const { payers, isLoading, isError, totalPages, totalElements } = usePayers(page, 20)
+  const [selectedPayer, setSelectedPayer] = useState<PayerResponse | null>(null)
 
   if (isLoading) {
     return (
@@ -89,7 +116,7 @@ export function PayersPage() {
         ) : (
           <div className="space-y-2">
             {payers.map((payer) => (
-              <PayerRow key={payer.id} payer={payer} t={t} />
+              <PayerRow key={payer.id} payer={payer} t={t} onSelect={setSelectedPayer} />
             ))}
           </div>
         )}
@@ -117,6 +144,13 @@ export function PayersPage() {
           </div>
         )}
       </div>
+      {selectedPayer && (
+        <PayerAuthorizationsModal
+          payerId={selectedPayer.id}
+          payerName={selectedPayer.name}
+          onClose={() => setSelectedPayer(null)}
+        />
+      )}
     </div>
   )
 }

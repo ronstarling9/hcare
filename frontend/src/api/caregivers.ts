@@ -64,3 +64,10 @@ export async function listShiftHistory(
   )
   return response.data
 }
+
+export async function verifyCredential(
+  caregiverId: string,
+  credentialId: string,
+): Promise<void> {
+  await apiClient.post(`/caregivers/${caregiverId}/credentials/${credentialId}/verify`)
+}

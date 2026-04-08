@@ -120,7 +120,7 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
               [t('fieldAddress'), client.address ?? tCommon('noDash')],
               [t('fieldServiceState'), client.serviceState ?? tCommon('noDash')],
               [t('fieldStatus'), client.status],
-              [t('fieldPreferredLanguage'), client.preferredLanguages ?? tCommon('noDash')],
+              [t('fieldPreferredLanguage'), client.preferredLanguages?.join(', ') ?? tCommon('noDash')],
               [t('fieldNoPetCaregiver'), client.noPetCaregiver ? tCommon('yes') : tCommon('no')],
             ].map(([label, value]) => (
               <div key={label}>

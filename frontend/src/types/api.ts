@@ -129,7 +129,7 @@ export interface ClientResponse {
   medicaidId: string | null
   serviceState: string | null
   preferredCaregiverGender: string | null
-  preferredLanguages: string | null
+  preferredLanguages: string[] | null
   noPetCaregiver: boolean
   status: ClientStatus
   createdAt: string
@@ -174,6 +174,7 @@ export interface CredentialResponse {
   expiryDate: string | null
   verified: boolean
   verifiedBy: string | null
+  verifiedAt: string | null
   createdAt: string
 }
 
@@ -247,6 +248,7 @@ export interface EvvHistoryRow {
   scheduledEnd: string
   evvStatus: EvvComplianceStatus
   evvStatusReason: string | null
+  shiftStatus: string | null
   timeIn: string | null
   timeOut: string | null
   verificationMethod: VerificationMethod | null

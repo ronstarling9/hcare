@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listCaregivers,
   getCaregiver,
   listCredentials,
   listBackgroundChecks,
   listShiftHistory,
+  verifyCredential,
 } from '../api/caregivers'
 import type { CaregiverResponse } from '../types/api'
 import { useMemo } from 'react'
@@ -89,5 +90,15 @@ export function useCaregiverShiftHistory(caregiverId: string | null, page = 0) {
     queryFn: () => listShiftHistory(caregiverId!, page, 20),
     enabled: Boolean(caregiverId),
     staleTime: 60_000,
+  })
+}
+
+export function useVerifyCredential(caregiverId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (credentialId: string) => verifyCredential(caregiverId, credentialId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['caregiver-credentials', caregiverId] })
+    },
   })
 }

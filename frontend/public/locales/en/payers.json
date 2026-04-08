@@ -17,5 +17,12 @@
   "errorLoad": "Failed to load payers.",
   "prev": "Prev",
   "next": "Next",
-  "pageOf": "Page {{page}} of {{total}}"
+  "pageOf": "Page {{page}} of {{total}}",
+  "authModal": {
+    "close": "Close authorizations",
+    "totalCount": "{{count}} authorization(s)",
+    "loading": "Loading authorizations…",
+    "error": "Failed to load authorizations.",
+    "empty": "No authorizations found for this payer."
+  }
 }

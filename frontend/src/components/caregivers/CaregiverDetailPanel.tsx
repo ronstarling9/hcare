@@ -7,7 +7,9 @@ import {
   useCaregiverCredentials,
   useCaregiverBackgroundChecks,
   useCaregiverShiftHistory,
+  useVerifyCredential,
 } from '../../hooks/useCaregivers'
+import { useAuthStore } from '../../store/authStore'
 import type { CredentialResponse, BackgroundCheckResponse } from '../../types/api'
 
 type Tab = 'overview' | 'credentials' | 'backgroundChecks' | 'shiftHistory'
@@ -17,7 +19,16 @@ interface CaregiverDetailPanelProps {
   backLabel: string
 }
 
-function CredentialRow({ cred, locale }: { cred: CredentialResponse; locale: string }) {
+interface CredentialRowProps {
+  cred: CredentialResponse
+  locale: string
+  isAdmin: boolean
+  onVerify: (credentialId: string) => void
+  isVerifying: boolean
+  verifyError: boolean
+}
+
+function CredentialRow({ cred, locale, isAdmin, onVerify, isVerifying, verifyError }: CredentialRowProps) {
   const { t } = useTranslation('caregivers')
   const today = new Date()
   // Use T12:00:00 anchor to avoid UTC-midnight off-by-one in negative-offset timezones
@@ -44,17 +55,32 @@ function CredentialRow({ cred, locale }: { cred: CredentialResponse; locale: str
         <p className="text-[11px] text-text-secondary">
           {cred.verified ? t('credVerified') : t('credUnverified')}
         </p>
-      </div>
-      <div className="text-right">
-        {expiry ? (
-          <p className={`text-[11px] font-semibold ${expiryColorClass}`}>
-            {daysUntilExpiry !== null && daysUntilExpiry <= 0
-              ? 'EXPIRED'
-              : formatLocalDate(cred.expiryDate!, locale)}
-          </p>
-        ) : (
-          <p className="text-[11px] text-text-muted">No expiry</p>
+        {verifyError && (
+          <p className="text-[11px] text-red-600 mt-0.5">{t('credVerifyError')}</p>
         )}
+      </div>
+      <div className="flex items-center gap-3">
+        {!cred.verified && isAdmin && (
+          <button
+            type="button"
+            disabled={isVerifying}
+            className="text-[12px] font-semibold text-blue disabled:opacity-50"
+            onClick={() => onVerify(cred.id)}
+          >
+            {isVerifying ? '…' : t('credVerify')}
+          </button>
+        )}
+        <div className="text-right">
+          {expiry ? (
+            <p className={`text-[11px] font-semibold ${expiryColorClass}`}>
+              {daysUntilExpiry !== null && daysUntilExpiry <= 0
+                ? 'EXPIRED'
+                : formatLocalDate(cred.expiryDate!, locale)}
+            </p>
+          ) : (
+            <p className="text-[11px] text-text-muted">No expiry</p>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -94,10 +120,14 @@ export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetail
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [historyPage, setHistoryPage] = useState(0)
 
+  const role = useAuthStore((s) => s.role)
+  const isAdmin = role === 'ADMIN'
+
   const { data: caregiver, isLoading, isError } = useCaregiverDetail(caregiverId)
   const { data: credsPage } = useCaregiverCredentials(caregiverId)
   const { data: bgChecksPage } = useCaregiverBackgroundChecks(caregiverId)
   const { data: shiftHistoryPage } = useCaregiverShiftHistory(caregiverId, historyPage)
+  const verifyMutation = useVerifyCredential(caregiverId)
 
   const credentials = credsPage?.content ?? []
   const bgChecks = bgChecksPage?.content ?? []
@@ -206,7 +236,15 @@ export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetail
               <p className="text-[13px] text-text-secondary">{t('noCredentials')}</p>
             ) : (
               credentials.map((cred) => (
-                <CredentialRow key={cred.id} cred={cred} locale={i18n.language} />
+                <CredentialRow
+                  key={cred.id}
+                  cred={cred}
+                  locale={i18n.language}
+                  isAdmin={isAdmin}
+                  onVerify={(credentialId) => verifyMutation.mutate(credentialId)}
+                  isVerifying={verifyMutation.isPending && verifyMutation.variables === cred.id}
+                  verifyError={verifyMutation.isError && verifyMutation.variables === cred.id}
+                />
               ))
             )}
           </div>
