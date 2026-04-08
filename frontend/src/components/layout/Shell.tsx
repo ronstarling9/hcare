@@ -8,6 +8,7 @@ import { NewShiftPanel } from '../schedule/NewShiftPanel'
 import { NewClientPanel } from '../clients/NewClientPanel'
 import { ClientDetailPanel } from '../clients/ClientDetailPanel'
 import { CaregiverDetailPanel } from '../caregivers/CaregiverDetailPanel'
+import { NewCaregiverPanel } from '../caregivers/NewCaregiverPanel'
 import { Toast } from '../common/Toast'
 
 function PanelContent() {
@@ -25,8 +26,11 @@ function PanelContent() {
   if (type === 'client' && selectedId) {
     return <ClientDetailPanel clientId={selectedId} backLabel={backLabel} initialTab={initialTab} />
   }
+  if (type === 'newCaregiver') {
+    return <NewCaregiverPanel backLabel={backLabel} />
+  }
   if (type === 'caregiver' && selectedId) {
-    return <CaregiverDetailPanel caregiverId={selectedId} backLabel={backLabel} />
+    return <CaregiverDetailPanel caregiverId={selectedId} backLabel={backLabel} initialTab={initialTab} />
   }
   if (type === 'payer') {
     return (

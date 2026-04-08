@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CaregiversTable } from './CaregiversTable'
 import { useCaregivers } from '../../hooks/useCaregivers'
+import { usePanelStore } from '../../store/panelStore'
 
 export function CaregiversPage() {
   const { t } = useTranslation('caregivers')
@@ -9,6 +10,7 @@ export function CaregiversPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const { caregivers, isLoading, isError, totalPages, totalElements } = useCaregivers(page, 20)
+  const { openPanel } = usePanelStore()
 
   if (isLoading && caregivers.length === 0) {
     return (
@@ -46,7 +48,7 @@ export function CaregiversPage() {
         <button
           type="button"
           className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-          onClick={() => alert(t('addCaregiverAlert'))}
+          onClick={() => openPanel('newCaregiver', undefined, { backLabel: t('backLabel') })}
         >
           {t('addCaregiver')}
         </button>
