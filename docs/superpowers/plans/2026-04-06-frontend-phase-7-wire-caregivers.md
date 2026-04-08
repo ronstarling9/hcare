@@ -458,6 +458,7 @@ interface CaregiverDetailPanelProps {
 }
 
 function CredentialRow({ cred, locale }: { cred: CredentialResponse; locale: string }) {
+  const { t } = useTranslation('caregivers')
   const today = new Date()
   // Use T12:00:00 anchor to avoid UTC-midnight off-by-one in negative-offset timezones
   const expiry = cred.expiryDate ? new Date(`${cred.expiryDate}T12:00:00`) : null
@@ -481,7 +482,7 @@ function CredentialRow({ cred, locale }: { cred: CredentialResponse; locale: str
           {cred.credentialType.replace(/_/g, ' ')}
         </p>
         <p className="text-[11px] text-text-secondary">
-          {cred.verified ? 'Verified' : 'Unverified'}
+          {cred.verified ? t('credVerified') : t('credUnverified')}
         </p>
       </div>
       <div className="text-right">
@@ -500,19 +501,19 @@ function CredentialRow({ cred, locale }: { cred: CredentialResponse; locale: str
 }
 
 function BackgroundCheckRow({ bc, locale }: { bc: BackgroundCheckResponse; locale: string }) {
-  const isPass = bc.result === 'PASS'
+  const badgeClass: Record<BackgroundCheckResponse['result'], string> = {
+    PASS:    'bg-green-50 text-green-600',
+    FAIL:    'bg-red-50 text-red-600',
+    EXPIRED: 'bg-red-50 text-red-600',
+    PENDING: 'bg-yellow-50 text-yellow-700',
+  }
   return (
     <div className="border border-border rounded px-3 py-2 bg-white">
       <div className="flex items-center justify-between">
         <p className="text-[13px] font-medium text-dark">
           {bc.checkType.replace(/_/g, ' ')}
         </p>
-        <span
-          className={[
-            'text-[11px] font-semibold px-2 py-0.5 rounded',
-            isPass ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600',
-          ].join(' ')}
-        >
+        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${badgeClass[bc.result]}`}>
           {bc.result}
         </span>
       </div>
