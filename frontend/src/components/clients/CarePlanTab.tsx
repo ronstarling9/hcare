@@ -47,7 +47,7 @@ function AssistanceBadge({ level }: { level: AssistanceLevel }) {
   const config: Record<AssistanceLevel, { bg: string; text: string; labelKey: string }> = {
     MAXIMUM_ASSIST: { bg: 'bg-text-secondary', text: 'text-white', labelKey: 'adlTaskAssistanceBadgeMaxAssist' },
     DEPENDENT:      { bg: 'bg-text-secondary', text: 'text-white', labelKey: 'adlTaskAssistanceBadgeDependent' },
-    MODERATE_ASSIST:{ bg: 'bg-[#ca8a04]',      text: 'text-white', labelKey: 'adlTaskAssistanceBadgeModerate' },
+    MODERATE_ASSIST:{ bg: 'bg-amber-600',       text: 'text-white', labelKey: 'adlTaskAssistanceBadgeModerate' },
     MINIMAL_ASSIST: { bg: 'bg-blue',            text: 'text-white', labelKey: 'adlTaskAssistanceBadgeMinimal' },
     SUPERVISION:    { bg: 'bg-border',          text: 'text-text-primary', labelKey: 'adlTaskAssistanceBadgeSupervision' },
     INDEPENDENT:    { bg: 'bg-border',          text: 'text-text-primary', labelKey: 'adlTaskAssistanceBadgeIndependent' },
@@ -132,6 +132,7 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
 
   const handleDiscard = () => {
     setSetupMode(false)
+    setIsNewVersion(false)
     setPendingTasks([])
     setPendingGoals([])
     setActivateError(false)
@@ -164,6 +165,7 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
       await activateCarePlanApi(clientId, plan.id)
       queryClient.invalidateQueries({ queryKey: ['care-plan-active', clientId] })
       setSetupMode(false)
+      setIsNewVersion(false)
       setPendingTasks([])
       setPendingGoals([])
       setShowLiveMessage(true)
