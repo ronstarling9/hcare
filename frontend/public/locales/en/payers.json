@@ -10,5 +10,12 @@
   "typePrivatePay": "Private Pay",
   "typeLtcInsurance": "LTC Insurance",
   "typeVa": "VA",
-  "typeMedicare": "Medicare"
+  "typeMedicare": "Medicare",
+  "totalCount": "{{count}} total",
+  "empty": "No payers configured yet.",
+  "loading": "Loading payers…",
+  "errorLoad": "Failed to load payers.",
+  "prev": "Prev",
+  "next": "Next",
+  "pageOf": "Page {{page}} of {{total}}"
 }

@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useEvvHistory } from '../../hooks/useEvvHistory'
+import { usePanelStore } from '../../store/panelStore'
 import type { EvvComplianceStatus, EvvHistoryRow } from '../../types/api'
 
 const EVV_COLORS: Record<EvvComplianceStatus, string> = {
@@ -26,15 +28,26 @@ function EvvStatusBadge({ status }: { status: EvvComplianceStatus }) {
   )
 }
 
-function EvvRow({ row }: { row: EvvHistoryRow }) {
+function EvvRow({
+  row,
+  onClick,
+  unassignedLabel,
+}: {
+  row: EvvHistoryRow
+  onClick?: () => void
+  unassignedLabel: string
+}) {
   const clientName = `${row.clientFirstName} ${row.clientLastName}`
   const caregiverName =
     row.caregiverFirstName
       ? `${row.caregiverFirstName} ${row.caregiverLastName ?? ''}`
-      : 'Unassigned'
+      : unassignedLabel
 
   return (
-    <tr className="border-b border-border">
+    <tr
+      className="border-b border-border cursor-pointer hover:bg-surface"
+      onClick={onClick}
+    >
       <td className="px-4 py-3 text-sm text-dark">
         {clientName}
       </td>
@@ -101,6 +114,9 @@ function parseDateInputAsLocal(value: string): Date {
 }
 
 export function EvvStatusPage() {
+  const { t } = useTranslation('evvStatus')
+  const { openPanel } = usePanelStore()
+
   // Default: current month
   const today = new Date()
   const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -154,6 +170,16 @@ export function EvvStatusPage() {
   const toDateInputValue = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+  const columnHeaders = [
+    t('colClient'),
+    t('colCaregiver'),
+    t('colService'),
+    t('colDate'),
+    t('colEvvStatus'),
+    t('colInOut'),
+    t('colMethod'),
+  ]
+
   return (
     <div className="flex flex-col h-full bg-surface">
       {/* Header */}
@@ -161,17 +187,17 @@ export function EvvStatusPage() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-lg font-semibold text-dark">
-              EVV Compliance History
+              {t('pageTitle')}
             </h1>
             <p className="text-xs mt-0.5 text-text-muted">
-              {totalElements} visits in range
+              {t('visitsInRange', { count: totalElements })}
             </p>
           </div>
 
           {/* Date range pickers */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-text-secondary">From</label>
+              <label className="text-xs text-text-secondary">{t('from')}</label>
               <input
                 type="date"
                 value={toDateInputValue(rangeStart)}
@@ -180,7 +206,7 @@ export function EvvStatusPage() {
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs text-text-secondary">To</label>
+              <label className="text-xs text-text-secondary">{t('to')}</label>
               <input
                 type="date"
                 value={toDateInputValue(rangeEnd)}
@@ -228,39 +254,42 @@ export function EvvStatusPage() {
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-32">
-            <span className="text-sm text-text-muted">Loading EVV history…</span>
+            <span className="text-sm text-text-muted">{t('loading')}</span>
           </div>
         ) : isError ? (
           <div className="flex items-center justify-center h-32">
-            <p className="text-sm text-red-600">Failed to load EVV history.</p>
+            <p className="text-sm text-red-600">{t('errorLoad')}</p>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-32">
             <p className="text-sm text-text-muted">
               {rows.length > 0 && statusFilter !== 'ALL'
-                ? `No ${statusFilter} visits on this page.`
-                : 'No visits found for this range.'}
+                ? t('noStatusVisits', { status: statusFilter })
+                : t('noVisits')}
             </p>
           </div>
         ) : (
           <table className="w-full text-left">
             <thead className="bg-surface border-b border-border">
               <tr>
-                {['Client', 'Caregiver', 'Service', 'Date / Start', 'EVV Status', 'In / Out', 'Method'].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-xs font-semibold uppercase text-text-muted"
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
+                {columnHeaders.map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-xs font-semibold uppercase text-text-muted"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="bg-white">
               {filteredRows.map((row) => (
-                <EvvRow key={row.shiftId} row={row} />
+                <EvvRow
+                  key={row.shiftId}
+                  row={row}
+                  unassignedLabel={t('unassigned')}
+                  onClick={() => openPanel('shift', row.shiftId, { backLabel: t('backLabel') })}
+                />
               ))}
             </tbody>
           </table>
@@ -275,17 +304,17 @@ export function EvvStatusPage() {
             disabled={page === 0}
             className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
           >
-            Prev
+            {t('prev')}
           </button>
           <span className="text-sm text-text-secondary">
-            Page {page + 1} of {totalPages}
+            {t('pageOf', { page: page + 1, total: totalPages })}
           </span>
           <button
             onClick={() => { setPage((p) => Math.min(totalPages - 1, p + 1)); setStatusFilter('ALL') }}
             disabled={page === totalPages - 1}
             className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
           >
-            Next
+            {t('next')}
           </button>
         </div>
       )}
