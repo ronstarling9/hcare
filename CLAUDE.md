@@ -18,10 +18,13 @@ Primary packages under `com.hcare`:
 - `domain/` — JPA entities and repositories
 - `api/v1/` — REST controllers and DTOs
 - `multitenancy/` — Hibernate `@Filter` tenant isolation
+- `scheduling/` — rolling 8-week shift generation (`ShiftGenerationService`, `ShiftGenerationScheduler`)
 - `scoring/` — AI caregiver match engine (isolated module)
 - `evv/` — EVV compliance rules and aggregator connectors
 - `audit/` — `PhiAuditLog` append-only PHI access log
 - `security/` — JWT provider, auth filter, `UserPrincipal`
+- `config/` — `SecurityConfig`, `WebMvcConfig`, `SchedulingConfig`, `DevDataSeeder`
+- `exception/` — `GlobalExceptionHandler` (`@ControllerAdvice`), `ErrorResponse`
 
 ---
 
@@ -69,6 +72,17 @@ Known P2 gaps: `cancelRate` is a lifetime running total, not a true 90-day rolli
 
 ---
 
+## Dev Environment Scripts
+
+Root-level convenience scripts start/stop both services together:
+```bash
+./dev-start.sh   # starts backend + frontend concurrently, waits for readiness, opens Chrome
+./dev-stop.sh    # kills both processes using the saved PID file
+```
+Logs land at `/tmp/hcare-backend.log` and `/tmp/hcare-frontend.log`.
+
+---
+
 ## Frontend (React)
 
 ### Common Commands
@@ -112,6 +126,9 @@ Always use the project's custom tokens instead of raw hex values:
 - Namespaces live in `frontend/public/locales/en/<namespace>.json`.
 - Register new namespaces in the `ns` array in `frontend/src/i18n.ts`.
 - Default namespace is `common`; use `useTranslation('<ns>')` to access others.
+
+### Test Mock Data
+`frontend/src/mock/data.ts` — typed mock fixtures with fixed UUIDs that match the seeded dev data. Use these constants in Vitest tests instead of inventing UUIDs.
 
 ### Dev Credentials (seeded by `DevDataSeeder.java`, `dev` profile only)
 Three agencies are seeded. Credentials follow the pattern:
