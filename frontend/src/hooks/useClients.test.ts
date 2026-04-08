@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MockAdapter from 'axios-mock-adapter'
 import { apiClient } from '../api/client'
-import { useAllClients, useClientDetail } from './useClients'
+import { useAllClients, useClientDetail, useCreateClient } from './useClients'
 import type { PageResponse, ClientResponse } from '../types/api'
 import React from 'react'
 
@@ -63,5 +63,35 @@ describe('useClientDetail', () => {
   it('does not fetch when id is null', () => {
     const { result } = renderHook(() => useClientDetail(null), { wrapper: makeWrapper() })
     expect(result.current.fetchStatus).toBe('idle')
+  })
+})
+
+describe('useCreateClient', () => {
+  const mockAxios = new MockAdapter(apiClient)
+  afterEach(() => mockAxios.reset())
+
+  it('calls POST /clients and invalidates the clients query key prefix on success', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children)
+
+    mockAxios.onPost('/clients').reply(201, {
+      id: '00000000-0000-0000-0000-000000000099',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      dateOfBirth: '1980-01-15',
+      status: 'ACTIVE',
+    })
+
+    const { result } = renderHook(() => useCreateClient(), { wrapper })
+
+    result.current.mutate({ firstName: 'Jane', lastName: 'Doe', dateOfBirth: '1980-01-15' })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['clients'] })
   })
 })

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { listClients, getClient, listAuthorizations } from '../api/clients'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { listClients, getClient, listAuthorizations, createClient } from '../api/clients'
 import type { ClientResponse } from '../types/api'
 
 /**
@@ -52,5 +52,15 @@ export function useClientAuthorizations(clientId: string | null) {
     queryKey: ['client-authorizations', clientId],
     queryFn: () => listAuthorizations(clientId!, 0, 50),
     enabled: Boolean(clientId),
+  })
+}
+
+export function useCreateClient() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: createClient,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+    },
   })
 }
