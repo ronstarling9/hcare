@@ -83,7 +83,7 @@ Header
 | address | `text` | Optional; single line is sufficient for intake |
 | serviceState | `select` | 50 US state abbreviations + empty default |
 | medicaidId | `text` | Optional; `autocomplete="off"` — PHI-adjacent |
-| preferredCaregiverGender | `select` | Options: `""` (no preference), `FEMALE`, `MALE` |
+| preferredCaregiverGender | `select` | Canonical values: `"FEMALE"`, `"MALE"`. When "No preference" is selected, omit the field (send `undefined`) — do not send `""`. The backend guard `if (req.preferredCaregiverGender() != null)` means `""` would be written to the column; `null`/omitted means the field is left as stored. |
 | preferredLanguages | `text` | Comma-separated; split on `,` and trimmed before POST |
 | noPetCaregiver | `checkbox` | Defaults unchecked (false) |
 
@@ -106,9 +106,9 @@ Header
 | `src/types/api.ts` | Add `CreateClientRequest` interface |
 | `src/api/clients.ts` | Add `createClient(req: CreateClientRequest)` |
 | `src/hooks/useClients.ts` | Add `useCreateClient()` mutation |
-| `src/store/panelStore.ts` | Add `'newClient'` to `PanelType` union; add `initialTab?: string` to `PanelPrefill` |
-| `src/components/layout/Shell.tsx` | Register `newClient` in `PanelContent`; render `<Toast />`; pass `initialTab` to `ClientDetailPanel` |
-| `src/components/clients/ClientDetailPanel.tsx` | Accept optional `initialTab` prop; default to `'overview'` |
+| `src/store/panelStore.ts` | Add `'newClient'` to `PanelType` union; add `initialTab?: string` as top-level `PanelState` field (not inside `PanelPrefill`) |
+| `src/components/layout/Shell.tsx` | Register `newClient` in `PanelContent`; render `<Toast />`; pass `initialTab` from `PanelState` as direct prop to `ClientDetailPanel` |
+| `src/components/clients/ClientDetailPanel.tsx` | Accept optional `initialTab?: string` prop; pass as default value to `useState<Tab>('overview')` |
 | `src/components/clients/ClientsPage.tsx` | Replace `alert()` with `openPanel('newClient', undefined, { backLabel: t('backLabel') })` |
 | `public/locales/en/clients.json` | Add keys for new panel (see i18n section below) |
 
@@ -155,6 +155,8 @@ preferredLanguages: values.preferredLanguages
 
 The backend `CreateClientRequest.preferredLanguages` is a raw `String` that gets written directly to the `client.preferred_languages` column (default `"[]"`). `ClientResponse.from()` deserializes it back to `List<String>` using Jackson. The frontend must serialize to a JSON array string (e.g. `'["English","Spanish"]'`) — the backend does no comma-to-JSON conversion.
 
+**Case normalization:** `LocalScoringService` uses language lists for caregiver–client preference matching. To avoid silent mismatches (e.g. `"english"` vs `"English"`), title-case each token before serializing: `token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()`. This keeps stored values consistent with how languages are typically entered.
+
 ### Post-save navigation
 
 **Save & Add Authorization:**
@@ -163,11 +165,13 @@ const client = await createMutation.mutateAsync(payload)
 closePanel()
 openPanel('client', client.id, {
   backLabel: t('backLabel'),
-  prefill: { initialTab: 'authorizations' },
+  initialTab: 'authorizations',
 })
 ```
 
-`ClientDetailPanel` reads `initialTab` from `prefill` and passes it as the default `useState` value for `activeTab`.
+`initialTab` is a top-level field on `PanelState` (not inside `PanelPrefill`). `Shell.tsx` passes it as a direct prop to `ClientDetailPanel`, which uses it as the default value for `useState<Tab>`.
+
+> **React 18 batching note:** `closePanel()` and `openPanel()` are synchronous Zustand updates. React 18 automatic batching will coalesce them into a single render, so the `SlidePanel` never fully closes before reopening — it swaps content while remaining open (no blank-panel flash). This is intentional. If a close animation before reopening is ever desired, wrap `openPanel()` in `setTimeout(..., 300)` to allow the CSS transition to complete.
 
 **Save & Close:**
 ```ts
@@ -180,7 +184,9 @@ toastStore.show({
 closePanel()
 ```
 
-The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel('client', clientId, { prefill: { initialTab: 'authorizations' }, backLabel: t('backLabel') })`.
+The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel('client', clientId, { initialTab: 'authorizations', backLabel: t('backLabel') })`.
+
+**Timer lifecycle:** The `setTimeout` (6 000 ms) lives in `Toast.tsx`'s `useEffect`, with `visible` as the dependency. The effect's cleanup function calls `clearTimeout` — this prevents a stale timer from dismissing a subsequent toast when the user manually dismisses the first one early and triggers a second save quickly afterward.
 
 ---
 
@@ -213,7 +219,6 @@ Minimal — no queue, no stacking. One toast at a time is sufficient for this us
 "fieldFirstName": "First Name",
 "fieldLastName": "Last Name",
 "fieldDateOfBirth": "Date of Birth",
-"fieldPhone": "Phone",
 "fieldAddress": "Address",
 "fieldServiceState": "Service State",
 "fieldSelectState": "Select state…",
@@ -233,6 +238,8 @@ Minimal — no queue, no stacking. One toast at a time is sufficient for this us
 "saveCloseToast": "Client saved. Add an authorization to enable scheduling.",
 "saveCloseToastLink": "Add Authorization"
 ```
+
+> `"fieldPhone"` already exists in `clients.json` and is reused — do not add it again.
 
 ---
 
@@ -263,6 +270,22 @@ All other fields are optional — no client-side validation beyond the required 
 | Save & Close path | `toastStore.show` called; `closePanel` called |
 
 Add a `useCreateClient` mutation test in `useClients.test.ts` confirming query invalidation on success.
+
+**`toastStore.test.ts`:**
+
+| Scenario | Assertion |
+|---|---|
+| `show()` sets `visible: true` | State reflects new message and clientId |
+| `dismiss()` sets `visible: false` | State resets |
+
+**`Toast.test.tsx`:**
+
+| Scenario | Assertion |
+|---|---|
+| Renders when `visible: true` | Message and link text in DOM |
+| Hidden when `visible: false` | Component not rendered |
+| Link click calls `openPanel` with correct args | `initialTab: 'authorizations'` passed |
+| Manual dismiss before 6 s clears timer | No second `dismiss()` call after timeout |
 
 ---
 
