@@ -58,7 +58,7 @@ Header
   [Phone]                                  ← type="tel"
   [Address]                                ← type="text", single line
   [Hire Date]                              ← type="date"
-  [☐ Has pet at home]                     ← type="checkbox"; informs client matching
+  [☐ Has pet at home]                     ← type="checkbox"; feeds AI scoring engine
 
 ── Footer (sticky, border-t) ─────────────
   [Save & Add Credentials]  [Save & Close]
@@ -105,7 +105,7 @@ The toastStore interface (defined in the Add Client spec) is fully generic: `{ t
 
 **Implementation dependencies:** The following shared changes must land in a single prerequisite PR before either Add Client or Add Caregiver is built:
 - `toastStore.ts` and `Toast.tsx` (new files)
-- `panelStore.ts` — `PanelType` union additions and `initialTab` in `PanelPrefill`
+- `panelStore.ts` — `PanelType` union additions and `initialTab` as top-level `PanelState` field
 - `Shell.tsx` — `<Toast />` rendering and `initialTab` forwarding
 
 ---
@@ -149,7 +149,11 @@ openPanel('caregiver', caregiver.id, {
 })
 ```
 
-`initialTab` is a top-level field on `PanelState` (not inside `PanelPrefill`), consistent with the Add Client spec. `Shell.tsx` passes it as a direct prop to `CaregiverDetailPanel`, which casts it and uses it as the `useState<Tab>` initial value. React 18 automatic batching coalesces `closePanel()` and `openPanel()` into a single render — no blank-panel flash.
+`initialTab` is a top-level field on `PanelState` (not inside `PanelPrefill`). `Shell.tsx` passes it as a direct prop to `CaregiverDetailPanel`, which casts it and uses it as the `useState<Tab>` initial value. `closePanel()` resets `initialTab` to `undefined` alongside the other fields.
+
+> **Credentials tab landing state:** A brand-new caregiver has no credentials. The tab renders its standard empty state ("No credentials on file." + "+ Add Credential" button). No additional prop or auto-open behavior is required — `CaregiverDetailPanel` is unchanged beyond accepting `initialTab`.
+
+> **React 18 batching note:** `closePanel()` and `openPanel()` are synchronous Zustand updates. React 18 automatic batching coalesces them into a single render — no blank-panel flash. If a close animation before reopening is ever desired, wrap `openPanel()` in `setTimeout(..., 300)` to allow the CSS transition to complete.
 
 **Save & Close:**
 ```ts
@@ -165,7 +169,7 @@ toastStore.show({
 closePanel()
 ```
 
-The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel('caregiver', caregiverId, { prefill: { initialTab: 'credentials' }, backLabel: t('backLabel') })`.
+The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel(panelType, targetId, { initialTab: panelTab, backLabel })` — all navigation params come from the store. `Toast.tsx` imports no i18n namespace and references no feature-specific constants.
 
 ---
 
@@ -179,9 +183,6 @@ The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismi
 "fieldFirstName": "First Name",
 "fieldLastName": "Last Name",
 "fieldEmail": "Email",
-"fieldPhone": "Phone",
-"fieldAddress": "Address",
-"fieldHireDate": "Hire Date",
 "validationFirstNameRequired": "First name is required",
 "validationLastNameRequired": "Last name is required",
 "validationEmailRequired": "Email is required",
@@ -191,6 +192,9 @@ The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismi
 "saveCloseToast": "Caregiver saved. Add credentials to enable scheduling.",
 "saveCloseToastLink": "Add Credentials"
 ```
+
+> `"fieldPhone"`, `"fieldAddress"`, `"fieldHireDate"`, and `"fieldHasPet"` already exist in `caregivers.json` and are reused — do not add them again.
+> `"backLabel"` also already exists in `caregivers.json` (`"← Caregivers"`) and is reused — do not add it again.
 
 ---
 
@@ -221,6 +225,8 @@ All other fields are optional — no client-side validation beyond the required 
 | Save & Close path | `toastStore.show` called; `closePanel` called |
 
 Add a `useCreateCaregiver` mutation test in `useCaregivers.test.ts` confirming query invalidation on success.
+
+**Shared infrastructure tests (`toastStore.test.ts` and `Toast.test.tsx`):** These are defined in the Add Client spec and cover the generic store and component fully. If Add Caregiver ships first, include those test files in this implementation. If Add Client ships first, they are already covered — do not duplicate.
 
 ---
 
