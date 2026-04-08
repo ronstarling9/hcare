@@ -130,13 +130,14 @@ Create `frontend/src/store/authStore.ts`:
 
 ```ts
 import { create } from 'zustand'
+import type { UserRole } from '../types/api'
 
 export interface AuthState {
   token: string | null
   userId: string | null
   agencyId: string | null
-  role: string | null
-  login: (token: string, userId: string, agencyId: string, role: string) => void
+  role: UserRole | null
+  login: (token: string, userId: string, agencyId: string, role: UserRole) => void
   logout: () => void
 }
 
@@ -159,12 +160,75 @@ cd frontend && git add src/store/authStore.ts
 git commit -m "feat: add Zustand authStore"
 ```
 
+- [ ] **Step 2.3: Write authStore unit tests**
+
+Create `frontend/src/store/authStore.test.ts`:
+
+```ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import { useAuthStore } from './authStore'
+
+describe('authStore', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ token: null, userId: null, agencyId: null, role: null })
+  })
+
+  it('initial state is all null', () => {
+    const state = useAuthStore.getState()
+    expect(state.token).toBeNull()
+    expect(state.userId).toBeNull()
+    expect(state.agencyId).toBeNull()
+    expect(state.role).toBeNull()
+  })
+
+  it('login sets all fields', () => {
+    useAuthStore.getState().login('tok', 'u1', 'a1', 'ADMIN')
+    const state = useAuthStore.getState()
+    expect(state.token).toBe('tok')
+    expect(state.userId).toBe('u1')
+    expect(state.agencyId).toBe('a1')
+    expect(state.role).toBe('ADMIN')
+  })
+
+  it('logout clears all fields', () => {
+    useAuthStore.getState().login('tok', 'u1', 'a1', 'SCHEDULER')
+    useAuthStore.getState().logout()
+    const state = useAuthStore.getState()
+    expect(state.token).toBeNull()
+    expect(state.role).toBeNull()
+  })
+})
+```
+
+- [ ] **Step 2.4: Run authStore tests**
+
+```bash
+cd frontend && npm test -- authStore --run
+```
+
+Expected: 3 tests pass.
+
+- [ ] **Step 2.5: Commit authStore tests**
+
+```bash
+cd frontend && git add src/store/authStore.test.ts
+git commit -m "test: add authStore unit tests"
+```
+
 ---
 
 ### Task 3: Create Axios API Client
 
 **Files:**
 - Create: `frontend/src/api/client.ts`
+
+- [ ] **Step 3.0: Install axios**
+
+```bash
+cd frontend && npm install axios
+git add package.json package-lock.json
+git commit -m "chore: add axios dependency"
+```
 
 - [ ] **Step 3.1: Create the Axios client**
 
@@ -454,6 +518,116 @@ export function LoginPage() {
 ```bash
 cd frontend && git add src/pages/LoginPage.tsx
 git commit -m "feat: add LoginPage with react-hook-form, i18n, and post-login redirect"
+```
+
+- [ ] **Step 6.3: Write LoginPage unit tests**
+
+Create `frontend/src/pages/LoginPage.test.tsx`:
+
+```tsx
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
+import { LoginPage } from './LoginPage'
+import * as authApi from '../api/auth'
+import { useAuthStore } from '../store/authStore'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      ({
+        appName: 'hcare',
+        tagline: 'Agency admin portal',
+        emailLabel: 'Email',
+        passwordLabel: 'Password',
+        signIn: 'Sign in',
+        signingIn: 'Signing in…',
+        emailRequired: 'Email is required',
+        emailInvalid: 'Enter a valid email address',
+        passwordRequired: 'Password is required',
+        invalidCredentials: 'Invalid email or password. Please try again.',
+      }[key] ?? key),
+  }),
+}))
+
+vi.mock('../api/auth')
+
+function renderLoginPage() {
+  return render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>
+  )
+}
+
+describe('LoginPage', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ token: null, userId: null, agencyId: null, role: null })
+    vi.clearAllMocks()
+  })
+
+  it('renders email and password fields and a submit button', () => {
+    renderLoginPage()
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
+  })
+
+  it('shows validation errors when submitted empty', async () => {
+    renderLoginPage()
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    expect(await screen.findByText(/email is required/i)).toBeInTheDocument()
+    expect(screen.getByText(/password is required/i)).toBeInTheDocument()
+  })
+
+  it('shows invalid email error for bad email format', async () => {
+    renderLoginPage()
+    await userEvent.type(screen.getByLabelText(/email/i), 'notanemail')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    expect(await screen.findByText(/valid email/i)).toBeInTheDocument()
+  })
+
+  it('calls loginApi and sets auth store on successful login', async () => {
+    vi.mocked(authApi.loginApi).mockResolvedValue({
+      token: 'tok',
+      userId: 'u1',
+      agencyId: 'a1',
+      role: 'ADMIN',
+    })
+    renderLoginPage()
+    await userEvent.type(screen.getByLabelText(/email/i), 'admin@test.com')
+    await userEvent.type(screen.getByLabelText(/password/i), 'password123')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => {
+      expect(useAuthStore.getState().token).toBe('tok')
+    })
+  })
+
+  it('shows server error message on login failure', async () => {
+    vi.mocked(authApi.loginApi).mockRejectedValue(new Error('401'))
+    renderLoginPage()
+    await userEvent.type(screen.getByLabelText(/email/i), 'admin@test.com')
+    await userEvent.type(screen.getByLabelText(/password/i), 'wrong')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    expect(await screen.findByText(/invalid email or password/i)).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 6.4: Run LoginPage tests**
+
+```bash
+cd frontend && npm test -- LoginPage --run
+```
+
+Expected: 5 tests pass.
+
+- [ ] **Step 6.5: Commit LoginPage tests**
+
+```bash
+cd frontend && git add src/pages/LoginPage.test.tsx
+git commit -m "test: add LoginPage unit tests"
 ```
 
 ---
