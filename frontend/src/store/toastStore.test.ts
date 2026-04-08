@@ -7,18 +7,18 @@ const INITIAL_STATE = {
   message: '',
   linkLabel: '',
   targetId: null,
-  panelType: '',
-  panelTab: '',
+  panelType: 'client' as const,   // zero value — matches TOAST_ZERO_PANEL_TYPE
+  initialTab: '',
   backLabel: '',
 }
 
 const SHOW_OPTS = {
-  message: 'Client saved.',
-  linkLabel: 'Add Authorization',
-  targetId: 'client-123',
-  panelType: 'client',
-  panelTab: 'authorizations',
-  backLabel: '← Clients',
+  message: 'Caregiver saved. Add credentials to enable scheduling.',
+  linkLabel: 'Add Credentials',
+  targetId: 'caregiver-123',
+  panelType: 'caregiver' as const,
+  initialTab: 'credentials',
+  backLabel: '← Caregivers',
 }
 
 describe('toastStore', () => {
@@ -31,12 +31,12 @@ describe('toastStore', () => {
     const s = useToastStore.getState()
     expect(s.visible).toBe(true)
     expect(s.showCount).toBe(1)
-    expect(s.message).toBe('Client saved.')
-    expect(s.linkLabel).toBe('Add Authorization')
-    expect(s.targetId).toBe('client-123')
-    expect(s.panelType).toBe('client')
-    expect(s.panelTab).toBe('authorizations')
-    expect(s.backLabel).toBe('← Clients')
+    expect(s.message).toBe('Caregiver saved. Add credentials to enable scheduling.')
+    expect(s.linkLabel).toBe('Add Credentials')
+    expect(s.targetId).toBe('caregiver-123')
+    expect(s.panelType).toBe('caregiver')
+    expect(s.initialTab).toBe('credentials')
+    expect(s.backLabel).toBe('← Caregivers')
   })
 
   it('calling show() twice increments showCount each time', () => {
@@ -53,8 +53,8 @@ describe('toastStore', () => {
     expect(s.showCount).toBe(0)
     expect(s.message).toBe('')
     expect(s.targetId).toBeNull()
-    expect(s.panelType).toBe('')
-    expect(s.panelTab).toBe('')
+    expect(s.panelType).toBe('client')   // reset to TOAST_ZERO_PANEL_TYPE
+    expect(s.initialTab).toBe('')
     expect(s.backLabel).toBe('')
   })
 })

@@ -3,7 +3,7 @@ import { useToastStore } from '../../store/toastStore'
 import { usePanelStore } from '../../store/panelStore'
 
 export function Toast() {
-  const { visible, showCount, message, linkLabel, targetId, panelType, panelTab, backLabel, dismiss } =
+  const { visible, showCount, message, linkLabel, targetId, panelType, initialTab, backLabel, dismiss } =
     useToastStore()
   const { openPanel } = usePanelStore()
 
@@ -18,8 +18,9 @@ export function Toast() {
 
   function handleLinkClick() {
     dismiss()
-    openPanel(panelType as Parameters<typeof openPanel>[0], targetId ?? undefined, {
-      initialTab: panelTab,
+    // panelType is Exclude<PanelType, null> — no cast needed
+    openPanel(panelType, targetId ?? undefined, {
+      initialTab,
       backLabel,
     })
   }

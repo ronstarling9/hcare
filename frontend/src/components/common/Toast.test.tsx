@@ -11,12 +11,12 @@ const mockOpenPanel = vi.fn()
 const TOAST_STATE = {
   visible: true,
   showCount: 1,
-  message: 'Client saved.',
-  linkLabel: 'Add Authorization',
-  targetId: 'client-123',
-  panelType: 'client',
-  panelTab: 'authorizations',
-  backLabel: '← Clients',
+  message: 'Caregiver saved. Add credentials to enable scheduling.',
+  linkLabel: 'Add Credentials',
+  targetId: 'caregiver-123',
+  panelType: 'caregiver' as const,
+  initialTab: 'credentials',
+  backLabel: '← Caregivers',
 }
 
 const INITIAL_STORE = {
@@ -25,8 +25,8 @@ const INITIAL_STORE = {
   message: '',
   linkLabel: '',
   targetId: null,
-  panelType: '',
-  panelTab: '',
+  panelType: 'client' as const,   // zero value — matches TOAST_ZERO_PANEL_TYPE
+  initialTab: '',
   backLabel: '',
 }
 
@@ -46,13 +46,13 @@ describe('Toast', () => {
   it('renders message and link when visible is true', () => {
     useToastStore.setState(TOAST_STATE)
     render(<Toast />)
-    expect(screen.getByText('Client saved.')).toBeInTheDocument()
-    expect(screen.getByText('Add Authorization')).toBeInTheDocument()
+    expect(screen.getByText('Caregiver saved. Add credentials to enable scheduling.')).toBeInTheDocument()
+    expect(screen.getByText('Add Credentials')).toBeInTheDocument()
   })
 
   it('renders nothing when visible is false', () => {
     render(<Toast />)
-    expect(screen.queryByText('Client saved.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Caregiver saved.')).not.toBeInTheDocument()
   })
 
   it('dismiss button click sets visible to false', () => {
@@ -65,10 +65,10 @@ describe('Toast', () => {
   it('link click calls openPanel with panelType, targetId, initialTab, and backLabel', () => {
     useToastStore.setState(TOAST_STATE)
     render(<Toast />)
-    fireEvent.click(screen.getByText('Add Authorization'))
-    expect(mockOpenPanel).toHaveBeenCalledWith('client', 'client-123', {
-      initialTab: 'authorizations',
-      backLabel: '← Clients',
+    fireEvent.click(screen.getByText('Add Credentials'))
+    expect(mockOpenPanel).toHaveBeenCalledWith('caregiver', 'caregiver-123', {
+      initialTab: 'credentials',
+      backLabel: '← Caregivers',
     })
   })
 
@@ -90,7 +90,7 @@ describe('Toast', () => {
     expect(useToastStore.getState().visible).toBe(false)
     // Advance past original 6 s — should not re-dismiss or error
     act(() => vi.advanceTimersByTime(4000))
-    expect(useToastStore.getState().visible).toBe(false) // still false, no double-dismiss
+    expect(useToastStore.getState().visible).toBe(false)
     vi.useRealTimers()
   })
 
@@ -99,19 +99,15 @@ describe('Toast', () => {
     useToastStore.setState(TOAST_STATE)
     const { rerender } = render(<Toast />)
 
-    // 4 s pass — not yet dismissed
     act(() => vi.advanceTimersByTime(4000))
     expect(useToastStore.getState().visible).toBe(true)
 
-    // show() called again: showCount increments, visible stays true
     act(() => useToastStore.setState({ ...TOAST_STATE, showCount: 2 }))
     rerender(<Toast />)
 
-    // 4 more seconds (8 s total, 4 s from second show) — timer reset, still not dismissed
     act(() => vi.advanceTimersByTime(4000))
     expect(useToastStore.getState().visible).toBe(true)
 
-    // 2 more seconds (6 s from second show) — now dismisses
     act(() => vi.advanceTimersByTime(2000))
     expect(useToastStore.getState().visible).toBe(false)
     vi.useRealTimers()

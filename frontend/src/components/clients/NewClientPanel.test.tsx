@@ -20,7 +20,7 @@ const mockOpenPanel = vi.fn()
 
 const INITIAL_TOAST = {
   visible: false, showCount: 0, message: '', linkLabel: '',
-  targetId: null, panelType: '', panelTab: '', backLabel: '',
+  targetId: null, panelType: 'client' as const, initialTab: '', backLabel: '',
 }
 
 describe('NewClientPanel', () => {
@@ -150,7 +150,7 @@ describe('NewClientPanel', () => {
     expect(toast.visible).toBe(true)
     expect(toast.targetId).toBe('new-client-id')
     expect(toast.panelType).toBe('client')
-    expect(toast.panelTab).toBe('authorizations')
+    expect(toast.initialTab).toBe('authorizations')
   })
 
   // ── Care Preferences ───────────────────────────────────────────────────────

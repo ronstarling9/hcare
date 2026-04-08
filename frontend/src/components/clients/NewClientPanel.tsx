@@ -98,7 +98,7 @@ export function NewClientPanel({ backLabel }: Props) {
         linkLabel: t('saveCloseToastLink'),
         targetId: client.id,
         panelType: 'client',
-        panelTab: 'authorizations',
+        initialTab: 'authorizations',
         backLabel: t('backLabel'),
       })
       closePanel()
