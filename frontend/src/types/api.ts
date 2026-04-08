@@ -200,6 +200,16 @@ export interface PayerResponse {
   createdAt: string
 }
 
+// ── Service Types ─────────────────────────────────────────────────────────────
+
+export interface ServiceTypeResponse {
+  id: string
+  name: string
+  code: string
+  requiresEvv: boolean
+  requiredCredentials: string[]
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export interface DashboardVisitRow {
