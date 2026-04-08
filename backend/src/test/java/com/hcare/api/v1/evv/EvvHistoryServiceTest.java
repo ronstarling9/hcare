@@ -110,11 +110,7 @@ class EvvHistoryServiceTest {
         when(agencyRepository.findById(agencyId)).thenReturn(Optional.of(agency));
 
         // Client in TX (no serviceState override — falls back to agency state)
-        Client client = new Client(agencyId, "Alice", "Smith", LocalDate.of(1950, 1, 1));
-        when(clientRepository.findAllById(Set.of(clientId))).thenReturn(List.of(client));
-        // Make client.getId() return clientId via the mock on Shift; client itself uses natural id
-        // We need clientMap.get(shift.getClientId()) to find the client — so we need client.getId() == clientId
-        // Client.id is @GeneratedValue and null here; re-mock client as well
+        // client.getId() must equal clientId so clientMap lookup succeeds — use a mock
         Client clientMock = mock(Client.class);
         when(clientMock.getId()).thenReturn(clientId);
         when(clientMock.getServiceState()).thenReturn(null);

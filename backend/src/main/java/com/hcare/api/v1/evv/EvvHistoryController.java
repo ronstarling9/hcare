@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 @RestController
 @RequestMapping("/api/v1/evv")
@@ -43,7 +44,7 @@ public class EvvHistoryController {
         if (!end.isAfter(start)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "end must be after start");
         }
-        if (java.time.temporal.ChronoUnit.DAYS.between(start, end) > 366) {
+        if (ChronoUnit.DAYS.between(start, end) > 366) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "Date range must not exceed 366 days");
         }
