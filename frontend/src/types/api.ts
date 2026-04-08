@@ -285,3 +285,60 @@ export interface EvvHistoryRow {
   timeOut: string | null
   verificationMethod: VerificationMethod | null
 }
+
+// ── Care Plans ────────────────────────────────────────────────────────────────
+
+export type AssistanceLevel =
+  | 'INDEPENDENT'
+  | 'SUPERVISION'
+  | 'MINIMAL_ASSIST'
+  | 'MODERATE_ASSIST'
+  | 'MAXIMUM_ASSIST'
+  | 'DEPENDENT'
+
+export type CarePlanStatus = 'DRAFT' | 'ACTIVE' | 'SUPERSEDED'
+export type GoalStatus = 'ACTIVE' | 'COMPLETED' | 'DISCONTINUED'
+
+export interface CarePlanResponse {
+  id: string
+  clientId: string
+  planVersion: number
+  status: CarePlanStatus
+  reviewedByClinicianId: string | null
+  reviewedAt: string | null
+  activatedAt: string | null
+  createdAt: string
+}
+
+export interface AdlTaskResponse {
+  id: string
+  carePlanId: string
+  name: string
+  assistanceLevel: AssistanceLevel
+  instructions: string | null
+  frequency: string | null
+  sortOrder: number
+  createdAt: string
+}
+
+export interface GoalResponse {
+  id: string
+  carePlanId: string
+  description: string
+  targetDate: string | null
+  status: GoalStatus
+  createdAt: string
+}
+
+export interface AddAdlTaskRequest {
+  name: string
+  assistanceLevel: AssistanceLevel
+  frequency?: string
+  instructions?: string
+  sortOrder?: number
+}
+
+export interface AddGoalRequest {
+  description: string
+  targetDate?: string
+}
