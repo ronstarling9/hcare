@@ -32,7 +32,7 @@ interface ShiftDetailPanelProps {
 export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) {
   const { t, i18n } = useTranslation('shiftDetail')
   const tCommon = useTranslation('common').t
-  const { closePanel } = usePanelStore()
+  const { closePanel, openPanel } = usePanelStore()
 
   const { data: shift, isLoading, error } = useShiftDetail(shiftId)
   const { clientMap } = useAllClients()
@@ -232,6 +232,20 @@ export function ShiftDetailPanel({ shiftId, backLabel }: ShiftDetailPanelProps) 
         <button
           type="button"
           className="px-4 py-2 text-[12px] font-semibold border border-border text-dark"
+          onClick={() =>
+            openPanel('newShift', undefined, {
+              backLabel: backLabel,
+              prefill: {
+                editShiftId: shiftId,
+                clientId: shift.clientId,
+                caregiverId: shift.caregiverId ?? '',
+                serviceTypeId: shift.serviceTypeId,
+                date: shift.scheduledStart.slice(0, 10),
+                time: shift.scheduledStart.slice(11, 16),
+                endTime: shift.scheduledEnd.slice(11, 16),
+              },
+            })
+          }
         >
           {t('editShift')}
         </button>

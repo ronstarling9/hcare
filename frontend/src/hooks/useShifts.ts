@@ -3,13 +3,14 @@ import {
   listShifts,
   getShift,
   createShift,
+  updateShift,
   assignCaregiver,
   broadcastShift,
   getCandidates,
   clockIn,
   type ClockInRequest,
 } from '../api/shifts'
-import type { CreateShiftRequest } from '../types/api'
+import type { CreateShiftRequest, UpdateShiftRequest } from '../types/api'
 
 export function useShifts(weekStart: string, weekEnd: string) {
   return useQuery({
@@ -37,6 +38,18 @@ export function useCreateShift() {
   })
 }
 
+export function useUpdateShift() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ shiftId, req }: { shiftId: string; req: UpdateShiftRequest }) =>
+      updateShift(shiftId, req),
+    onSuccess: (_data, { shiftId }) => {
+      queryClient.invalidateQueries({ queryKey: ['shift', shiftId] })
+      queryClient.invalidateQueries({ queryKey: ['shifts'] })
+    },
+  })
+}
+
 export function useAssignCaregiver() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -53,8 +66,9 @@ export function useBroadcastShift() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (shiftId: string) => broadcastShift(shiftId),
-    onSuccess: () => {
+    onSuccess: (_data, shiftId) => {
       queryClient.invalidateQueries({ queryKey: ['shifts'] })
+      queryClient.invalidateQueries({ queryKey: ['shift', shiftId] })
     },
   })
 }

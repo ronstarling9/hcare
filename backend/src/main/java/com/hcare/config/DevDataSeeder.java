@@ -152,19 +152,26 @@ public class DevDataSeeder implements ApplicationRunner {
 
     double[] baseTx = {30.3, -97.7};
     List<Client> clients1 = seedClients(a1, "TX", List.of(
-        new String[]{"Dorothy", "Henderson", "1945-03-14", "en", "TX-MCD-SUN-001"},
-        new String[]{"Harold",  "Mitchell",  "1942-11-08", "en", "TX-MCD-SUN-002"},
-        new String[]{"Patricia","Gallagher", "1953-07-22", "en,es","TX-MCD-SUN-003"},
-        new String[]{"Gerald",  "Kowalski",  "1948-04-30", "en", null},  // private pay
-        new String[]{"Betty",   "Thornton",  "1938-12-01", "en", "TX-MCD-SUN-005"}),
+        new String[]{"Dorothy",  "Henderson",   "1945-03-14", "en",    "TX-MCD-SUN-001"},
+        new String[]{"Harold",   "Mitchell",    "1942-11-08", "en",    "TX-MCD-SUN-002"},
+        new String[]{"Patricia", "Gallagher",   "1953-07-22", "en,es", "TX-MCD-SUN-003"},
+        new String[]{"Gerald",   "Kowalski",    "1948-04-30", "en",    null},  // private pay
+        new String[]{"Betty",    "Thornton",    "1938-12-01", "en",    "TX-MCD-SUN-005"},
+        new String[]{"Eugene",   "Patterson",   "1946-08-15", "en",    "TX-MCD-SUN-006"},
+        new String[]{"Lorraine", "Fitzpatrick", "1954-02-20", "en",    null},  // private pay
+        new String[]{"Clarence", "Watkins",     "1950-06-04", "en",    "TX-MCD-SUN-008"},
+        new String[]{"Norma",    "Blackwell",   "1943-09-12", "en",    "TX-MCD-SUN-009"},
+        new String[]{"Victor",   "Hoffman",     "1957-11-28", "en",    null}), // private pay
         baseTx);
 
     List<Caregiver> caregivers1 = seedCaregivers(a1, "TX", baseTx, List.of(
-        new String[]{"Ashley", "Rodriguez"},
-        new String[]{"Tyler", "Brooks"},
+        new String[]{"Ashley",  "Rodriguez"},
+        new String[]{"Tyler",   "Brooks"},
         new String[]{"Jessica", "Nguyen"},
         new String[]{"Brandon", "Washington"},
-        new String[]{"Kayla", "Martinez"}));
+        new String[]{"Kayla",   "Martinez"},
+        new String[]{"Serena",  "Williams"},
+        new String[]{"Tracy",   "McGrady"}));
 
     seedAuthorizations(a1, slug1, clients1, payers1, serviceTypes1);
     seedCarePlans(a1, clients1);
@@ -182,7 +189,7 @@ public class DevDataSeeder implements ApplicationRunner {
     String slug2 = "golden";
 
     FeatureFlags ff2 = new FeatureFlags(a2);
-    ff2.setAiSchedulingEnabled(false);
+    ff2.setAiSchedulingEnabled(true);
     ff2.setFamilyPortalEnabled(true);
     featureFlagsRepository.save(ff2);
 
@@ -198,24 +205,44 @@ public class DevDataSeeder implements ApplicationRunner {
 
     double[] baseFl = {27.9, -82.4};
     List<Client> clients2 = seedClients(a2, "FL", List.of(
-        new String[]{"Walter", "Freeman",  "1944-06-15", "en", "FL-MCD-GLD-001"},
-        new String[]{"Barbara","Novak",    "1950-02-28", "en", "FL-MCD-GLD-002"},
-        new String[]{"Dennis", "Crawford", "1956-09-18", "en", "FL-MCD-GLD-003"},
-        new String[]{"Sandra", "Okafor",   "1947-01-05", "en", null},  // private pay
-        new String[]{"Roger",  "Kimball",  "1941-08-22", "en", "FL-MCD-GLD-005"}),
+        new String[]{"Walter",  "Freeman",    "1944-06-15", "en", "FL-MCD-GLD-001"},
+        new String[]{"Barbara", "Novak",      "1950-02-28", "en", "FL-MCD-GLD-002"},
+        new String[]{"Dennis",  "Crawford",   "1956-09-18", "en", "FL-MCD-GLD-003"},
+        new String[]{"Sandra",  "Okafor",     "1947-01-05", "en", null},  // private pay
+        new String[]{"Roger",   "Kimball",    "1941-08-22", "en", "FL-MCD-GLD-005"},
+        new String[]{"Ruth",    "Caldwell",   "1944-04-07", "en", "FL-MCD-GLD-006"},
+        new String[]{"Earl",    "Hutchinson", "1951-01-18", "en", null},  // private pay
+        new String[]{"Gloria",  "Sinclair",   "1958-07-30", "en", "FL-MCD-GLD-008"},
+        new String[]{"Marvin",  "Dupont",     "1946-03-25", "en", "FL-MCD-GLD-009"},
+        new String[]{"Agnes",   "Kowalczyk",  "1953-10-09", "en", null}), // private pay
         baseFl);
 
     List<Caregiver> caregivers2 = seedCaregivers(a2, "FL", baseFl, List.of(
-        new String[]{"Megan", "Torres"},
-        new String[]{"Jordan", "Taylor"},
+        new String[]{"Megan",    "Torres"},
+        new String[]{"Jordan",   "Taylor"},
         new String[]{"Samantha", "Patel"},
-        new String[]{"Austin", "Williams"},
-        new String[]{"Lauren", "Chen"}));
+        new String[]{"Austin",   "Williams"},
+        new String[]{"Lauren",   "Chen"},
+        new String[]{"Chris",    "Evert"},
+        new String[]{"Alonzo",   "Mourning"}));
+
+    // Samantha Patel and Jordan Taylor also work evenings — needed so the
+    // 18:00–22:00 OPEN shift (Walter Freeman) produces ranked AI candidates.
+    for (int i = 0; i < 2; i++) {
+      UUID cgId = caregivers2.get(i == 0 ? 2 : 1).getId(); // Samantha[2], Jordan[1]
+      for (DayOfWeek dow : List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+          DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)) {
+        caregiverAvailabilityRepository.save(
+            new CaregiverAvailability(cgId, a2, dow,
+                LocalTime.of(17, 0), LocalTime.of(23, 0)));
+      }
+    }
 
     seedAuthorizations(a2, slug2, clients2, payers2, serviceTypes2);
     seedCarePlans(a2, clients2);
     seedDiagnosesAndMedications(a2, clients2);
     seedShifts(a2, clients2, caregivers2, serviceTypes2, payers2, slug2);
+    seedAgency2ScoringData(a2, caregivers2, clients2);
 
     log.info("  [{}] Seeded: {} clients, {} caregivers, {} payers",
         agency2.getName(), clients2.size(), caregivers2.size(), payers2.size());
@@ -243,19 +270,38 @@ public class DevDataSeeder implements ApplicationRunner {
 
     double[] baseCa = {34.1, -118.2};
     List<Client> clients3 = seedClients(a3, "CA", List.of(
-        new String[]{"Carol",   "Stevenson", "1952-05-10", "en", "CA-MCD-HAR-001"},
-        new String[]{"Kenneth", "Yamamoto",  "1949-12-07", "en", "CA-MCD-HAR-002"},
-        new String[]{"Donna",   "Burke",     "1957-08-25", "en", "CA-MCD-HAR-003"},
-        new String[]{"Frank",   "Delgado",   "1945-03-19", "en", null},  // private pay
-        new String[]{"Judith",  "Schreiber", "1960-11-14", "en", "CA-MCD-HAR-005"}),
+        new String[]{"Carol",    "Stevenson", "1952-05-10", "en",    "CA-MCD-HAR-001"},
+        new String[]{"Kenneth",  "Yamamoto",  "1949-12-07", "en",    "CA-MCD-HAR-002"},
+        new String[]{"Donna",    "Burke",     "1957-08-25", "en",    "CA-MCD-HAR-003"},
+        new String[]{"Frank",    "Delgado",   "1945-03-19", "en",    null},  // private pay
+        new String[]{"Judith",   "Schreiber", "1960-11-14", "en",    "CA-MCD-HAR-005"},
+        new String[]{"Leonard",  "Ashworth",  "1948-09-22", "en",    "CA-MCD-HAR-006"},
+        new String[]{"Phyllis",  "Nakamura",  "1955-04-14", "en",    null},  // private pay
+        new String[]{"Chester",  "Ramirez",   "1942-12-03", "en,es", "CA-MCD-HAR-008"},
+        new String[]{"Irene",    "Goldstein", "1960-07-08", "en",    "CA-MCD-HAR-009"},
+        new String[]{"Stanley",  "Okonkwo",   "1949-05-30", "en",    null}), // private pay
         baseCa);
 
     List<Caregiver> caregivers3 = seedCaregivers(a3, "CA", baseCa, List.of(
-        new String[]{"Alyssa", "Ramirez"},
-        new String[]{"Darius", "Peterson"},
+        new String[]{"Alyssa",   "Ramirez"},
+        new String[]{"Darius",   "Peterson"},
         new String[]{"Brittany", "Kim"},
-        new String[]{"Carlos", "Rivera"},
-        new String[]{"Kaitlyn", "O'Brien"}));
+        new String[]{"Carlos",   "Rivera"},
+        new String[]{"Kaitlyn",  "O'Brien"},
+        new String[]{"Billie",   "King"},
+        new String[]{"Magic",    "Johnson"}));
+
+    // Alyssa Ramirez and Darius Peterson also work evenings — needed so the
+    // 18:00–22:00 OPEN shift (Carol Stevenson) produces ranked AI candidates.
+    for (int i = 0; i < 2; i++) {
+      UUID cgId = caregivers3.get(i).getId();
+      for (DayOfWeek dow : List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+          DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)) {
+        caregiverAvailabilityRepository.save(
+            new CaregiverAvailability(cgId, a3, dow,
+                LocalTime.of(17, 0), LocalTime.of(23, 0)));
+      }
+    }
 
     seedAuthorizations(a3, slug3, clients3, payers3, serviceTypes3);
     seedCarePlans(a3, clients3);
@@ -756,7 +802,8 @@ public class DevDataSeeder implements ApplicationRunner {
     // Carlos gets one extra 2h shift this week to reach 38h total
     boolean[] carlosExtraShift = {false, false, false, true, false};
 
-    for (int i = 0; i < caregivers.size(); i++) {
+    int scoringLimit3 = Math.min(caregivers.size(), profileSetups.length);
+    for (int i = 0; i < scoringLimit3; i++) {
       CaregiverScoringProfile profile = caregiverScoringProfileRepository
           .findByCaregiverId(caregivers.get(i).getId())
           .orElseThrow();
@@ -792,6 +839,7 @@ public class DevDataSeeder implements ApplicationRunner {
 
     // Caregiver-client affinity (visit history)
     // visitCount saturates continuity score at 10; a count of 0 means no prior history.
+    // Only covers original 5 caregivers — Billie King and Magic Johnson have no history yet.
     int[][] affinityMatrix = {
         //             Carol[0] Kenneth[1] Donna[2] Frank[3] Judith[4]
         /* Alyssa  */ {10,      5,         0,       0,       0},
@@ -801,12 +849,14 @@ public class DevDataSeeder implements ApplicationRunner {
         /* Kaitlyn */ { 0,      0,         2,       0,       0},
     };
 
-    for (int cgIdx = 0; cgIdx < caregivers.size(); cgIdx++) {
+    int affinityLimit3 = Math.min(caregivers.size(), affinityMatrix.length);
+    for (int cgIdx = 0; cgIdx < affinityLimit3; cgIdx++) {
       CaregiverScoringProfile profile = caregiverScoringProfileRepository
           .findByCaregiverId(caregivers.get(cgIdx).getId())
           .orElseThrow();
 
       for (int clIdx = 0; clIdx < clients.size(); clIdx++) {
+        if (clIdx >= affinityMatrix[cgIdx].length) break;
         int visits = affinityMatrix[cgIdx][clIdx];
         if (visits == 0) continue;
 
@@ -820,6 +870,94 @@ public class DevDataSeeder implements ApplicationRunner {
     }
 
     log.info("  [Harmony] Scoring profiles and affinities seeded for {} caregivers",
+        caregivers.size());
+  }
+
+  // -------------------------------------------------------------------------
+  // Agency 2 only: seed scoring profiles and caregiver-client affinities so
+  // the AI scheduling engine produces a meaningful ranking for Golden Years FL.
+  //
+  // Caregivers: Megan[0], Jordan[1], Samantha[2], Austin[3], Lauren[4]
+  //             Chris Evert[5], Alonzo Mourning[6] — new, default profiles only
+  // Clients:    Walter[0], Barbara[1], Dennis[2], Sandra[3], Roger[4]
+  //
+  // Expected ranking for Walter's open shift (highest → lowest):
+  //   Samantha (9 affinity + 49 completed + 16h/week, 0 cancels) >
+  //   Jordan   (4 affinity + 33 completed + 12h/week, 1 cancel)  >
+  //   Megan    (6 affinity + 28 completed + 32h, near overtime)  >
+  //   Lauren   (0 affinity + 15 completed + 0h, 2 cancels)       >
+  //   Austin   (1 affinity + 19 completed + 38h, 6 cancels — near OT + unreliable)
+  // -------------------------------------------------------------------------
+  private void seedAgency2ScoringData(UUID agencyId,
+      List<Caregiver> caregivers,
+      List<Client> clients) {
+    // Each entry: [historicalCompleted, currentWeekShifts, hoursPerCurrentShift, cancelled]
+    int[][] profileSetups = {
+        {20, 8, 4, 3},  // Megan:    28 completed (20 historical + 8×4h=32h), 3 cancelled
+        {30, 3, 4, 1},  // Jordan:   33 completed (30 historical + 3×4h=12h), 1 cancelled
+        {45, 4, 4, 0},  // Samantha: 49 completed (45 historical + 4×4h=16h), 0 cancelled
+        {10, 9, 4, 6},  // Austin:   19 completed (10 historical + 9×4h=36h+2h=38h), 6 cancelled
+        {15, 0, 0, 2},  // Lauren:   15 completed, 0 this week, 2 cancelled
+    };
+    // Austin gets one extra 2h shift to reach 38h this week
+    boolean[] austinExtraShift = {false, false, false, true, false};
+
+    int scoringLimit2 = Math.min(caregivers.size(), profileSetups.length);
+    for (int i = 0; i < scoringLimit2; i++) {
+      CaregiverScoringProfile profile = caregiverScoringProfileRepository
+          .findByCaregiverId(caregivers.get(i).getId())
+          .orElseThrow();
+
+      int[] s = profileSetups[i];
+      for (int j = 0; j < s[0]; j++) {
+        profile.updateAfterShiftCompletion(BigDecimal.ZERO);
+      }
+      BigDecimal weekHours = s[2] == 0 ? BigDecimal.ZERO : new BigDecimal(s[2]);
+      for (int j = 0; j < s[1]; j++) {
+        profile.updateAfterShiftCompletion(weekHours);
+      }
+      if (austinExtraShift[i]) {
+        profile.updateAfterShiftCompletion(new BigDecimal("2"));
+      }
+      for (int j = 0; j < s[3]; j++) {
+        profile.updateAfterShiftCancellation();
+      }
+
+      caregiverScoringProfileRepository.save(profile);
+    }
+
+    // Caregiver-client affinity (visit history)
+    // Only covers original 5 caregivers — Chris Evert and Alonzo Mourning have no history yet.
+    int[][] affinityMatrix = {
+        //              Walter[0] Barbara[1] Dennis[2] Sandra[3] Roger[4]
+        /* Megan     */ {6,        3,         0,        0,        2},
+        /* Jordan    */ {4,        0,         8,        0,        0},
+        /* Samantha  */ {9,        0,         0,        5,        0},
+        /* Austin    */ {1,        0,         0,        0,        8},
+        /* Lauren    */ {0,        4,         0,        0,        0},
+    };
+
+    int affinityLimit2 = Math.min(caregivers.size(), affinityMatrix.length);
+    for (int cgIdx = 0; cgIdx < affinityLimit2; cgIdx++) {
+      CaregiverScoringProfile profile = caregiverScoringProfileRepository
+          .findByCaregiverId(caregivers.get(cgIdx).getId())
+          .orElseThrow();
+
+      for (int clIdx = 0; clIdx < clients.size(); clIdx++) {
+        if (clIdx >= affinityMatrix[cgIdx].length) break;
+        int visits = affinityMatrix[cgIdx][clIdx];
+        if (visits == 0) continue;
+
+        CaregiverClientAffinity affinity = new CaregiverClientAffinity(
+            profile.getId(), clients.get(clIdx).getId(), agencyId);
+        for (int v = 0; v < visits; v++) {
+          affinity.incrementVisitCount();
+        }
+        caregiverClientAffinityRepository.save(affinity);
+      }
+    }
+
+    log.info("  [Golden Years] Scoring profiles and affinities seeded for {} caregivers",
         caregivers.size());
   }
 }

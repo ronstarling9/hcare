@@ -1,5 +1,6 @@
 {
   "panelTitle": "New Shift",
+  "panelTitleEdit": "Edit Shift",
   "labelClient": "Client",
   "labelServiceType": "Service Type",
   "labelDate": "Date",

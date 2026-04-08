@@ -70,7 +70,12 @@ public class Shift {
     }
 
     public void setStatus(ShiftStatus status) { this.status = status; }
+    public void setClientId(UUID clientId) { this.clientId = clientId; }
     public void setCaregiverId(UUID caregiverId) { this.caregiverId = caregiverId; }
+    public void setServiceTypeId(UUID serviceTypeId) { this.serviceTypeId = serviceTypeId; }
+    public void setAuthorizationId(UUID authorizationId) { this.authorizationId = authorizationId; }
+    public void setScheduledStart(LocalDateTime scheduledStart) { this.scheduledStart = scheduledStart; }
+    public void setScheduledEnd(LocalDateTime scheduledEnd) { this.scheduledEnd = scheduledEnd; }
     public void setNotes(String notes) { this.notes = notes; }
 
     public UUID getId() { return id; }

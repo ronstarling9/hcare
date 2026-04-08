@@ -9,8 +9,14 @@ export type PanelType =
   | null
 
 interface PanelPrefill {
-  date?: string      // ISO date string — pre-fills date field in NewShiftPanel
-  time?: string      // HH:mm — pre-fills start time when clicking an empty slot
+  date?: string        // ISO date string — pre-fills date field in NewShiftPanel
+  time?: string        // HH:mm — pre-fills start time when clicking an empty slot
+  // edit mode — all present when opening NewShiftPanel to edit an existing shift
+  editShiftId?: string
+  clientId?: string
+  caregiverId?: string
+  serviceTypeId?: string
+  endTime?: string     // HH:mm
 }
 
 interface PanelState {

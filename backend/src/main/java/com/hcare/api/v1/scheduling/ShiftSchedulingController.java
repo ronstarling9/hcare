@@ -4,6 +4,7 @@ import com.hcare.api.v1.scheduling.dto.AssignCaregiverRequest;
 import com.hcare.api.v1.scheduling.dto.CancelShiftRequest;
 import com.hcare.api.v1.scheduling.dto.CreateShiftRequest;
 import com.hcare.api.v1.scheduling.dto.RankedCaregiverResponse;
+import com.hcare.api.v1.scheduling.dto.UpdateShiftRequest;
 import com.hcare.api.v1.scheduling.dto.RespondToOfferRequest;
 import com.hcare.api.v1.scheduling.dto.ShiftOfferSummary;
 import com.hcare.api.v1.scheduling.dto.ShiftSummaryResponse;
@@ -56,6 +57,15 @@ public class ShiftSchedulingController {
             @Valid @RequestBody CreateShiftRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(shiftSchedulingService.createShift(principal.getAgencyId(), request));
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<ShiftSummaryResponse> updateShift(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @RequestBody UpdateShiftRequest request) {
+        return ResponseEntity.ok(shiftSchedulingService.updateShift(principal.getAgencyId(), id, request));
     }
 
     @PatchMapping("/{id}/assign")

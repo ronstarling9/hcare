@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { useAllClients } from '../../hooks/useClients'
 import { useAllCaregivers } from '../../hooks/useCaregivers'
-import { useCreateShift } from '../../hooks/useShifts'
+import { useCreateShift, useUpdateShift } from '../../hooks/useShifts'
 import { usePanelStore } from '../../store/panelStore'
 import { useServiceTypes } from '../../hooks/useServiceTypes'
 
@@ -27,7 +27,10 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
   const { clients } = useAllClients()
   const { caregivers } = useAllCaregivers()
   const createMutation = useCreateShift()
+  const updateMutation = useUpdateShift()
   const { serviceTypes, isLoading: serviceTypesLoading, isError: serviceTypesError } = useServiceTypes()
+
+  const isEditMode = Boolean(prefill?.editShiftId)
 
   const {
     register,
@@ -35,28 +38,44 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     defaultValues: {
+      clientId: prefill?.clientId ?? '',
+      caregiverId: prefill?.caregiverId ?? '',
+      serviceTypeId: prefill?.serviceTypeId ?? '',
       date: prefill?.date ?? [
         new Date().getFullYear(),
         String(new Date().getMonth() + 1).padStart(2, '0'),
         String(new Date().getDate()).padStart(2, '0'),
       ].join('-'),
       startTime: prefill?.time ?? '09:00',
-      endTime: '13:00',
+      endTime: prefill?.endTime ?? '13:00',
     },
   })
 
   async function onSubmit(values: FormValues) {
     try {
-      await createMutation.mutateAsync({
-        clientId: values.clientId,
-        caregiverId: values.caregiverId || undefined,
-        serviceTypeId: values.serviceTypeId,
-        scheduledStart: `${values.date}T${values.startTime}:00`,
-        scheduledEnd: `${values.date}T${values.endTime}:00`,
-      })
+      if (isEditMode) {
+        await updateMutation.mutateAsync({
+          shiftId: prefill!.editShiftId!,
+          req: {
+            clientId: values.clientId,
+            caregiverId: values.caregiverId || undefined,
+            serviceTypeId: values.serviceTypeId,
+            scheduledStart: `${values.date}T${values.startTime}:00`,
+            scheduledEnd: `${values.date}T${values.endTime}:00`,
+          },
+        })
+      } else {
+        await createMutation.mutateAsync({
+          clientId: values.clientId,
+          caregiverId: values.caregiverId || undefined,
+          serviceTypeId: values.serviceTypeId,
+          scheduledStart: `${values.date}T${values.startTime}:00`,
+          scheduledEnd: `${values.date}T${values.endTime}:00`,
+        })
+      }
       closePanel()
     } catch {
-      // createMutation.isError displays the error banner; do not close panel
+      // mutation.isError displays the error banner; do not close panel
     }
   }
 
@@ -71,7 +90,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         >
           {backLabel}
         </button>
-        <h2 className="text-[16px] font-bold text-dark">{t('panelTitle')}</h2>
+        <h2 className="text-[16px] font-bold text-dark">{isEditMode ? t('panelTitleEdit') : t('panelTitle')}</h2>
       </div>
 
       {/* Form */}
@@ -219,7 +238,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         </div>
 
         {/* API error */}
-        {createMutation.isError && (
+        {(createMutation.isError || updateMutation.isError) && (
           <p className="text-[11px] text-red-600">{tCommon('errorTryAgain')}</p>
         )}
 
@@ -227,10 +246,10 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
         <div className="pt-4 border-t border-border flex gap-3">
           <button
             type="submit"
-            disabled={isSubmitting || createMutation.isPending || serviceTypesLoading || serviceTypesError || serviceTypes.length === 0}
+            disabled={isSubmitting || createMutation.isPending || updateMutation.isPending || serviceTypesLoading || serviceTypesError || serviceTypes.length === 0}
             className="px-4 py-2 text-[12px] font-bold bg-dark text-white hover:brightness-110 disabled:opacity-50"
           >
-            {isSubmitting || createMutation.isPending ? '…' : t('saveShift')}
+            {isSubmitting || createMutation.isPending || updateMutation.isPending ? '…' : t('saveShift')}
           </button>
           <button
             type="button"

@@ -113,6 +113,15 @@ export interface CreateShiftRequest {
   notes?: string
 }
 
+export interface UpdateShiftRequest {
+  clientId?: string
+  caregiverId?: string
+  serviceTypeId?: string
+  scheduledStart?: string
+  scheduledEnd?: string
+  notes?: string
+}
+
 export interface AssignCaregiverRequest {
   caregiverId: string
 }

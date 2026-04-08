@@ -4,6 +4,7 @@ import type {
   ShiftDetailResponse,
   RankedCaregiverResponse,
   CreateShiftRequest,
+  UpdateShiftRequest,
   PageResponse,
 } from '../types/api'
 
@@ -40,6 +41,11 @@ export async function getShift(id: string): Promise<ShiftDetailResponse> {
 
 export async function createShift(req: CreateShiftRequest): Promise<ShiftSummaryResponse> {
   const response = await apiClient.post<ShiftSummaryResponse>('/shifts', req)
+  return response.data
+}
+
+export async function updateShift(id: string, req: UpdateShiftRequest): Promise<ShiftDetailResponse> {
+  const response = await apiClient.patch<ShiftDetailResponse>(`/shifts/${id}`, req)
   return response.data
 }
 

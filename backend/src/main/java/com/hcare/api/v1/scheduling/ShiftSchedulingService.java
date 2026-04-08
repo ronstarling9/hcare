@@ -4,6 +4,7 @@ import com.hcare.api.v1.scheduling.dto.AssignCaregiverRequest;
 import com.hcare.api.v1.scheduling.dto.CancelShiftRequest;
 import com.hcare.api.v1.scheduling.dto.CreateShiftRequest;
 import com.hcare.api.v1.scheduling.dto.RankedCaregiverResponse;
+import com.hcare.api.v1.scheduling.dto.UpdateShiftRequest;
 import com.hcare.api.v1.scheduling.dto.ShiftOfferSummary;
 import com.hcare.api.v1.scheduling.dto.RespondToOfferRequest;
 import com.hcare.api.v1.scheduling.dto.ShiftSummaryResponse;
@@ -98,6 +99,44 @@ public class ShiftSchedulingService {
         if (req.notes() != null) {
             shift.setNotes(req.notes());
         }
+        return toSummary(shiftRepository.save(shift));
+    }
+
+    @Transactional
+    public ShiftSummaryResponse updateShift(UUID agencyId, UUID shiftId, UpdateShiftRequest req) {
+        Shift shift = requireShift(agencyId, shiftId);
+        if (shift.getStatus() == ShiftStatus.COMPLETED
+                || shift.getStatus() == ShiftStatus.CANCELLED
+                || shift.getStatus() == ShiftStatus.IN_PROGRESS) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Cannot edit a shift with status: " + shift.getStatus());
+        }
+
+        LocalDateTime newStart = req.scheduledStart() != null ? req.scheduledStart() : shift.getScheduledStart();
+        LocalDateTime newEnd   = req.scheduledEnd()   != null ? req.scheduledEnd()   : shift.getScheduledEnd();
+        if (!newEnd.isAfter(newStart)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "scheduledEnd must be after scheduledStart");
+        }
+
+        if (req.clientId()      != null) shift.setClientId(req.clientId());
+        if (req.serviceTypeId() != null) shift.setServiceTypeId(req.serviceTypeId());
+        if (req.scheduledStart() != null) shift.setScheduledStart(req.scheduledStart());
+        if (req.scheduledEnd()   != null) shift.setScheduledEnd(req.scheduledEnd());
+        if (req.authorizationId() != null) shift.setAuthorizationId(req.authorizationId());
+        if (req.notes()          != null) shift.setNotes(req.notes());
+
+        if (req.caregiverId() != null) {
+            if (!caregiverRepository.existsByIdAndAgencyId(req.caregiverId(), agencyId)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Caregiver does not belong to this agency");
+            }
+            shift.setCaregiverId(req.caregiverId());
+            if (shift.getStatus() == ShiftStatus.OPEN) {
+                shift.setStatus(ShiftStatus.ASSIGNED);
+            }
+        }
+
         return toSummary(shiftRepository.save(shift));
     }
 
