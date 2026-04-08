@@ -49,13 +49,13 @@ export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProp
     )
   }
 
-  if (isError && !client) {
+  if (isError) {
     return (
       <div className="p-8">
         <button type="button" className="text-blue text-[13px] mb-4" onClick={closePanel}>
           {backLabel}
         </button>
-        <p className="text-text-secondary">{t('notFound')}</p>
+        <p className="text-text-secondary">{t('loadError')}</p>
       </div>
     )
   }

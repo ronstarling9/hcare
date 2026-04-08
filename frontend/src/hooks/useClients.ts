@@ -3,7 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { listClients, getClient, listAuthorizations } from '../api/clients'
 import type { ClientResponse } from '../types/api'
 
-/** Paginated client list — for ClientsPage */
+/**
+ * Paginated client list — for ClientsPage.
+ * Does not expose a clientMap. Use useAllClients() when you need a Map<id, client>.
+ */
 export function useClients(page = 0, size = 20) {
   const query = useQuery({
     queryKey: ['clients', page, size],
