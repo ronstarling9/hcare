@@ -38,8 +38,8 @@ All accounts use password: `Admin1234!`
 
 | | |
 |--|--|
-| **Admin** | admin@goldenyears.dev |
-| **Scheduler** | scheduler@goldenyears.dev |
+| **Admin** | admin@golden.dev |
+| **Scheduler** | scheduler@golden.dev |
 | **AI scheduling** | off |
 
 **Payers:** Florida Medicaid, Medicare Plan FL, Prestige Private Pay, Veterans Affairs FL
