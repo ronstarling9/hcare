@@ -12,11 +12,15 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import type { CredentialResponse, BackgroundCheckResponse } from '../../types/api'
 
-type Tab = 'overview' | 'credentials' | 'backgroundChecks' | 'shiftHistory'
+export type CaregiverTab = 'overview' | 'credentials' | 'backgroundChecks' | 'shiftHistory'
+export const CAREGIVER_TABS: readonly CaregiverTab[] = [
+  'overview', 'credentials', 'backgroundChecks', 'shiftHistory',
+]
 
 interface CaregiverDetailPanelProps {
   caregiverId: string
   backLabel: string
+  initialTab?: string
 }
 
 interface CredentialRowProps {
@@ -113,11 +117,16 @@ function BackgroundCheckRow({ bc, locale }: { bc: BackgroundCheckResponse; local
   )
 }
 
-export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetailPanelProps) {
+export function CaregiverDetailPanel({ caregiverId, backLabel, initialTab }: CaregiverDetailPanelProps) {
   const { t, i18n } = useTranslation('caregivers')
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const resolvedTab: CaregiverTab = (CAREGIVER_TABS as readonly string[]).includes(initialTab ?? '')
+    ? (initialTab as CaregiverTab)
+    : 'overview'
+  // The array (not the value) is widened to string[] for the membership test.
+  // The cast in the truthy branch is safe because includes() confirmed membership.
+  const [activeTab, setActiveTab] = useState<CaregiverTab>(resolvedTab)
   const [historyPage, setHistoryPage] = useState(0)
 
   const role = useAuthStore((s) => s.role)
@@ -134,7 +143,7 @@ export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetail
   const shiftHistory = shiftHistoryPage?.content ?? []
   const shiftHistoryTotalPages = shiftHistoryPage?.totalPages ?? 0
 
-  const TABS: { id: Tab; label: string }[] = [
+  const TABS: { id: CaregiverTab; label: string }[] = [
     { id: 'overview', label: t('tabOverview') },
     { id: 'credentials', label: `${t('tabCredentials')} (${credsPage?.totalElements ?? 0})` },
     { id: 'backgroundChecks', label: t('tabBackgroundChecks') },
