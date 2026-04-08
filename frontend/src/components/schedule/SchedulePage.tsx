@@ -5,7 +5,7 @@ import { AlertStrip } from './AlertStrip'
 import { usePanelStore } from '../../store/panelStore'
 import { useShifts } from '../../hooks/useShifts'
 import { useAllClients } from '../../hooks/useClients'
-import { useCaregivers } from '../../hooks/useCaregivers'
+import { useAllCaregivers } from '../../hooks/useCaregivers'
 
 function getMonday(d: Date): Date {
   const date = new Date(d)
@@ -46,7 +46,7 @@ export function SchedulePage() {
 
   const { data: shiftsPage, isLoading: shiftsLoading } = useShifts(weekStartStr, weekEndStr)
   const { clientMap } = useAllClients()
-  const { caregiverMap } = useCaregivers()
+  const { caregiverMap } = useAllCaregivers()
 
   const shifts = shiftsPage?.content ?? []
 
