@@ -10,7 +10,7 @@ const EVV_COLORS: Record<EvvComplianceStatus, string> = {
   RED: '#dc2626',
   GREY: '#94a3b8',
   EXEMPT: '#94a3b8',
-  PORTAL_SUBMIT: '#94a3b8',
+  PORTAL_SUBMIT: '#16a34a',
 }
 
 const STATUS_ORDER: EvvComplianceStatus[] = [

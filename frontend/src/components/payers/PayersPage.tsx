@@ -72,6 +72,12 @@ export function PayersPage() {
             {t('totalCount', { count: totalElements })}
           </p>
         </div>
+        <button
+          onClick={() => alert(t('addPayerAlert'))}
+          className="ml-auto px-4 py-2 text-sm font-medium rounded-lg bg-blue text-white"
+        >
+          {t('addPayer')}
+        </button>
       </div>
 
       {/* List */}

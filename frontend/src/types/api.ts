@@ -249,5 +249,5 @@ export interface EvvHistoryRow {
   evvStatusReason: string | null
   timeIn: string | null
   timeOut: string | null
-  verificationMethod: string | null
+  verificationMethod: VerificationMethod | null
 }
