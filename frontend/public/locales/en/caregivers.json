@@ -27,5 +27,13 @@
   "credUnverified": "Unverified",
   "backgroundPhaseNote": "Background checks — Phase 7 wires to real API.",
   "availabilityPhaseNote": "Availability — Phase 7 wires to real API.",
-  "shiftHistoryPhaseNote": "Shift history — Phase 7 wires to real API."
+  "shiftHistoryPhaseNote": "Shift history — Phase 7 wires to real API.",
+  "loadingCaregivers": "Loading caregivers…",
+  "errorCaregivers": "Failed to load caregivers.",
+  "totalCaregivers": "{{total}} total",
+  "noBackgroundChecks": "No background checks on file.",
+  "noShiftHistory": "No shift history on file.",
+  "prev": "Prev",
+  "next": "Next",
+  "pageOf": "Page {{page}} of {{total}}"
 }
