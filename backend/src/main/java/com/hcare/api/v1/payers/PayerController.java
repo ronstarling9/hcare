@@ -16,25 +16,25 @@ import java.util.UUID;
 @RequestMapping("/api/v1/payers")
 public class PayerController {
 
-    private final PayerService payerService;
+  private final PayerService payerService;
 
-    public PayerController(PayerService payerService) {
-        this.payerService = payerService;
-    }
+  public PayerController(PayerService payerService) {
+    this.payerService = payerService;
+  }
 
-    @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<Page<PayerResponse>> listPayers(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PageableDefault(size = 20) Pageable pageable) {  // sort applied in service (case-insensitive by name)
-        return ResponseEntity.ok(payerService.listPayers(principal.getAgencyId(), pageable));
-    }
+  @GetMapping
+  @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+  public ResponseEntity<Page<PayerResponse>> listPayers(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @PageableDefault(size = 20) Pageable pageable) { // sort applied in service (case-insensitive by name)
+    return ResponseEntity.ok(payerService.listPayers(principal.getAgencyId(), pageable));
+  }
 
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
-    public ResponseEntity<PayerResponse> getPayer(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID id) {
-        return ResponseEntity.ok(payerService.getPayer(id));
-    }
+  @GetMapping("/{id}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+  public ResponseEntity<PayerResponse> getPayer(
+      @AuthenticationPrincipal UserPrincipal principal,
+      @PathVariable UUID id) {
+    return ResponseEntity.ok(payerService.getPayer(id));
+  }
 }
