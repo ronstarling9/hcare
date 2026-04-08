@@ -55,6 +55,13 @@ describe('Toast', () => {
     expect(screen.queryByText('Client saved.')).not.toBeInTheDocument()
   })
 
+  it('dismiss button click sets visible to false', () => {
+    useToastStore.setState(TOAST_STATE)
+    render(<Toast />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(useToastStore.getState().visible).toBe(false)
+  })
+
   it('link click calls openPanel with panelType, targetId, initialTab, and backLabel', () => {
     useToastStore.setState(TOAST_STATE)
     render(<Toast />)
