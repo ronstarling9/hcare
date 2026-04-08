@@ -114,11 +114,12 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
             {...register('serviceTypeId', { required: t('validationServiceTypeRequired') })}
             disabled={serviceTypesLoading || serviceTypesError || serviceTypes.length === 0}
             aria-busy={serviceTypesLoading ? "true" : "false"}
-            aria-describedby={
-              serviceTypesError || (!serviceTypesLoading && serviceTypes.length === 0)
+            aria-describedby={[
+              (serviceTypesError || (!serviceTypesLoading && serviceTypes.length === 0))
                 ? "ns-service-type-hint"
-                : undefined
-            }
+                : null,
+              errors.serviceTypeId ? "ns-service-type-error" : null,
+            ].filter(Boolean).join(' ') || undefined}
             className="w-full border border-border px-3 py-2 text-[13px] text-dark bg-white disabled:opacity-50"
           >
             {serviceTypesLoading ? (
@@ -149,7 +150,7 @@ export function NewShiftPanel({ prefill, backLabel }: NewShiftPanelProps) {
             </p>
           )}
           {errors.serviceTypeId && (
-            <p className="text-[11px] text-red-600 mt-1">{errors.serviceTypeId.message}</p>
+            <p id="ns-service-type-error" className="text-[11px] text-red-600 mt-1">{errors.serviceTypeId.message}</p>
           )}
         </div>
 
