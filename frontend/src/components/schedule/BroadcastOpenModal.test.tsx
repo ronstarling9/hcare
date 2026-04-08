@@ -5,8 +5,9 @@ import * as shiftsApi from '../../api/shifts'
 import type { ShiftSummaryResponse } from '../../types/api'
 
 vi.mock('../../api/shifts')
+const mockInvalidateQueries = vi.fn()
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
 }))
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -105,6 +106,7 @@ describe('BroadcastOpenModal', () => {
       expect(screen.getByText(/broadcastModal.doneAllSuccess/)).toBeInTheDocument()
     )
     expect(screen.getByRole('button', { name: 'broadcastModal.close' })).toBeInTheDocument()
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['shifts'] })
   })
 
   it('calls onClose when cancel is clicked in confirm phase', async () => {

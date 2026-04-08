@@ -25,6 +25,7 @@ export async function listShifts(
   return response.data
 }
 
+// 200 exceeds a week's worth of shifts for any supported agency size (≤ 25 caregivers).
 export async function listOpenShifts(start: string, end: string): Promise<ShiftSummaryResponse[]> {
   const response = await apiClient.get<PageResponse<ShiftSummaryResponse>>('/shifts', {
     params: { start, end, status: 'OPEN', size: 200, sort: 'scheduledStart' },
