@@ -78,7 +78,7 @@ Header
 |---|---|---|
 | firstName | `text` | Required |
 | lastName | `text` | Required |
-| dateOfBirth | `date` | Required |
+| dateOfBirth | `date` | Required; `<input type="date">` returns `"YYYY-MM-DD"` — Jackson deserializes this directly to `LocalDate`, no transformation needed |
 | phone | `tel` | Optional |
 | address | `text` | Optional; single line is sufficient for intake |
 | serviceState | `select` | 50 US state abbreviations + empty default |
@@ -106,9 +106,9 @@ Header
 | `src/types/api.ts` | Add `CreateClientRequest` interface |
 | `src/api/clients.ts` | Add `createClient(req: CreateClientRequest)` |
 | `src/hooks/useClients.ts` | Add `useCreateClient()` mutation |
-| `src/store/panelStore.ts` | Add `'newClient'` to `PanelType` union; add `initialTab?: string` as top-level `PanelState` field (not inside `PanelPrefill`) |
+| `src/store/panelStore.ts` | Add `'newClient'` to `PanelType` union; add `initialTab?: string` as top-level `PanelState` field (not inside `PanelPrefill`); add `initialTab?: string` to `openPanel`'s `options` parameter; `closePanel` resets `initialTab` to `undefined` |
 | `src/components/layout/Shell.tsx` | Register `newClient` in `PanelContent`; render `<Toast />`; pass `initialTab` from `PanelState` as direct prop to `ClientDetailPanel` |
-| `src/components/clients/ClientDetailPanel.tsx` | Accept optional `initialTab?: string` prop; pass as default value to `useState<Tab>('overview')` |
+| `src/components/clients/ClientDetailPanel.tsx` | Accept optional `initialTab?: string` prop; cast to `Tab` with `(initialTab as Tab | undefined) ?? 'overview'` as the `useState` initial value |
 | `src/components/clients/ClientsPage.tsx` | Replace `alert()` with `openPanel('newClient', undefined, { backLabel: t('backLabel') })` |
 | `public/locales/en/clients.json` | Add keys for new panel (see i18n section below) |
 
@@ -155,7 +155,7 @@ preferredLanguages: values.preferredLanguages
 
 The backend `CreateClientRequest.preferredLanguages` is a raw `String` that gets written directly to the `client.preferred_languages` column (default `"[]"`). `ClientResponse.from()` deserializes it back to `List<String>` using Jackson. The frontend must serialize to a JSON array string (e.g. `'["English","Spanish"]'`) — the backend does no comma-to-JSON conversion.
 
-**Case normalization:** `LocalScoringService` uses language lists for caregiver–client preference matching. To avoid silent mismatches (e.g. `"english"` vs `"English"`), title-case each token before serializing: `token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()`. This keeps stored values consistent with how languages are typically entered.
+**Case normalization:** No frontend normalization needed. `LocalScoringService.parseLanguageList()` calls `map(String::toLowerCase)` on both the client's and caregiver's language lists before comparison (`LocalScoringService.java:380`). Stored case has no effect on matching — store tokens as-entered.
 
 ### Post-save navigation
 
@@ -169,7 +169,13 @@ openPanel('client', client.id, {
 })
 ```
 
-`initialTab` is a top-level field on `PanelState` (not inside `PanelPrefill`). `Shell.tsx` passes it as a direct prop to `ClientDetailPanel`, which uses it as the default value for `useState<Tab>`.
+`initialTab` is a top-level field on `PanelState` (not inside `PanelPrefill`). `Shell.tsx` passes it as a direct prop to `ClientDetailPanel`, which casts it and uses it as the `useState<Tab>` initial value.
+
+Updated `openPanel` options type in `panelStore.ts`:
+```ts
+options?: { prefill?: PanelPrefill; backLabel?: string; initialTab?: string }
+```
+`closePanel` resets `initialTab` to `undefined` alongside the other fields.
 
 > **React 18 batching note:** `closePanel()` and `openPanel()` are synchronous Zustand updates. React 18 automatic batching will coalesce them into a single render, so the `SlidePanel` never fully closes before reopening — it swaps content while remaining open (no blank-panel flash). This is intentional. If a close animation before reopening is ever desired, wrap `openPanel()` in `setTimeout(..., 300)` to allow the CSS transition to complete.
 
@@ -179,12 +185,15 @@ const client = await createMutation.mutateAsync(payload)
 toastStore.show({
   message: t('saveCloseToast'),
   linkLabel: t('saveCloseToastLink'),
-  clientId: client.id,
+  targetId: client.id,
+  panelType: 'client',
+  panelTab: 'authorizations',
+  backLabel: t('backLabel'),
 })
 closePanel()
 ```
 
-The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel('client', clientId, { initialTab: 'authorizations', backLabel: t('backLabel') })`.
+The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel(panelType, targetId, { initialTab: panelTab, backLabel })` — all navigation params come from the store. `Toast.tsx` imports no i18n namespace and references no feature-specific constants.
 
 **Timer lifecycle:** The `setTimeout` (6 000 ms) lives in `Toast.tsx`'s `useEffect`, with `visible` as the dependency. The effect's cleanup function calls `clearTimeout` — this prevents a stale timer from dismissing a subsequent toast when the user manually dismisses the first one early and triggers a second save quickly afterward.
 
@@ -197,13 +206,25 @@ interface ToastState {
   visible: boolean
   message: string
   linkLabel: string
-  clientId: string | null
-  show: (opts: { message: string; linkLabel: string; clientId: string }) => void
+  targetId: string | null   // ID passed to openPanel as selectedId
+  panelType: string         // PanelType value, e.g. 'client'
+  panelTab: string          // initialTab value, e.g. 'authorizations'
+  backLabel: string         // e.g. '← Clients'
+  show: (opts: {
+    message: string
+    linkLabel: string
+    targetId: string
+    panelType: string
+    panelTab: string
+    backLabel: string
+  }) => void
   dismiss: () => void
 }
 ```
 
-Minimal — no queue, no stacking. One toast at a time is sufficient for this use case.
+Initial state: `{ visible: false, message: '', linkLabel: '', targetId: null, panelType: '', panelTab: '', backLabel: '' }`.
+
+Minimal — no queue, no stacking. One toast at a time is sufficient for this use case. `Toast.tsx` is fully generic: it reads all display and navigation params from the store and has no feature-specific imports.
 
 ---
 
@@ -275,8 +296,8 @@ Add a `useCreateClient` mutation test in `useClients.test.ts` confirming query i
 
 | Scenario | Assertion |
 |---|---|
-| `show()` sets `visible: true` | State reflects new message and clientId |
-| `dismiss()` sets `visible: false` | State resets |
+| `show()` sets `visible: true` | State reflects new message, targetId, panelType, panelTab, backLabel |
+| `dismiss()` sets `visible: false` | State resets to initial values |
 
 **`Toast.test.tsx`:**
 
