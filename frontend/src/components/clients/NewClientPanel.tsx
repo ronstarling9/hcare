@@ -32,7 +32,7 @@ interface Props {
 
 export function NewClientPanel({ backLabel }: Props) {
   const { t } = useTranslation('clients')
-  const tCommon = useTranslation('common').t
+  const { t: tCommon } = useTranslation('common')
   const { closePanel, openPanel } = usePanelStore()
   const createMutation = useCreateClient()
   const [apiError, setApiError] = useState<string | null>(null)
@@ -58,8 +58,8 @@ export function NewClientPanel({ backLabel }: Props) {
 
   function buildPayload(values: FormValues) {
     return {
-      firstName: values.firstName,
-      lastName: values.lastName,
+      firstName: values.firstName.trim(),
+      lastName: values.lastName.trim(),
       dateOfBirth: values.dateOfBirth,
       phone: values.phone || undefined,
       address: values.address || undefined,
@@ -175,7 +175,13 @@ export function NewClientPanel({ backLabel }: Props) {
             <input
               id="dateOfBirth"
               type="date"
-              {...register('dateOfBirth', { required: t('validationDobRequired') })}
+              {...register('dateOfBirth', {
+                required: t('validationDobRequired'),
+                validate: (v) => {
+                  if (!v) return true  // required rule handles empty
+                  return v <= new Date().toISOString().slice(0, 10) || t('validationDobFuture')
+                },
+              })}
               className="border border-border px-3 py-1.5 text-[13px] focus:outline-none focus:border-dark"
             />
             {errors.dateOfBirth && (

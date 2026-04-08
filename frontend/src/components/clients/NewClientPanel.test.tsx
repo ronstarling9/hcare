@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { NewClientPanel } from './NewClientPanel'
@@ -151,5 +151,35 @@ describe('NewClientPanel', () => {
     expect(toast.targetId).toBe('new-client-id')
     expect(toast.panelType).toBe('client')
     expect(toast.panelTab).toBe('authorizations')
+  })
+
+  // ── Care Preferences ───────────────────────────────────────────────────────
+
+  it('sends noPetCaregiver: true in payload when checkbox is checked', async () => {
+    const user = userEvent.setup()
+    mockMutateAsync.mockResolvedValue({ id: 'client-99' })
+    render(<NewClientPanel backLabel="← Clients" />)
+    await user.type(screen.getByLabelText('fieldFirstName *'), 'Jane')
+    await user.type(screen.getByLabelText('fieldLastName *'), 'Doe')
+    await user.type(screen.getByLabelText('fieldDateOfBirth *'), '1980-01-15')
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: 'saveAndAddAuth' }))
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledOnce())
+    expect(mockMutateAsync.mock.calls[0][0].noPetCaregiver).toBe(true)
+  })
+
+  it('shows future-date error and does not call API when dateOfBirth is in the future', async () => {
+    const user = userEvent.setup()
+    render(<NewClientPanel backLabel="← Clients" />)
+    await user.type(screen.getByLabelText('fieldFirstName *'), 'Jane')
+    await user.type(screen.getByLabelText('fieldLastName *'), 'Doe')
+    // Set a future date
+    const futureDate = new Date()
+    futureDate.setFullYear(futureDate.getFullYear() + 1)
+    const futureDateStr = futureDate.toISOString().slice(0, 10)
+    fireEvent.change(screen.getByLabelText('fieldDateOfBirth *'), { target: { value: futureDateStr } })
+    await user.click(screen.getByRole('button', { name: 'saveAndAddAuth' }))
+    expect(await screen.findByText('validationDobFuture')).toBeInTheDocument()
+    expect(mockMutateAsync).not.toHaveBeenCalled()
   })
 })
