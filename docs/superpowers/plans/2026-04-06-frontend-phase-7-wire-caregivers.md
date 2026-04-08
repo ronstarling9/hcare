@@ -8,6 +8,36 @@
 - Phase 3 (auth wiring) must be complete.
 - `frontend/src/api/caregivers.ts` was created in Phase 4 with `listCaregivers` and `getCaregiver`. This phase expands it.
 - `frontend/src/hooks/useCaregivers.ts` was created in Phase 4 with `useCaregivers` and `useCaregiverDetail`. This phase adds credential and shift-history hooks.
+- `Shell.tsx` already routes `type === 'caregiver'` to `CaregiverDetailPanel`. Do **not** render `CaregiverDetailPanel` inside `CaregiversPage` and do **not** add a new panel type — `CaregiversTable` already calls `openPanel('caregiver', id)` which is correct.
+
+---
+
+### Task 0: Add Missing Locale Keys
+
+**Files:**
+- Modify: `frontend/public/locales/en/caregivers.json`
+
+- [ ] **Step 0.1: Add missing keys to caregivers.json**
+
+Open `frontend/public/locales/en/caregivers.json` and add the following key-value pairs as entries inside the existing JSON object. Each new entry must be preceded by a comma after the previous entry; preserve the closing `}`.
+
+```json
+"loadingCaregivers": "Loading caregivers…",
+"errorCaregivers": "Failed to load caregivers.",
+"totalCaregivers": "{{total}} total",
+"noBackgroundChecks": "No background checks on file.",
+"noShiftHistory": "No shift history on file.",
+"prev": "Prev",
+"next": "Next",
+"pageOf": "Page {{page}} of {{total}}"
+```
+
+- [ ] **Step 0.2: Commit**
+
+```bash
+cd frontend && git add public/locales/en/caregivers.json
+git commit -m "feat: add missing caregivers locale keys for phase 7 wiring"
+```
 
 ---
 
@@ -25,6 +55,7 @@ import { apiClient } from './client'
 import type {
   CaregiverResponse,
   CredentialResponse,
+  BackgroundCheckResponse,
   ShiftSummaryResponse,
   PageResponse,
 } from '../types/api'
@@ -60,8 +91,8 @@ export async function listBackgroundChecks(
   caregiverId: string,
   page = 0,
   size = 20,
-): Promise<PageResponse<unknown>> {
-  const response = await apiClient.get<PageResponse<unknown>>(
+): Promise<PageResponse<BackgroundCheckResponse>> {
+  const response = await apiClient.get<PageResponse<BackgroundCheckResponse>>(
     `/caregivers/${caregiverId}/background-checks`,
     { params: { page, size } },
   )
@@ -88,17 +119,16 @@ export async function listShiftHistory(
 }
 ```
 
-- [ ] **Step 1.2: Ensure CredentialResponse type exists in types/api.ts**
+- [ ] **Step 1.2: Update CredentialResponse and add BackgroundCheckResponse in types/api.ts**
 
-Open `frontend/src/types/api.ts` and confirm the following types are present. Add if missing:
+Open `frontend/src/types/api.ts`. The `CredentialResponse` interface already exists but is missing `agencyId`. Add that field, then add `BackgroundCheckResponse` below it:
 
 ```ts
-// Add to frontend/src/types/api.ts if not already present
-
+// In the existing CredentialResponse interface, add agencyId after caregiverId:
 export interface CredentialResponse {
   id: string
   caregiverId: string
-  agencyId: string
+  agencyId: string          // ← add this field
   credentialType: string
   issueDate: string | null   // ISO-8601 LocalDate
   expiryDate: string | null  // ISO-8601 LocalDate
@@ -107,22 +137,32 @@ export interface CredentialResponse {
   createdAt: string
 }
 
+// Add this new interface after CredentialResponse:
 export interface BackgroundCheckResponse {
   id: string
   caregiverId: string
   agencyId: string
   checkType: string
   result: 'PASS' | 'FAIL' | 'PENDING' | 'EXPIRED'
-  checkedAt: string        // ISO-8601 LocalDate
+  checkedAt: string          // ISO-8601 LocalDate
   renewalDueDate: string | null
   createdAt: string
 }
 ```
 
+- [ ] **Step 1.2b: Update mockCredentials in mock/data.ts to include agencyId**
+
+Open `frontend/src/mock/data.ts`. The `mockCredentials` array has two `CredentialResponse` objects. Add `agencyId` to each — use the same agency ID constant used elsewhere in that file (e.g. `IDS.agency` or the literal UUID). After Step 1.2 makes `agencyId` a required field, these objects will cause a TypeScript compile error unless updated.
+
+```ts
+// In each object inside mockCredentials, add agencyId after caregiverId:
+agencyId: IDS.agency,   // use whatever agency ID constant the file already uses
+```
+
 - [ ] **Step 1.3: Commit**
 
 ```bash
-cd frontend && git add src/api/caregivers.ts src/types/api.ts
+cd frontend && git add src/api/caregivers.ts src/types/api.ts src/mock/data.ts
 git commit -m "feat: expand caregivers API with credentials, background-checks, availability, shift-history"
 ```
 
@@ -201,6 +241,7 @@ export function useCaregiverDetail(id: string | null) {
     queryKey: ['caregiver', id],
     queryFn: () => getCaregiver(id!),
     enabled: Boolean(id),
+    staleTime: 60_000,
   })
 }
 
@@ -209,6 +250,7 @@ export function useCaregiverCredentials(caregiverId: string | null) {
     queryKey: ['caregiver-credentials', caregiverId],
     queryFn: () => listCredentials(caregiverId!, 0, 50),
     enabled: Boolean(caregiverId),
+    staleTime: 60_000,
   })
 }
 
@@ -217,6 +259,7 @@ export function useCaregiverBackgroundChecks(caregiverId: string | null) {
     queryKey: ['caregiver-background-checks', caregiverId],
     queryFn: () => listBackgroundChecks(caregiverId!, 0, 20),
     enabled: Boolean(caregiverId),
+    staleTime: 60_000,
   })
 }
 
@@ -225,15 +268,16 @@ export function useCaregiverShiftHistory(caregiverId: string | null, page = 0) {
     queryKey: ['caregiver-shifts', caregiverId, page],
     queryFn: () => listShiftHistory(caregiverId!, page, 20),
     enabled: Boolean(caregiverId),
+    staleTime: 60_000,
   })
 }
 ```
 
-- [ ] **Step 2.2: Update Schedule-screen imports to use useAllCaregivers**
+- [ ] **Step 2.2: Update Schedule-screen and NewShiftPanel imports to use useAllCaregivers**
 
-In `frontend/src/components/schedule/SchedulePage.tsx` and `frontend/src/components/schedule/ShiftDetailPanel.tsx`, update the import of `useCaregivers` to `useAllCaregivers` where the lookup map is needed:
+Three files use `useCaregivers` for lookup maps or full caregiver lists. Update all three:
 
-In `SchedulePage.tsx`:
+In `frontend/src/components/schedule/SchedulePage.tsx`:
 ```tsx
 // Change:
 import { useCaregivers } from '../../hooks/useCaregivers'
@@ -243,7 +287,7 @@ import { useAllCaregivers } from '../../hooks/useCaregivers'
 const { caregiverMap } = useAllCaregivers()
 ```
 
-In `ShiftDetailPanel.tsx`:
+In `frontend/src/components/schedule/ShiftDetailPanel.tsx`:
 ```tsx
 // Change:
 import { useCaregivers } from '../../hooks/useCaregivers'
@@ -251,6 +295,16 @@ import { useCaregivers } from '../../hooks/useCaregivers'
 import { useAllCaregivers } from '../../hooks/useCaregivers'
 // And update usage:
 const { caregiverMap } = useAllCaregivers()
+```
+
+In `frontend/src/components/schedule/NewShiftPanel.tsx`:
+```tsx
+// Change:
+import { useCaregivers } from '../../hooks/useCaregivers'
+// To:
+import { useAllCaregivers } from '../../hooks/useCaregivers'
+// And update usage:
+const { caregivers } = useAllCaregivers()
 ```
 
 - [ ] **Step 2.3: Commit**
@@ -258,7 +312,8 @@ const { caregiverMap } = useAllCaregivers()
 ```bash
 cd frontend && git add src/hooks/useCaregivers.ts \
   src/components/schedule/SchedulePage.tsx \
-  src/components/schedule/ShiftDetailPanel.tsx
+  src/components/schedule/ShiftDetailPanel.tsx \
+  src/components/schedule/NewShiftPanel.tsx
 git commit -m "feat: expand useCaregivers hook with credentials, background-checks, and shift-history hooks"
 ```
 
@@ -269,95 +324,93 @@ git commit -m "feat: expand useCaregivers hook with credentials, background-chec
 **Files:**
 - Modify: `frontend/src/components/caregivers/CaregiversPage.tsx`
 
+**Note:** `CaregiversTable` already calls `openPanel('caregiver', id, { backLabel: t('backLabel') })`, which `Shell.tsx` routes to `CaregiverDetailPanel`. Do **not** render `CaregiverDetailPanel` inside `CaregiversPage`, and do **not** add a new `PanelType`. The only change here is replacing mock data with real API data and adding server-side pagination.
+
 - [ ] **Step 3.1: Update CaregiversPage**
 
 Replace the full contents of `frontend/src/components/caregivers/CaregiversPage.tsx`:
 
 ```tsx
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CaregiversTable } from './CaregiversTable'
-import { CaregiverDetailPanel } from './CaregiverDetailPanel'
-import { usePanelStore } from '../../store/panelStore'
 import { useCaregivers } from '../../hooks/useCaregivers'
 
 export function CaregiversPage() {
+  const { t } = useTranslation('caregivers')
+  const tCommon = useTranslation('common').t
+  const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const { caregivers, isLoading, isError, totalPages, totalElements } = useCaregivers(page, 20)
-  const panel = usePanelStore()
 
-  if (isLoading) {
+  if (isLoading && caregivers.length === 0) {
     return (
-      <div
-        className="flex items-center justify-center h-full"
-        style={{ backgroundColor: '#f6f6fa' }}
-      >
-        <span className="text-sm" style={{ color: '#94a3b8' }}>Loading caregivers…</span>
+      <div className="flex items-center justify-center h-full bg-surface">
+        <span className="text-[14px] text-text-muted">{t('loadingCaregivers')}</span>
       </div>
     )
   }
 
-  if (isError) {
+  if (isError && caregivers.length === 0) {
     return (
-      <div
-        className="flex items-center justify-center h-full"
-        style={{ backgroundColor: '#f6f6fa' }}
-      >
-        <p className="text-sm" style={{ color: '#dc2626' }}>Failed to load caregivers.</p>
+      <div className="flex items-center justify-center h-full bg-surface">
+        <span className="text-[14px] text-text-muted">{t('errorCaregivers')}</span>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#f6f6fa' }}>
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-6 py-4 border-b"
-        style={{ backgroundColor: '#ffffff', borderColor: '#eaeaf2' }}
-      >
-        <div>
-          <h1 className="text-lg font-semibold" style={{ color: '#1a1a24' }}>Caregivers</h1>
-          <p className="text-xs mt-0.5" style={{ color: '#94a3b8' }}>
-            {totalElements} total
-          </p>
-        </div>
+      <div className="flex items-center gap-4 px-6 py-4 bg-white border-b border-border">
+        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
+        {totalElements > 0 && (
+          <span className="text-[13px] text-text-secondary">
+            {t('totalCaregivers', { total: totalElements })}
+          </span>
+        )}
+        <input
+          type="search"
+          placeholder={tCommon('searchByName')}
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(0) }}
+          className="ml-4 border border-border px-3 py-1.5 text-[13px] w-64 focus:outline-none focus:border-dark"
+        />
+        <button
+          type="button"
+          className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
+          onClick={() => alert(t('addCaregiverAlert'))}
+        >
+          {t('addCaregiver')}
+        </button>
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto p-6">
-        <CaregiversTable
-          caregivers={caregivers}
-          onCaregiverClick={(id) => panel.openPanel('caregiverDetail', id)}
-        />
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-end gap-2 mt-4">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-              style={{ border: '1px solid #eaeaf2', color: '#747480' }}
-            >
-              Prev
-            </button>
-            <span className="text-sm" style={{ color: '#747480' }}>
-              Page {page + 1} of {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page === totalPages - 1}
-              className="px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-              style={{ border: '1px solid #eaeaf2', color: '#747480' }}
-            >
-              Next
-            </button>
-          </div>
-        )}
+      <div className="flex-1 overflow-auto">
+        <CaregiversTable caregivers={caregivers} search={search} />
       </div>
 
-      {/* Detail Panel */}
-      {panel.type === 'caregiverDetail' && panel.id && (
-        <CaregiverDetailPanel caregiverId={panel.id} onClose={panel.closePanel} />
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border bg-white">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-3 py-1.5 rounded text-[13px] border border-border text-text-secondary disabled:opacity-40"
+          >
+            {t('prev')}
+          </button>
+          <span className="text-[13px] text-text-secondary">
+            {t('pageOf', { page: page + 1, total: totalPages })}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page === totalPages - 1}
+            className="px-3 py-1.5 rounded text-[13px] border border-border text-text-secondary disabled:opacity-40"
+          >
+            {t('next')}
+          </button>
+        </div>
       )}
     </div>
   )
@@ -378,73 +431,105 @@ git commit -m "feat: wire CaregiversPage to real API with pagination"
 **Files:**
 - Modify: `frontend/src/components/caregivers/CaregiverDetailPanel.tsx`
 
+**Pattern:** Follow `ClientDetailPanel` exactly — render `flex flex-col h-full` as root, call `usePanelStore().closePanel()` for all close actions, use `useTranslation('caregivers')`, use `formatLocalDate` for all ISO date strings (avoids UTC-midnight off-by-one errors), use Tailwind design tokens (not raw hex). Do **not** use `SlidePanel` — `Shell.tsx` already wraps the content in `SlidePanel`.
+
 - [ ] **Step 4.1: Update CaregiverDetailPanel**
 
 Replace the full contents of `frontend/src/components/caregivers/CaregiverDetailPanel.tsx`:
 
 ```tsx
 import { useState } from 'react'
-import { SlidePanel } from '../panel/SlidePanel'
+import { useTranslation } from 'react-i18next'
+import { usePanelStore } from '../../store/panelStore'
+import { formatLocalDate, formatLocalTime } from '../../utils/dateFormat'
 import {
   useCaregiverDetail,
   useCaregiverCredentials,
   useCaregiverBackgroundChecks,
   useCaregiverShiftHistory,
 } from '../../hooks/useCaregivers'
-import type { CredentialResponse } from '../../types/api'
+import type { CredentialResponse, BackgroundCheckResponse } from '../../types/api'
 
-type Tab = 'overview' | 'credentials' | 'background' | 'history'
+type Tab = 'overview' | 'credentials' | 'backgroundChecks' | 'shiftHistory'
 
 interface CaregiverDetailPanelProps {
   caregiverId: string
-  onClose: () => void
+  backLabel: string
 }
 
-function CredentialRow({ cred }: { cred: CredentialResponse }) {
+function CredentialRow({ cred, locale }: { cred: CredentialResponse; locale: string }) {
   const today = new Date()
-  const expiry = cred.expiryDate ? new Date(cred.expiryDate) : null
+  // Use T12:00:00 anchor to avoid UTC-midnight off-by-one in negative-offset timezones
+  const expiry = cred.expiryDate ? new Date(`${cred.expiryDate}T12:00:00`) : null
   const daysUntilExpiry = expiry
     ? Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     : null
 
-  const expiryColor =
+  const expiryColorClass =
     daysUntilExpiry === null
-      ? '#94a3b8'
+      ? 'text-text-muted'
       : daysUntilExpiry <= 0
-      ? '#dc2626'
+      ? 'text-red-600'
       : daysUntilExpiry <= 30
-      ? '#ca8a04'
-      : '#16a34a'
+      ? 'text-yellow-600'
+      : 'text-green-600'
 
   return (
-    <div
-      className="flex items-center justify-between rounded-lg px-3 py-2"
-      style={{ border: '1px solid #eaeaf2', backgroundColor: '#ffffff' }}
-    >
+    <div className="flex items-center justify-between border border-border rounded px-3 py-2 bg-white">
       <div>
-        <p className="text-sm font-medium" style={{ color: '#1a1a24' }}>
+        <p className="text-[13px] font-medium text-dark">
           {cred.credentialType.replace(/_/g, ' ')}
         </p>
-        <p className="text-xs" style={{ color: '#747480' }}>
+        <p className="text-[11px] text-text-secondary">
           {cred.verified ? 'Verified' : 'Unverified'}
         </p>
       </div>
       <div className="text-right">
         {expiry ? (
-          <p className="text-xs font-semibold" style={{ color: expiryColor }}>
+          <p className={`text-[11px] font-semibold ${expiryColorClass}`}>
             {daysUntilExpiry !== null && daysUntilExpiry <= 0
               ? 'EXPIRED'
-              : expiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              : formatLocalDate(cred.expiryDate!, locale)}
           </p>
         ) : (
-          <p className="text-xs" style={{ color: '#94a3b8' }}>No expiry</p>
+          <p className="text-[11px] text-text-muted">No expiry</p>
         )}
       </div>
     </div>
   )
 }
 
-export function CaregiverDetailPanel({ caregiverId, onClose }: CaregiverDetailPanelProps) {
+function BackgroundCheckRow({ bc, locale }: { bc: BackgroundCheckResponse; locale: string }) {
+  const isPass = bc.result === 'PASS'
+  return (
+    <div className="border border-border rounded px-3 py-2 bg-white">
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] font-medium text-dark">
+          {bc.checkType.replace(/_/g, ' ')}
+        </p>
+        <span
+          className={[
+            'text-[11px] font-semibold px-2 py-0.5 rounded',
+            isPass ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600',
+          ].join(' ')}
+        >
+          {bc.result}
+        </span>
+      </div>
+      {bc.checkedAt && (
+        <p className="text-[11px] text-text-secondary mt-1">
+          Checked: {formatLocalDate(bc.checkedAt, locale)}
+          {bc.renewalDueDate ? ` · Renewal due: ${formatLocalDate(bc.renewalDueDate, locale)}` : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function CaregiverDetailPanel({ caregiverId, backLabel }: CaregiverDetailPanelProps) {
+  const { t, i18n } = useTranslation('caregivers')
+  const tCommon = useTranslation('common').t
+  const { closePanel } = usePanelStore()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [historyPage, setHistoryPage] = useState(0)
 
@@ -454,197 +539,153 @@ export function CaregiverDetailPanel({ caregiverId, onClose }: CaregiverDetailPa
   const { data: shiftHistoryPage } = useCaregiverShiftHistory(caregiverId, historyPage)
 
   const credentials = credsPage?.content ?? []
-  const bgChecks = (bgChecksPage?.content ?? []) as Array<Record<string, unknown>>
+  const bgChecks = bgChecksPage?.content ?? []
   const shiftHistory = shiftHistoryPage?.content ?? []
   const shiftHistoryTotalPages = shiftHistoryPage?.totalPages ?? 0
 
-  if (isLoading) {
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'overview', label: t('tabOverview') },
+    { id: 'credentials', label: `${t('tabCredentials')} (${credsPage?.totalElements ?? 0})` },
+    { id: 'backgroundChecks', label: t('tabBackgroundChecks') },
+    { id: 'shiftHistory', label: t('tabShiftHistory') },
+  ]
+
+  if (isLoading && !caregiver) {
     return (
-      <SlidePanel title="Caregiver Detail" onClose={onClose}>
-        <div className="flex items-center justify-center h-32">
-          <span className="text-sm" style={{ color: '#94a3b8' }}>Loading…</span>
+      <div className="flex flex-col h-full">
+        <div className="px-6 py-4 border-b border-border">
+          <button
+            type="button"
+            className="text-[13px] mb-2 text-blue hover:underline"
+            onClick={closePanel}
+          >
+            {backLabel}
+          </button>
         </div>
-      </SlidePanel>
+        <div className="flex items-center justify-center flex-1">
+          <span className="text-[13px] text-text-muted">{tCommon('loading')}</span>
+        </div>
+      </div>
     )
   }
 
   if (isError || !caregiver) {
     return (
-      <SlidePanel title="Caregiver Detail" onClose={onClose}>
-        <div className="flex items-center justify-center h-32">
-          <span className="text-sm" style={{ color: '#dc2626' }}>Failed to load caregiver.</span>
-        </div>
-      </SlidePanel>
+      <div className="p-8">
+        <button type="button" className="text-[13px] mb-4 text-blue hover:underline" onClick={closePanel}>
+          {backLabel}
+        </button>
+        <p className="text-text-secondary">{t('notFound')}</p>
+      </div>
     )
   }
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'credentials', label: `Credentials (${credentials.length})` },
-    { id: 'background', label: 'Background' },
-    { id: 'history', label: 'History' },
-  ]
-
   return (
-    <SlidePanel title={`${caregiver.firstName} ${caregiver.lastName}`} onClose={onClose}>
-      {/* Tab bar */}
-      <div
-        className="flex border-b"
-        style={{ borderColor: '#eaeaf2' }}
-      >
-        {tabs.map((tab) => (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-border">
+        <button
+          type="button"
+          className="text-[13px] mb-2 text-blue hover:underline"
+          onClick={closePanel}
+        >
+          {backLabel}
+        </button>
+        <h2 className="text-[16px] font-bold text-dark">
+          {caregiver.firstName} {caregiver.lastName}
+        </h2>
+        <p className="text-[12px] text-text-secondary mt-0.5">{caregiver.email}</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-border px-6 bg-white">
+        {TABS.map((tab) => (
           <button
             key={tab.id}
+            type="button"
             onClick={() => setActiveTab(tab.id)}
-            className="px-4 py-3 text-xs font-medium transition-colors"
-            style={{
-              color: activeTab === tab.id ? '#1a9afa' : '#747480',
-              borderBottom: activeTab === tab.id ? '2px solid #1a9afa' : '2px solid transparent',
-            }}
+            className={[
+              'px-4 py-3 text-[12px] font-medium border-b-2 -mb-px transition-colors',
+              activeTab === tab.id
+                ? 'border-dark text-dark'
+                : 'border-transparent text-text-secondary hover:text-dark',
+            ].join(' ')}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
-      <div className="p-4">
+      {/* Tab content */}
+      <div className="flex-1 overflow-auto px-6 py-4">
         {/* Overview tab */}
         {activeTab === 'overview' && (
-          <dl className="space-y-2">
-            <div className="flex justify-between">
-              <dt className="text-xs" style={{ color: '#747480' }}>Email</dt>
-              <dd className="text-xs font-medium" style={{ color: '#1a1a24' }}>{caregiver.email}</dd>
-            </div>
-            {caregiver.phone && (
-              <div className="flex justify-between">
-                <dt className="text-xs" style={{ color: '#747480' }}>Phone</dt>
-                <dd className="text-xs font-medium" style={{ color: '#1a1a24' }}>{caregiver.phone}</dd>
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              [t('fieldPhone'), caregiver.phone ?? tCommon('noDash')],
+              [t('fieldAddress'), caregiver.address ?? tCommon('noDash')],
+              [t('fieldHireDate'), caregiver.hireDate
+                ? formatLocalDate(caregiver.hireDate, i18n.language)
+                : tCommon('noDash')],
+              [t('fieldStatus'), caregiver.status],
+              [t('fieldHasPet'), caregiver.hasPet ? tCommon('yes') : tCommon('no')],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <div className="text-[10px] text-text-secondary">{label}</div>
+                <div className="text-[13px] text-dark">{value}</div>
               </div>
-            )}
-            {caregiver.address && (
-              <div className="flex justify-between">
-                <dt className="text-xs" style={{ color: '#747480' }}>Address</dt>
-                <dd className="text-xs font-medium text-right" style={{ color: '#1a1a24', maxWidth: '60%' }}>
-                  {caregiver.address}
-                </dd>
-              </div>
-            )}
-            {caregiver.hireDate && (
-              <div className="flex justify-between">
-                <dt className="text-xs" style={{ color: '#747480' }}>Hire Date</dt>
-                <dd className="text-xs font-medium" style={{ color: '#1a1a24' }}>
-                  {new Date(caregiver.hireDate).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </dd>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <dt className="text-xs" style={{ color: '#747480' }}>Status</dt>
-              <dd className="text-xs font-medium" style={{ color: '#1a1a24' }}>{caregiver.status}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-xs" style={{ color: '#747480' }}>Has Pet</dt>
-              <dd className="text-xs font-medium" style={{ color: '#1a1a24' }}>
-                {caregiver.hasPet ? 'Yes' : 'No'}
-              </dd>
-            </div>
-          </dl>
+            ))}
+          </div>
         )}
 
         {/* Credentials tab */}
         {activeTab === 'credentials' && (
           <div className="space-y-2">
             {credentials.length === 0 ? (
-              <p className="text-xs" style={{ color: '#94a3b8' }}>No credentials on file.</p>
+              <p className="text-[13px] text-text-secondary">{t('noCredentials')}</p>
             ) : (
-              credentials.map((cred) => <CredentialRow key={cred.id} cred={cred} />)
-            )}
-          </div>
-        )}
-
-        {/* Background checks tab */}
-        {activeTab === 'background' && (
-          <div className="space-y-2">
-            {bgChecks.length === 0 ? (
-              <p className="text-xs" style={{ color: '#94a3b8' }}>No background checks on file.</p>
-            ) : (
-              bgChecks.map((bc, i) => (
-                <div
-                  key={String(bc.id ?? i)}
-                  className="rounded-lg px-3 py-2"
-                  style={{ border: '1px solid #eaeaf2', backgroundColor: '#ffffff' }}
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium" style={{ color: '#1a1a24' }}>
-                      {String(bc.checkType ?? 'Unknown').replace(/_/g, ' ')}
-                    </p>
-                    <span
-                      className="text-xs font-semibold px-2 py-0.5 rounded"
-                      style={{
-                        backgroundColor:
-                          bc.result === 'PASS' ? '#16a34a20' : '#dc262620',
-                        color: bc.result === 'PASS' ? '#16a34a' : '#dc2626',
-                      }}
-                    >
-                      {String(bc.result ?? '—')}
-                    </span>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: '#747480' }}>
-                    Checked:{' '}
-                    {bc.checkedAt
-                      ? new Date(String(bc.checkedAt)).toLocaleDateString()
-                      : '—'}
-                    {bc.renewalDueDate
-                      ? ` · Renewal due: ${new Date(String(bc.renewalDueDate)).toLocaleDateString()}`
-                      : ''}
-                  </p>
-                </div>
+              credentials.map((cred) => (
+                <CredentialRow key={cred.id} cred={cred} locale={i18n.language} />
               ))
             )}
           </div>
         )}
 
+        {/* Background checks tab */}
+        {activeTab === 'backgroundChecks' && (
+          <div className="space-y-2">
+            {bgChecks.length === 0 ? (
+              <p className="text-[13px] text-text-secondary">{t('noBackgroundChecks')}</p>
+            ) : (
+              bgChecks.map((bc) => <BackgroundCheckRow key={bc.id} bc={bc} locale={i18n.language} />)
+            )}
+          </div>
+        )}
+
         {/* Shift history tab */}
-        {activeTab === 'history' && (
+        {activeTab === 'shiftHistory' && (
           <div>
             {shiftHistory.length === 0 ? (
-              <p className="text-xs" style={{ color: '#94a3b8' }}>No shift history.</p>
+              <p className="text-[13px] text-text-secondary">{t('noShiftHistory')}</p>
             ) : (
               <div className="space-y-2">
                 {shiftHistory.map((shift) => (
                   <div
                     key={shift.id}
-                    className="rounded-lg px-3 py-2"
-                    style={{ border: '1px solid #eaeaf2', backgroundColor: '#ffffff' }}
+                    className="border border-border rounded px-3 py-2 bg-white"
                   >
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium" style={{ color: '#1a1a24' }}>
-                        {new Date(shift.scheduledStart).toLocaleDateString('en-US', {
+                      <p className="text-[12px] font-medium text-dark">
+                        {new Date(shift.scheduledStart).toLocaleDateString(i18n.language, {
                           month: 'short',
                           day: 'numeric',
                         })}
                         {' '}
-                        {new Date(shift.scheduledStart).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
+                        {formatLocalTime(shift.scheduledStart, i18n.language)}
                         {' — '}
-                        {new Date(shift.scheduledEnd).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
+                        {formatLocalTime(shift.scheduledEnd, i18n.language)}
                       </p>
-                      <span
-                        className="text-xs px-2 py-0.5 rounded"
-                        style={{
-                          backgroundColor: '#f6f6fa',
-                          color: '#747480',
-                          border: '1px solid #eaeaf2',
-                        }}
-                      >
+                      <span className="text-[11px] px-2 py-0.5 rounded border border-border text-text-secondary bg-surface">
                         {shift.status}
                       </span>
                     </div>
@@ -659,30 +700,26 @@ export function CaregiverDetailPanel({ caregiverId, onClose }: CaregiverDetailPa
                 <button
                   onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
                   disabled={historyPage === 0}
-                  className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-40"
-                  style={{ border: '1px solid #eaeaf2', color: '#747480' }}
+                  className="px-3 py-1.5 rounded text-[12px] border border-border text-text-secondary disabled:opacity-40"
                 >
-                  Prev
+                  {t('prev')}
                 </button>
-                <span className="text-xs" style={{ color: '#747480' }}>
+                <span className="text-[12px] text-text-secondary">
                   {historyPage + 1} / {shiftHistoryTotalPages}
                 </span>
                 <button
-                  onClick={() =>
-                    setHistoryPage((p) => Math.min(shiftHistoryTotalPages - 1, p + 1))
-                  }
+                  onClick={() => setHistoryPage((p) => Math.min(shiftHistoryTotalPages - 1, p + 1))}
                   disabled={historyPage === shiftHistoryTotalPages - 1}
-                  className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-40"
-                  style={{ border: '1px solid #eaeaf2', color: '#747480' }}
+                  className="px-3 py-1.5 rounded text-[12px] border border-border text-text-secondary disabled:opacity-40"
                 >
-                  Next
+                  {t('next')}
                 </button>
               </div>
             )}
           </div>
         )}
       </div>
-    </SlidePanel>
+    </div>
   )
 }
 ```
@@ -721,11 +758,12 @@ cd frontend && npm run dev
 
 1. Log in and navigate to `/caregivers`.
 2. Verify the caregiver table renders real data (or empty state).
-3. If there are multiple pages (>20 caregivers), verify the "Prev" / "Next" pagination works.
-4. Click on a caregiver. The detail panel should open on the "Overview" tab showing real email, phone, hire date, and status.
-5. Click the "Credentials" tab. Verify credentials are listed with real expiry dates. Credentials expiring within 30 days should have their date displayed in yellow; expired credentials in red; valid credentials in green.
-6. Click the "Background" tab. Verify background checks are listed with PASS/FAIL badges.
-7. Click the "History" tab. Verify the caregiver's shift history is listed (most recent first). If there are more than 20 shifts, verify the pagination controls work.
-8. Open DevTools → Network. Confirm `GET /api/v1/caregivers/{id}/credentials`, `GET /api/v1/caregivers/{id}/background-checks`, and `GET /api/v1/caregivers/{id}/shifts` are called as tabs are opened.
+3. If there are multiple pages (>20 caregivers), verify the "Prev" / "Next" pagination at the bottom works.
+4. Verify the search input filters by name within the current page.
+5. Click on a caregiver. The detail panel should slide in on the "Overview" tab showing real email, phone, hire date, and status.
+6. Click the "Credentials" tab. Verify credentials are listed with real expiry dates. Credentials expiring within 30 days display in yellow; expired credentials in red; valid credentials in green.
+7. Click the "Background Checks" tab. Verify background checks are listed with PASS/FAIL/PENDING/EXPIRED badges.
+8. Click the "Shift History" tab. Verify the caregiver's shift history is listed (most recent first). If there are more than 20 shifts, verify the pagination controls work.
+9. Open DevTools → Network. Confirm `GET /api/v1/caregivers/{id}/credentials`, `GET /api/v1/caregivers/{id}/background-checks`, and `GET /api/v1/caregivers/{id}/shifts` are called as tabs are opened.
 
 Proceed to Phase 8 only after this checkpoint passes.
