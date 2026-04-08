@@ -1,16 +1,19 @@
 package com.hcare.api.v1.payers;
 
 import com.hcare.api.v1.payers.dto.PayerResponse;
+import com.hcare.domain.AuthorizationRepository;
 import com.hcare.domain.Payer;
 import com.hcare.domain.PayerRepository;
 import com.hcare.domain.PayerType;
 import com.hcare.evv.AggregatorType;
 import com.hcare.evv.EvvStateConfig;
 import com.hcare.evv.EvvStateConfigRepository;
+import com.hcare.multitenancy.TenantContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -25,18 +28,20 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mockStatic;
 
 @ExtendWith(MockitoExtension.class)
 class PayerServiceTest {
 
     @Mock private PayerRepository payerRepository;
     @Mock private EvvStateConfigRepository evvStateConfigRepository;
+    @Mock private AuthorizationRepository authorizationRepository;
 
     private PayerService service;
 
     @BeforeEach
     void setUp() {
-        service = new PayerService(payerRepository, evvStateConfigRepository);
+        service = new PayerService(payerRepository, evvStateConfigRepository, authorizationRepository);
     }
 
     @Test
@@ -119,26 +124,35 @@ class PayerServiceTest {
 
     @Test
     void getPayer_returnsResponseWhenFound() {
+        UUID agencyId = UUID.randomUUID();
         UUID payerId = UUID.randomUUID();
-        Payer payer = buildPayer(UUID.randomUUID(), "NY", PayerType.MEDICAID);
+        Payer payer = buildPayer(agencyId, "NY", PayerType.MEDICAID);
 
-        when(payerRepository.findById(payerId)).thenReturn(Optional.of(payer));
-        when(evvStateConfigRepository.findByStateCode("NY")).thenReturn(Optional.empty());
+        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+            ctx.when(TenantContext::get).thenReturn(agencyId);
+            when(payerRepository.findByIdAndAgencyId(payerId, agencyId)).thenReturn(Optional.of(payer));
+            when(evvStateConfigRepository.findByStateCode("NY")).thenReturn(Optional.empty());
 
-        PayerResponse result = service.getPayer(payerId);
+            PayerResponse result = service.getPayer(payerId);
 
-        assertThat(result.state()).isEqualTo("NY");
+            assertThat(result.state()).isEqualTo("NY");
+        }
     }
 
     @Test
     void getPayer_throwsNotFoundWhenMissing() {
+        UUID agencyId = UUID.randomUUID();
         UUID payerId = UUID.randomUUID();
-        when(payerRepository.findById(payerId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getPayer(payerId))
-            .isInstanceOf(ResponseStatusException.class)
-            .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
-                .isEqualTo(HttpStatus.NOT_FOUND));
+        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+            ctx.when(TenantContext::get).thenReturn(agencyId);
+            when(payerRepository.findByIdAndAgencyId(payerId, agencyId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getPayer(payerId))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                    .isEqualTo(HttpStatus.NOT_FOUND));
+        }
     }
 
     // --- helpers ---

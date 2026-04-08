@@ -54,292 +54,406 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class CaregiverServiceTest {
 
-    @Mock CaregiverRepository caregiverRepository;
-    @Mock CaregiverCredentialRepository credentialRepository;
-    @Mock BackgroundCheckRepository backgroundCheckRepository;
-    @Mock CaregiverAvailabilityRepository availabilityRepository;
-    @Mock ShiftRepository shiftRepository;
+  @Mock CaregiverRepository caregiverRepository;
+  @Mock CaregiverCredentialRepository credentialRepository;
+  @Mock BackgroundCheckRepository backgroundCheckRepository;
+  @Mock CaregiverAvailabilityRepository availabilityRepository;
+  @Mock ShiftRepository shiftRepository;
 
-    CaregiverService service;
+  CaregiverService service;
 
-    UUID agencyId = UUID.randomUUID();
-    UUID caregiverId = UUID.randomUUID();
+  UUID agencyId = UUID.randomUUID();
+  UUID caregiverId = UUID.randomUUID();
 
-    @BeforeEach
-    void setUp() {
-        service = new CaregiverService(caregiverRepository, credentialRepository,
-            backgroundCheckRepository, availabilityRepository, shiftRepository);
+  @BeforeEach
+  void setUp() {
+    service =
+        new CaregiverService(
+            caregiverRepository,
+            credentialRepository,
+            backgroundCheckRepository,
+            availabilityRepository,
+            shiftRepository);
+  }
+
+  private Caregiver makeCaregiver() {
+    return new Caregiver(agencyId, "Jane", "Doe", "jane@example.com");
+  }
+
+  // --- listCaregivers ---
+
+  @Test
+  void listCaregivers_returns_all_for_agency() {
+    Caregiver c = makeCaregiver();
+    Pageable pageable = PageRequest.of(0, 25);
+    when(caregiverRepository.findByAgencyId(agencyId, pageable))
+        .thenReturn(new PageImpl<>(List.of(c)));
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      Page<CaregiverResponse> result = service.listCaregivers(pageable);
+
+      assertThat(result.getContent()).hasSize(1);
+      assertThat(result.getContent().get(0).firstName()).isEqualTo("Jane");
+      verify(caregiverRepository).findByAgencyId(agencyId, pageable);
     }
+  }
 
-    private Caregiver makeCaregiver() {
-        return new Caregiver(agencyId, "Jane", "Doe", "jane@example.com");
+  // --- createCaregiver ---
+
+  @Test
+  void createCaregiver_saves_and_returns_response() {
+    CreateCaregiverRequest req =
+        new CreateCaregiverRequest("Bob", "Smith", "bob@example.com", "555-1234", null, null, false);
+    Caregiver saved = new Caregiver(agencyId, "Bob", "Smith", "bob@example.com");
+    when(caregiverRepository.save(any(Caregiver.class))).thenReturn(saved);
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      CaregiverResponse result = service.createCaregiver(req);
+
+      assertThat(result.firstName()).isEqualTo("Bob");
+      verify(caregiverRepository).save(any(Caregiver.class));
     }
+  }
 
-    // --- listCaregivers ---
+  // --- getCaregiver ---
 
-    @Test
-    void listCaregivers_returns_all_for_agency() {
-        Caregiver c = makeCaregiver();
-        Pageable pageable = PageRequest.of(0, 25);
-        when(caregiverRepository.findByAgencyId(agencyId, pageable)).thenReturn(new PageImpl<>(List.of(c)));
+  @Test
+  void getCaregiver_returns_when_found() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-            Page<CaregiverResponse> result = service.listCaregivers(pageable);
+      CaregiverResponse result = service.getCaregiver(caregiverId);
 
-            assertThat(result.getContent()).hasSize(1);
-            assertThat(result.getContent().get(0).firstName()).isEqualTo("Jane");
-            verify(caregiverRepository).findByAgencyId(agencyId, pageable);
-        }
+      assertThat(result.firstName()).isEqualTo("Jane");
     }
+  }
 
-    // --- createCaregiver ---
+  @Test
+  void getCaregiver_throws_404_when_not_found() {
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.empty());
 
-    @Test
-    void createCaregiver_saves_and_returns_response() {
-        CreateCaregiverRequest req = new CreateCaregiverRequest(
-            "Bob", "Smith", "bob@example.com", "555-1234", null, null, false);
-        Caregiver saved = new Caregiver(agencyId, "Bob", "Smith", "bob@example.com");
-        when(caregiverRepository.save(any(Caregiver.class))).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
-
-            CaregiverResponse result = service.createCaregiver(req);
-
-            assertThat(result.firstName()).isEqualTo("Bob");
-            verify(caregiverRepository).save(any(Caregiver.class));
-        }
+      assertThatThrownBy(() -> service.getCaregiver(caregiverId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    // --- getCaregiver ---
+  // --- updateCaregiver ---
 
-    @Test
-    void getCaregiver_returns_when_found() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
+  @Test
+  void updateCaregiver_applies_non_null_fields() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    when(caregiverRepository.save(c)).thenReturn(c);
 
-        CaregiverResponse result = service.getCaregiver(caregiverId);
+    UpdateCaregiverRequest req =
+        new UpdateCaregiverRequest("Janet", null, null, null, null, null, null, null);
 
-        assertThat(result.firstName()).isEqualTo("Jane");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      CaregiverResponse result = service.updateCaregiver(caregiverId, req);
+
+      assertThat(result.firstName()).isEqualTo("Janet");
+      assertThat(result.lastName()).isEqualTo("Doe"); // unchanged
+      verify(caregiverRepository).save(c);
     }
+  }
 
-    @Test
-    void getCaregiver_throws_404_when_not_found() {
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.empty());
+  @Test
+  void updateCaregiver_throws_404_when_not_found() {
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getCaregiver(caregiverId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      assertThatThrownBy(
+              () ->
+                  service.updateCaregiver(
+                      caregiverId,
+                      new UpdateCaregiverRequest(null, null, null, null, null, null, null, null)))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    // --- updateCaregiver ---
+  @Test
+  void updateCaregiver_can_set_status_to_inactive() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    when(caregiverRepository.save(c)).thenReturn(c);
 
-    @Test
-    void updateCaregiver_applies_non_null_fields() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        when(caregiverRepository.save(c)).thenReturn(c);
+    UpdateCaregiverRequest req =
+        new UpdateCaregiverRequest(null, null, null, null, null, null, null, CaregiverStatus.INACTIVE);
 
-        UpdateCaregiverRequest req = new UpdateCaregiverRequest(
-            "Janet", null, null, null, null, null, null, null);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        CaregiverResponse result = service.updateCaregiver(caregiverId, req);
+      service.updateCaregiver(caregiverId, req);
 
-        assertThat(result.firstName()).isEqualTo("Janet");
-        assertThat(result.lastName()).isEqualTo("Doe"); // unchanged
-        verify(caregiverRepository).save(c);
+      assertThat(c.getStatus()).isEqualTo(CaregiverStatus.INACTIVE);
     }
+  }
 
-    @Test
-    void updateCaregiver_throws_404_when_not_found() {
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.empty());
+  // --- credentials ---
 
-        assertThatThrownBy(() -> service.updateCaregiver(caregiverId,
-            new UpdateCaregiverRequest(null, null, null, null, null, null, null, null)))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+  @Test
+  void addCredential_saves_and_returns_response() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    CaregiverCredential saved =
+        new CaregiverCredential(
+            caregiverId,
+            agencyId,
+            CredentialType.CPR,
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2027, 1, 1));
+    when(credentialRepository.save(any())).thenReturn(saved);
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      CredentialResponse result =
+          service.addCredential(
+              caregiverId,
+              new AddCredentialRequest(
+                  CredentialType.CPR, LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1)));
+
+      assertThat(result.credentialType()).isEqualTo(CredentialType.CPR);
+      assertThat(result.expiryDate()).isEqualTo(LocalDate.of(2027, 1, 1));
+      verify(credentialRepository).save(any(CaregiverCredential.class));
     }
+  }
 
-    @Test
-    void updateCaregiver_can_set_status_to_inactive() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        when(caregiverRepository.save(c)).thenReturn(c);
+  @Test
+  void listCredentials_returns_all_for_caregiver() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    CaregiverCredential cred =
+        new CaregiverCredential(
+            caregiverId,
+            agencyId,
+            CredentialType.CPR,
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2027, 1, 1));
+    Pageable pageable = PageRequest.of(0, 25);
+    when(credentialRepository.findByCaregiverId(caregiverId, pageable))
+        .thenReturn(new PageImpl<>(List.of(cred)));
 
-        UpdateCaregiverRequest req = new UpdateCaregiverRequest(
-            null, null, null, null, null, null, null, CaregiverStatus.INACTIVE);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        service.updateCaregiver(caregiverId, req);
+      Page<CredentialResponse> result = service.listCredentials(caregiverId, pageable);
 
-        assertThat(c.getStatus()).isEqualTo(CaregiverStatus.INACTIVE);
+      assertThat(result.getContent()).hasSize(1);
+      assertThat(result.getContent().get(0).credentialType()).isEqualTo(CredentialType.CPR);
     }
+  }
 
-    // --- credentials ---
+  @Test
+  void deleteCredential_removes_when_belongs_to_caregiver() {
+    UUID credId = UUID.randomUUID();
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    CaregiverCredential cred =
+        new CaregiverCredential(
+            caregiverId,
+            agencyId,
+            CredentialType.CPR,
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2027, 1, 1));
+    when(credentialRepository.findById(credId)).thenReturn(Optional.of(cred));
 
-    @Test
-    void addCredential_saves_and_returns_response() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        CaregiverCredential saved = new CaregiverCredential(
-            caregiverId, agencyId, CredentialType.CPR,
-            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
-        when(credentialRepository.save(any())).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+      service.deleteCredential(caregiverId, credId);
 
-            CredentialResponse result = service.addCredential(caregiverId,
-                new AddCredentialRequest(CredentialType.CPR, LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1)));
-
-            assertThat(result.credentialType()).isEqualTo(CredentialType.CPR);
-            assertThat(result.expiryDate()).isEqualTo(LocalDate.of(2027, 1, 1));
-            verify(credentialRepository).save(any(CaregiverCredential.class));
-        }
+      verify(credentialRepository).delete(cred);
     }
+  }
 
-    @Test
-    void listCredentials_returns_all_for_caregiver() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        CaregiverCredential cred = new CaregiverCredential(
-            caregiverId, agencyId, CredentialType.CPR,
-            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
-        Pageable pageable = PageRequest.of(0, 25);
-        when(credentialRepository.findByCaregiverId(caregiverId, pageable))
-            .thenReturn(new PageImpl<>(List.of(cred)));
+  @Test
+  void deleteCredential_throws_404_when_belongs_to_other_caregiver() {
+    UUID credId = UUID.randomUUID();
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    CaregiverCredential cred =
+        new CaregiverCredential(
+            UUID.randomUUID(),
+            agencyId,
+            CredentialType.CPR,
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2027, 1, 1));
+    when(credentialRepository.findById(credId)).thenReturn(Optional.of(cred));
 
-        Page<CredentialResponse> result = service.listCredentials(caregiverId, pageable);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).credentialType()).isEqualTo(CredentialType.CPR);
+      assertThatThrownBy(() -> service.deleteCredential(caregiverId, credId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void deleteCredential_removes_when_belongs_to_caregiver() {
-        UUID credId = UUID.randomUUID();
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        CaregiverCredential cred = new CaregiverCredential(
-            caregiverId, agencyId, CredentialType.CPR,
-            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
-        when(credentialRepository.findById(credId)).thenReturn(Optional.of(cred));
+  // --- background checks ---
 
-        service.deleteCredential(caregiverId, credId);
-
-        verify(credentialRepository).delete(cred);
-    }
-
-    @Test
-    void deleteCredential_throws_404_when_belongs_to_other_caregiver() {
-        UUID credId = UUID.randomUUID();
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        CaregiverCredential cred = new CaregiverCredential(
-            UUID.randomUUID(), agencyId, CredentialType.CPR,
-            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
-        when(credentialRepository.findById(credId)).thenReturn(Optional.of(cred));
-
-        assertThatThrownBy(() -> service.deleteCredential(caregiverId, credId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
-    }
-
-    // --- background checks ---
-
-    @Test
-    void recordBackgroundCheck_saves_and_returns_response() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        BackgroundCheck saved = new BackgroundCheck(caregiverId, agencyId,
-            BackgroundCheckType.STATE_REGISTRY, BackgroundCheckResult.CLEAR,
+  @Test
+  void recordBackgroundCheck_saves_and_returns_response() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    BackgroundCheck saved =
+        new BackgroundCheck(
+            caregiverId,
+            agencyId,
+            BackgroundCheckType.STATE_REGISTRY,
+            BackgroundCheckResult.CLEAR,
             LocalDate.of(2026, 1, 1));
-        when(backgroundCheckRepository.save(any())).thenReturn(saved);
+    when(backgroundCheckRepository.save(any())).thenReturn(saved);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-            BackgroundCheckResponse result = service.recordBackgroundCheck(caregiverId,
-                new RecordBackgroundCheckRequest(BackgroundCheckType.STATE_REGISTRY,
-                    BackgroundCheckResult.CLEAR, LocalDate.of(2026, 1, 1), null));
+      BackgroundCheckResponse result =
+          service.recordBackgroundCheck(
+              caregiverId,
+              new RecordBackgroundCheckRequest(
+                  BackgroundCheckType.STATE_REGISTRY,
+                  BackgroundCheckResult.CLEAR,
+                  LocalDate.of(2026, 1, 1),
+                  null));
 
-            assertThat(result.checkType()).isEqualTo(BackgroundCheckType.STATE_REGISTRY);
-            verify(backgroundCheckRepository).save(any(BackgroundCheck.class));
-        }
+      assertThat(result.checkType()).isEqualTo(BackgroundCheckType.STATE_REGISTRY);
+      verify(backgroundCheckRepository).save(any(BackgroundCheck.class));
     }
+  }
 
-    @Test
-    void listBackgroundChecks_returns_all_for_caregiver() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        BackgroundCheck check = new BackgroundCheck(caregiverId, agencyId,
-            BackgroundCheckType.FBI, BackgroundCheckResult.CLEAR, LocalDate.of(2026, 1, 1));
-        Pageable pageable = PageRequest.of(0, 25);
-        when(backgroundCheckRepository.findByCaregiverId(caregiverId, pageable))
-            .thenReturn(new PageImpl<>(List.of(check)));
+  @Test
+  void listBackgroundChecks_returns_all_for_caregiver() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    BackgroundCheck check =
+        new BackgroundCheck(
+            caregiverId,
+            agencyId,
+            BackgroundCheckType.FBI,
+            BackgroundCheckResult.CLEAR,
+            LocalDate.of(2026, 1, 1));
+    Pageable pageable = PageRequest.of(0, 25);
+    when(backgroundCheckRepository.findByCaregiverId(caregiverId, pageable))
+        .thenReturn(new PageImpl<>(List.of(check)));
 
-        Page<BackgroundCheckResponse> result = service.listBackgroundChecks(caregiverId, pageable);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).checkType()).isEqualTo(BackgroundCheckType.FBI);
+      Page<BackgroundCheckResponse> result = service.listBackgroundChecks(caregiverId, pageable);
+
+      assertThat(result.getContent()).hasSize(1);
+      assertThat(result.getContent().get(0).checkType()).isEqualTo(BackgroundCheckType.FBI);
     }
+  }
 
-    // --- availability ---
+  // --- availability ---
 
-    @Test
-    void setAvailability_replaces_all_blocks_for_caregiver() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        CaregiverAvailability block = new CaregiverAvailability(caregiverId, agencyId,
-            DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0));
-        when(availabilityRepository.saveAll(any())).thenReturn(List.of(block));
+  @Test
+  void setAvailability_replaces_all_blocks_for_caregiver() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    CaregiverAvailability block =
+        new CaregiverAvailability(
+            caregiverId, agencyId, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0));
+    when(availabilityRepository.saveAll(any())).thenReturn(List.of(block));
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-            AvailabilityResponse result = service.setAvailability(caregiverId,
-                new SetAvailabilityRequest(List.of(
-                    new AvailabilityBlockRequest(DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)))));
+      AvailabilityResponse result =
+          service.setAvailability(
+              caregiverId,
+              new SetAvailabilityRequest(
+                  List.of(
+                      new AvailabilityBlockRequest(
+                          DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)))));
 
-            verify(availabilityRepository).deleteByCaregiverIdAndAgencyId(caregiverId, agencyId);
-            verify(availabilityRepository).saveAll(any());
-            assertThat(result.blocks()).hasSize(1);
-            assertThat(result.blocks().get(0).dayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
-        }
+      verify(availabilityRepository).deleteByCaregiverIdAndAgencyId(caregiverId, agencyId);
+      verify(availabilityRepository).saveAll(any());
+      assertThat(result.blocks()).hasSize(1);
+      assertThat(result.blocks().get(0).dayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
     }
+  }
 
-    @Test
-    void getAvailability_returns_all_blocks() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        CaregiverAvailability block = new CaregiverAvailability(caregiverId, agencyId,
-            DayOfWeek.TUESDAY, LocalTime.of(8, 0), LocalTime.of(16, 0));
-        when(availabilityRepository.findByCaregiverId(caregiverId)).thenReturn(List.of(block));
+  @Test
+  void getAvailability_returns_all_blocks() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    CaregiverAvailability block =
+        new CaregiverAvailability(
+            caregiverId, agencyId, DayOfWeek.TUESDAY, LocalTime.of(8, 0), LocalTime.of(16, 0));
+    when(availabilityRepository.findByCaregiverId(caregiverId)).thenReturn(List.of(block));
 
-        AvailabilityResponse result = service.getAvailability(caregiverId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(result.blocks()).hasSize(1);
-        assertThat(result.caregiverId()).isEqualTo(caregiverId);
+      AvailabilityResponse result = service.getAvailability(caregiverId);
+
+      assertThat(result.blocks()).hasSize(1);
+      assertThat(result.caregiverId()).isEqualTo(caregiverId);
     }
+  }
 
-    // --- shift history ---
+  // --- shift history ---
 
-    @Test
-    void listShiftHistory_returns_shifts_for_caregiver() {
-        Caregiver c = makeCaregiver();
-        when(caregiverRepository.findById(caregiverId)).thenReturn(Optional.of(c));
-        UUID clientId = UUID.randomUUID();
-        UUID serviceTypeId = UUID.randomUUID();
-        Shift shift = new Shift(agencyId, null, clientId, caregiverId, serviceTypeId, null,
-            LocalDateTime.of(2026, 1, 10, 9, 0), LocalDateTime.of(2026, 1, 10, 17, 0));
-        Pageable pageable = PageRequest.of(0, 25);
-        when(shiftRepository.findByCaregiverId(caregiverId, pageable))
-            .thenReturn(new PageImpl<>(List.of(shift)));
+  @Test
+  void listShiftHistory_returns_shifts_for_caregiver() {
+    Caregiver c = makeCaregiver();
+    when(caregiverRepository.findByIdAndAgencyId(caregiverId, agencyId))
+        .thenReturn(Optional.of(c));
+    UUID clientId = UUID.randomUUID();
+    UUID serviceTypeId = UUID.randomUUID();
+    Shift shift =
+        new Shift(
+            agencyId,
+            null,
+            clientId,
+            caregiverId,
+            serviceTypeId,
+            null,
+            LocalDateTime.of(2026, 1, 10, 9, 0),
+            LocalDateTime.of(2026, 1, 10, 17, 0));
+    Pageable pageable = PageRequest.of(0, 25);
+    when(shiftRepository.findByCaregiverId(caregiverId, pageable))
+        .thenReturn(new PageImpl<>(List.of(shift)));
 
-        Page<ShiftHistoryResponse> result = service.listShiftHistory(caregiverId, pageable);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).clientId()).isEqualTo(clientId);
+      Page<ShiftHistoryResponse> result = service.listShiftHistory(caregiverId, pageable);
+
+      assertThat(result.getContent()).hasSize(1);
+      assertThat(result.getContent().get(0).clientId()).isEqualTo(clientId);
     }
+  }
 }

@@ -28,5 +28,6 @@ public record EvvHistoryRow(
     String evvStatusReason,
     LocalDateTime timeIn,
     LocalDateTime timeOut,
-    VerificationMethod verificationMethod
+    VerificationMethod verificationMethod,
+    String shiftStatus
 ) {}

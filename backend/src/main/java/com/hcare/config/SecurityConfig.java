@@ -2,6 +2,8 @@ package com.hcare.config;
 
 import com.hcare.security.JwtAuthenticationFilter;
 import com.hcare.security.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -15,8 +17,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -43,6 +43,15 @@ public class SecurityConfig {
             )
             .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider),
                 UsernamePasswordAuthenticationFilter.class)
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((request, response, authException) -> {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setHeader("WWW-Authenticate", "Bearer");
+                    response.setContentType("application/json");
+                    response.getWriter().write(
+                        "{\"error\":\"Unauthorized\",\"status\":401}");
+                })
+            )
             .build();
     }
 

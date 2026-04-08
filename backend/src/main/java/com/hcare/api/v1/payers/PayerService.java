@@ -1,11 +1,15 @@
 package com.hcare.api.v1.payers;
 
+import com.hcare.api.v1.clients.dto.AuthorizationResponse;
 import com.hcare.api.v1.payers.dto.PayerResponse;
+import com.hcare.domain.Authorization;
+import com.hcare.domain.AuthorizationRepository;
 import com.hcare.domain.Payer;
 import com.hcare.domain.PayerRepository;
 import com.hcare.evv.AggregatorType;
 import com.hcare.evv.EvvStateConfig;
 import com.hcare.evv.EvvStateConfigRepository;
+import com.hcare.multitenancy.TenantContext;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -27,11 +31,14 @@ public class PayerService {
 
     private final PayerRepository payerRepository;
     private final EvvStateConfigRepository evvStateConfigRepository;
+    private final AuthorizationRepository authorizationRepository;
 
     public PayerService(PayerRepository payerRepository,
-                        EvvStateConfigRepository evvStateConfigRepository) {
+                        EvvStateConfigRepository evvStateConfigRepository,
+                        AuthorizationRepository authorizationRepository) {
         this.payerRepository = payerRepository;
         this.evvStateConfigRepository = evvStateConfigRepository;
+        this.authorizationRepository = authorizationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -63,15 +70,19 @@ public class PayerService {
 
     @Transactional(readOnly = true)
     public PayerResponse getPayer(UUID payerId) {
-        // Tenant isolation is enforced by the Hibernate agencyFilter (TenantFilterAspect).
-        // Do NOT add a manual agencyId check here — service-layer tenant enforcement is
-        // prohibited by architecture convention (see CLAUDE.md multi-tenancy section).
-        Payer payer = payerRepository.findById(payerId)
+        Payer payer = payerRepository.findByIdAndAgencyId(payerId, TenantContext.get())
             .orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.NOT_FOUND, "Payer not found: " + payerId));
 
         Map<String, Optional<EvvStateConfig>> cache = new HashMap<>();
         return toResponse(payer, cache);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AuthorizationResponse> listAuthorizationsForPayer(UUID payerId, Pageable pageable) {
+        getPayer(payerId);
+        return authorizationRepository.findByPayerId(payerId, pageable)
+            .map(AuthorizationResponse::from);
     }
 
     private PayerResponse toResponse(Payer payer, Map<String, Optional<EvvStateConfig>> cache) {

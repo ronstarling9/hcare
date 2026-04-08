@@ -10,6 +10,11 @@
 - `EvvComplianceService.compute(record, stateConfig, shift, payerType, clientLat, clientLng)` exists.
 - `ShiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end, pageable)` exists.
 - `PayerRepository.findByAgencyId(agencyId)` returns a `List<Payer>`.
+- `EvvRecordRepository.findByShiftIdIn(Set<UUID> shiftIds)` exists. If missing, add `List<EvvRecord> findByShiftIdIn(Set<UUID> shiftIds);` to `EvvRecordRepository` before starting Task 5.
+- `AgencyRepository extends JpaRepository<Agency, UUID>` exists at `com.hcare.domain.AgencyRepository` (confirmed present from prior phases).
+- `AuthorizationRepository` exists in `com.hcare.domain` and exposes `findAllById(Collection<UUID>)` (standard `JpaRepository` method). If missing, create: `public interface AuthorizationRepository extends JpaRepository<Authorization, UUID> {}`
+- `Agency.getState()` returns a nullable `String` (confirmed present from prior phases).
+- `Shift.getAuthorizationId()` returns a nullable `UUID` FK to `authorizations(id)` (confirmed: `authorization_id` column in `V6__shift_domain_schema.sql`).
 
 **Backend commands run from `backend/`. Frontend commands run from `frontend/`.**
 
@@ -91,9 +96,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -112,44 +120,51 @@ public class PayerService {
     public Page<PayerResponse> listPayers(UUID agencyId, Pageable pageable) {
         // PayerRepository has findByAgencyId(agencyId) returning List — paginate manually
         // to avoid a separate count query on a typically small dataset (< 20 payers/agency).
-        List<Payer> all = payerRepository.findByAgencyId(agencyId);
+        // Wrap in ArrayList so the list is mutable for sort; JPA may return a fixed-size list.
+        List<Payer> all = new ArrayList<>(payerRepository.findByAgencyId(agencyId));
+        all.sort(Comparator.comparing(Payer::getName, String.CASE_INSENSITIVE_ORDER));
 
-        // Cache state configs to avoid repeated DB hits for the same state code
-        Map<String, EvvStateConfig> stateConfigCache = new HashMap<>();
+        // Slice the raw list FIRST so toResponse is only called for payers on this page.
+        // Mapping before paginating caused spurious state-config DB calls for payers that
+        // would never appear in the response (and NPEs in tests for out-of-bounds pages).
+        int start = (int) pageable.getOffset();
+        int end   = Math.min(start + pageable.getPageSize(), all.size());
+        List<Payer> slice = start >= all.size() ? List.of() : all.subList(start, end);
 
-        List<PayerResponse> mapped = all.stream()
+        // Cache keyed by Optional so that absent-config lookups are also stored.
+        // HashMap.computeIfAbsent does not insert null-returning mapping functions,
+        // so using Optional<EvvStateConfig> as the value type is required.
+        Map<String, Optional<EvvStateConfig>> stateConfigCache = new HashMap<>();
+
+        List<PayerResponse> page = slice.stream()
             .map(p -> toResponse(p, stateConfigCache))
             .toList();
 
-        // Apply pageable manually
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), mapped.size());
-        List<PayerResponse> page = start >= mapped.size()
-            ? List.of()
-            : mapped.subList(start, end);
-
-        return new PageImpl<>(page, pageable, mapped.size());
+        return new PageImpl<>(page, pageable, all.size());
     }
 
     @Transactional(readOnly = true)
-    public PayerResponse getPayer(UUID agencyId, UUID payerId) {
+    public PayerResponse getPayer(UUID payerId) {
+        // Tenant isolation is enforced by the Hibernate agencyFilter (TenantFilterAspect).
+        // Do NOT add a manual agencyId check here — service-layer tenant enforcement is
+        // prohibited by architecture convention (see CLAUDE.md multi-tenancy section).
         Payer payer = payerRepository.findById(payerId)
-            .filter(p -> p.getAgencyId().equals(agencyId))
             .orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.NOT_FOUND, "Payer not found: " + payerId));
 
-        Map<String, EvvStateConfig> cache = new HashMap<>();
+        Map<String, Optional<EvvStateConfig>> cache = new HashMap<>();
         return toResponse(payer, cache);
     }
 
-    private PayerResponse toResponse(Payer payer, Map<String, EvvStateConfig> cache) {
+    private PayerResponse toResponse(Payer payer, Map<String, Optional<EvvStateConfig>> cache) {
         String aggregatorName = null;
         if (payer.getState() != null) {
-            EvvStateConfig config = cache.computeIfAbsent(
+            // computeIfAbsent with Optional value caches absent results too
+            Optional<EvvStateConfig> configOpt = cache.computeIfAbsent(
                 payer.getState(),
-                code -> evvStateConfigRepository.findByStateCode(code).orElse(null));
-            if (config != null) {
-                AggregatorType aggregator = config.getDefaultAggregator();
+                evvStateConfigRepository::findByStateCode);
+            if (configOpt.isPresent()) {
+                AggregatorType aggregator = configOpt.get().getDefaultAggregator();
                 aggregatorName = aggregator != null ? aggregator.name() : null;
             }
         }
@@ -220,7 +235,7 @@ public class PayerController {
     @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
     public ResponseEntity<Page<PayerResponse>> listPayers(
             @AuthenticationPrincipal UserPrincipal principal,
-            @PageableDefault(size = 20, sort = "name") Pageable pageable) {
+            @PageableDefault(size = 20) Pageable pageable) {  // sort applied in service (case-insensitive by name)
         return ResponseEntity.ok(payerService.listPayers(principal.getAgencyId(), pageable));
     }
 
@@ -229,7 +244,7 @@ public class PayerController {
     public ResponseEntity<PayerResponse> getPayer(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
-        return ResponseEntity.ok(payerService.getPayer(principal.getAgencyId(), id));
+        return ResponseEntity.ok(payerService.getPayer(id));
     }
 }
 ```
@@ -247,6 +262,198 @@ Expected: all existing tests pass, 0 failures.
 ```bash
 git add backend/src/main/java/com/hcare/api/v1/payers/PayerController.java
 git commit -m "feat: add PayerController GET /api/v1/payers and GET /api/v1/payers/{id}"
+```
+
+---
+
+### Task 3.5: Write PayerService Unit Tests
+
+**Files:**
+- Create: `backend/src/test/java/com/hcare/api/v1/payers/PayerServiceTest.java`
+
+- [ ] **Step 3.5.1: Create PayerServiceTest**
+
+Create `backend/src/test/java/com/hcare/api/v1/payers/PayerServiceTest.java`:
+
+```java
+package com.hcare.api.v1.payers;
+
+import com.hcare.api.v1.payers.dto.PayerResponse;
+import com.hcare.domain.Payer;
+import com.hcare.domain.PayerRepository;
+import com.hcare.domain.PayerType;
+import com.hcare.evv.AggregatorType;
+import com.hcare.evv.EvvStateConfig;
+import com.hcare.evv.EvvStateConfigRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class PayerServiceTest {
+
+    @Mock private PayerRepository payerRepository;
+    @Mock private EvvStateConfigRepository evvStateConfigRepository;
+
+    private PayerService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new PayerService(payerRepository, evvStateConfigRepository);
+    }
+
+    @Test
+    void listPayers_returnsMappedPageWithEvvAggregator() {
+        UUID agencyId = UUID.randomUUID();
+        Payer payer = buildPayer(agencyId, "TX", PayerType.MEDICAID);
+        EvvStateConfig config = buildStateConfig("TX", AggregatorType.SANDATA);
+
+        when(payerRepository.findByAgencyId(agencyId)).thenReturn(List.of(payer));
+        when(evvStateConfigRepository.findByStateCode("TX")).thenReturn(Optional.of(config));
+
+        Page<PayerResponse> result = service.listPayers(agencyId, PageRequest.of(0, 20));
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        PayerResponse row = result.getContent().get(0);
+        assertThat(row.evvAggregator()).isEqualTo("SANDATA");
+        assertThat(row.state()).isEqualTo("TX");
+    }
+
+    @Test
+    void listPayers_nullEvvAggregatorWhenNoStateConfig() {
+        UUID agencyId = UUID.randomUUID();
+        Payer payer = buildPayer(agencyId, "ZZ", PayerType.PRIVATE_PAY);
+
+        when(payerRepository.findByAgencyId(agencyId)).thenReturn(List.of(payer));
+        when(evvStateConfigRepository.findByStateCode("ZZ")).thenReturn(Optional.empty());
+
+        Page<PayerResponse> result = service.listPayers(agencyId, PageRequest.of(0, 20));
+
+        assertThat(result.getContent().get(0).evvAggregator()).isNull();
+    }
+
+    @Test
+    void listPayers_stateConfigCachedAcrossMultiplePayersSameState() {
+        UUID agencyId = UUID.randomUUID();
+        Payer p1 = buildPayer(agencyId, "TX", PayerType.MEDICAID);
+        Payer p2 = buildPayer(agencyId, "TX", PayerType.MEDICARE);
+        EvvStateConfig config = buildStateConfig("TX", AggregatorType.SANDATA);
+
+        when(payerRepository.findByAgencyId(agencyId)).thenReturn(List.of(p1, p2));
+        when(evvStateConfigRepository.findByStateCode("TX")).thenReturn(Optional.of(config));
+
+        service.listPayers(agencyId, PageRequest.of(0, 20));
+
+        // Should only hit the repo once for "TX" despite two payers
+        verify(evvStateConfigRepository, times(1)).findByStateCode("TX");
+    }
+
+    @Test
+    void listPayers_unknownStateConfigCachedAcrossMultiplePayers() {
+        // Absent (Optional.empty) results must also be cached so the repo is not called
+        // once per payer when multiple payers share the same unknown state code.
+        UUID agencyId = UUID.randomUUID();
+        Payer p1 = buildPayer(agencyId, "ZZ", PayerType.PRIVATE_PAY);
+        Payer p2 = buildPayer(agencyId, "ZZ", PayerType.MEDICAID);
+
+        when(payerRepository.findByAgencyId(agencyId)).thenReturn(List.of(p1, p2));
+        when(evvStateConfigRepository.findByStateCode("ZZ")).thenReturn(Optional.empty());
+
+        Page<PayerResponse> result = service.listPayers(agencyId, PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).hasSize(2);
+        assertThat(result.getContent()).allMatch(r -> r.evvAggregator() == null);
+        // Absent result must be cached — repo called only once for "ZZ" despite two payers
+        verify(evvStateConfigRepository, times(1)).findByStateCode("ZZ");
+    }
+
+    @Test
+    void listPayers_returnsEmptyPageWhenOutOfBounds() {
+        UUID agencyId = UUID.randomUUID();
+        when(payerRepository.findByAgencyId(agencyId)).thenReturn(List.of(buildPayer(agencyId, "TX", PayerType.MEDICAID)));
+
+        Page<PayerResponse> result = service.listPayers(agencyId, PageRequest.of(5, 20));
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        // No evvStateConfigRepository stub needed — the service slices the raw List<Payer>
+        // before calling toResponse, so toResponse is never called for out-of-bounds pages.
+    }
+
+    @Test
+    void getPayer_returnsResponseWhenFound() {
+        UUID payerId = UUID.randomUUID();
+        Payer payer = buildPayer(UUID.randomUUID(), "NY", PayerType.MEDICAID);
+
+        when(payerRepository.findById(payerId)).thenReturn(Optional.of(payer));
+        when(evvStateConfigRepository.findByStateCode("NY")).thenReturn(Optional.empty());
+
+        PayerResponse result = service.getPayer(payerId);
+
+        assertThat(result.state()).isEqualTo("NY");
+    }
+
+    @Test
+    void getPayer_throwsNotFoundWhenMissing() {
+        UUID payerId = UUID.randomUUID();
+        when(payerRepository.findById(payerId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getPayer(payerId))
+            .isInstanceOf(ResponseStatusException.class)
+            .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    // --- helpers ---
+
+    private Payer buildPayer(UUID agencyId, String state, PayerType type) {
+        Payer p = new Payer();
+        p.setId(UUID.randomUUID());
+        p.setAgencyId(agencyId);
+        p.setName("Test Payer");
+        p.setState(state);
+        p.setPayerType(type);
+        p.setCreatedAt(LocalDateTime.now());
+        return p;
+    }
+
+    private EvvStateConfig buildStateConfig(String stateCode, AggregatorType aggregator) {
+        EvvStateConfig c = new EvvStateConfig();
+        c.setStateCode(stateCode);
+        c.setDefaultAggregator(aggregator);
+        return c;
+    }
+}
+```
+
+- [ ] **Step 3.5.2: Run tests**
+
+```bash
+cd backend && mvn test -Dtest=PayerServiceTest -q 2>&1 | tail -10
+```
+
+Expected: 6 tests pass, 0 failures.
+
+- [ ] **Step 3.5.3: Commit**
+
+```bash
+git add backend/src/test/java/com/hcare/api/v1/payers/PayerServiceTest.java
+git commit -m "test: add PayerService unit tests"
 ```
 
 ---
@@ -272,6 +479,11 @@ import java.util.UUID;
  * Denormalized EVV history row — one row per shift.
  * Client and caregiver names are resolved at query time from their respective entities.
  * EVV status is computed on read via EvvComplianceService — never stored.
+ *
+ * <p>{@code evvStatusReason} carries a human-readable explanation only when the
+ * status computation could not proceed (e.g. missing state config, unknown client,
+ * agency state not configured). It is {@code null} when {@code EvvComplianceService.compute()}
+ * runs successfully — the status enum itself is the authoritative signal in that case.
  */
 public record EvvHistoryRow(
     UUID shiftId,
@@ -356,6 +568,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -402,7 +615,9 @@ public class EvvHistoryService {
                                            LocalDateTime start,
                                            LocalDateTime end,
                                            Pageable pageable) {
-        // Fetch all shifts in the date range (unpaged first pass for EVV computation)
+        // Always sort by scheduledStart DESC. Forwarding client-supplied sort fields to the
+        // JPA repository risks PropertyReferenceException for non-Shift column names (500
+        // instead of 400). The frontend never passes a sort param, so the flexibility is unused.
         Page<Shift> shiftPage = shiftRepository.findByAgencyIdAndScheduledStartBetween(
             agencyId, start, end,
             PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
@@ -416,7 +631,7 @@ public class EvvHistoryService {
 
         // Resolve the agency's own state as a fallback for clients without serviceState override
         String agencyState = agencyRepository.findById(agencyId)
-            .map(com.hcare.domain.Agency::getState)
+            .map(Agency::getState)
             .orElse(null);
 
         // Build lookup maps — fetch only the IDs present on this page, not all agency entities
@@ -454,8 +669,9 @@ public class EvvHistoryService {
         Map<UUID, Payer> payerById = payerRepository.findAllById(payerIds).stream()
             .collect(Collectors.toMap(Payer::getId, p -> p));
 
-        // EVV state config cache
-        Map<String, EvvStateConfig> stateConfigCache = new HashMap<>();
+        // EVV state config cache — keyed by Optional so that absent-config lookups are also
+        // stored (HashMap.computeIfAbsent does not insert null-returning mapping functions).
+        Map<String, Optional<EvvStateConfig>> stateConfigCache = new HashMap<>();
 
         List<EvvHistoryRow> rows = shifts.stream().map(shift -> {
             Client client = clientMap.get(shift.getClientId());
@@ -487,12 +703,12 @@ public class EvvHistoryService {
                     : agencyState;
             }
             if (effectiveState != null) {
-                EvvStateConfig stateConfig = stateConfigCache.computeIfAbsent(
+                Optional<EvvStateConfig> stateConfigOpt = stateConfigCache.computeIfAbsent(
                     effectiveState,
-                    code -> evvStateConfigRepository.findByStateCode(code).orElse(null));
-                if (stateConfig != null) {
+                    evvStateConfigRepository::findByStateCode);
+                if (stateConfigOpt.isPresent()) {
                     status = evvComplianceService.compute(
-                        evvRecord, stateConfig, shift, payerType,
+                        evvRecord, stateConfigOpt.get(), shift, payerType,
                         client.getLat(), client.getLng());
                 } else {
                     statusReason = "No EVV state config for state: " + effectiveState;
@@ -536,6 +752,206 @@ Expected: no output (clean compile).
 ```bash
 git add backend/src/main/java/com/hcare/api/v1/evv/EvvHistoryService.java
 git commit -m "feat: add EvvHistoryService — denormalized EVV history with computed compliance status"
+```
+
+---
+
+### Task 5.5: Write EvvHistoryService Unit Tests
+
+**Files:**
+- Create: `backend/src/test/java/com/hcare/api/v1/evv/EvvHistoryServiceTest.java`
+
+- [ ] **Step 5.5.1: Create EvvHistoryServiceTest**
+
+Create `backend/src/test/java/com/hcare/api/v1/evv/EvvHistoryServiceTest.java`:
+
+```java
+package com.hcare.api.v1.evv;
+
+import com.hcare.api.v1.evv.dto.EvvHistoryRow;
+import com.hcare.domain.*;
+import com.hcare.evv.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.*;
+
+import java.time.LocalDateTime;
+import java.util.*;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class EvvHistoryServiceTest {
+
+    @Mock private ShiftRepository shiftRepository;
+    @Mock private ClientRepository clientRepository;
+    @Mock private CaregiverRepository caregiverRepository;
+    @Mock private ServiceTypeRepository serviceTypeRepository;
+    @Mock private EvvRecordRepository evvRecordRepository;
+    @Mock private EvvStateConfigRepository evvStateConfigRepository;
+    @Mock private AuthorizationRepository authorizationRepository;
+    @Mock private PayerRepository payerRepository;
+    @Mock private AgencyRepository agencyRepository;
+    @Mock private EvvComplianceService evvComplianceService;
+
+    private EvvHistoryService service;
+
+    private final UUID agencyId = UUID.randomUUID();
+    private final LocalDateTime start = LocalDateTime.of(2026, 4, 1, 0, 0);
+    private final LocalDateTime end   = LocalDateTime.of(2026, 4, 30, 23, 59, 59);
+
+    @BeforeEach
+    void setUp() {
+        service = new EvvHistoryService(shiftRepository, clientRepository, caregiverRepository,
+            serviceTypeRepository, evvRecordRepository, evvStateConfigRepository,
+            authorizationRepository, payerRepository, agencyRepository, evvComplianceService);
+    }
+
+    @Test
+    void getHistory_returnsEmptyPageWhenNoShifts() {
+        when(shiftRepository.findByAgencyIdAndScheduledStartBetween(
+            eq(agencyId), eq(start), eq(end), any(Pageable.class)))
+            .thenReturn(Page.empty());
+
+        Page<EvvHistoryRow> result = service.getHistory(agencyId, start, end, PageRequest.of(0, 50));
+
+        assertThat(result.getContent()).isEmpty();
+        verifyNoInteractions(clientRepository, caregiverRepository, evvRecordRepository);
+    }
+
+    @Test
+    void getHistory_computesGreyStatusWhenNoEvvRecord() {
+        Client client = buildClient("TX");
+        Shift shift = buildShift(client.getId(), null, null);
+        EvvStateConfig stateConfig = buildStateConfig("TX");
+
+        stubShiftsPage(shift);
+        when(agencyRepository.findById(agencyId)).thenReturn(Optional.of(buildAgency("TX")));
+        when(clientRepository.findAllById(any())).thenReturn(List.of(client));
+        when(caregiverRepository.findAllById(any())).thenReturn(List.of());
+        when(serviceTypeRepository.findAllById(any())).thenReturn(List.of());
+        when(evvRecordRepository.findByShiftIdIn(any())).thenReturn(List.of());
+        when(authorizationRepository.findAllById(any())).thenReturn(List.of());
+        when(payerRepository.findAllById(any())).thenReturn(List.of());
+        when(evvStateConfigRepository.findByStateCode("TX")).thenReturn(Optional.of(stateConfig));
+        when(evvComplianceService.compute(isNull(), eq(stateConfig), eq(shift), isNull(), any(), any()))
+            .thenReturn(EvvComplianceStatus.GREY);
+
+        Page<EvvHistoryRow> result = service.getHistory(agencyId, start, end, PageRequest.of(0, 50));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).evvStatus()).isEqualTo(EvvComplianceStatus.GREY);
+    }
+
+    @Test
+    void getHistory_setsStatusReasonWhenNoStateConfig() {
+        Client client = buildClient("ZZ"); // unknown state
+        Shift shift = buildShift(client.getId(), null, null);
+
+        stubShiftsPage(shift);
+        when(agencyRepository.findById(agencyId)).thenReturn(Optional.of(buildAgency("ZZ")));
+        when(clientRepository.findAllById(any())).thenReturn(List.of(client));
+        when(caregiverRepository.findAllById(any())).thenReturn(List.of());
+        when(serviceTypeRepository.findAllById(any())).thenReturn(List.of());
+        when(evvRecordRepository.findByShiftIdIn(any())).thenReturn(List.of());
+        when(authorizationRepository.findAllById(any())).thenReturn(List.of());
+        when(payerRepository.findAllById(any())).thenReturn(List.of());
+        when(evvStateConfigRepository.findByStateCode("ZZ")).thenReturn(Optional.empty());
+
+        Page<EvvHistoryRow> result = service.getHistory(agencyId, start, end, PageRequest.of(0, 50));
+
+        EvvHistoryRow row = result.getContent().get(0);
+        assertThat(row.evvStatus()).isEqualTo(EvvComplianceStatus.GREY);
+        assertThat(row.evvStatusReason()).contains("No EVV state config for state: ZZ");
+    }
+
+    @Test
+    void getHistory_clientServiceStateOverridesAgencyState() {
+        Client client = buildClient("NY"); // serviceState overrides agency's TX
+        Shift shift = buildShift(client.getId(), null, null);
+        EvvStateConfig nyConfig = buildStateConfig("NY");
+
+        stubShiftsPage(shift);
+        when(agencyRepository.findById(agencyId)).thenReturn(Optional.of(buildAgency("TX")));
+        when(clientRepository.findAllById(any())).thenReturn(List.of(client));
+        when(caregiverRepository.findAllById(any())).thenReturn(List.of());
+        when(serviceTypeRepository.findAllById(any())).thenReturn(List.of());
+        when(evvRecordRepository.findByShiftIdIn(any())).thenReturn(List.of());
+        when(authorizationRepository.findAllById(any())).thenReturn(List.of());
+        when(payerRepository.findAllById(any())).thenReturn(List.of());
+        when(evvStateConfigRepository.findByStateCode("NY")).thenReturn(Optional.of(nyConfig));
+        when(evvComplianceService.compute(any(), eq(nyConfig), any(), any(), any(), any()))
+            .thenReturn(EvvComplianceStatus.GREEN);
+
+        service.getHistory(agencyId, start, end, PageRequest.of(0, 50));
+
+        verify(evvStateConfigRepository).findByStateCode("NY");
+        verify(evvStateConfigRepository, never()).findByStateCode("TX");
+    }
+
+    // --- helpers ---
+
+    private void stubShiftsPage(Shift... shifts) {
+        Page<Shift> page = new PageImpl<>(List.of(shifts), PageRequest.of(0, 50), shifts.length);
+        when(shiftRepository.findByAgencyIdAndScheduledStartBetween(
+            eq(agencyId), eq(start), eq(end), any(Pageable.class))).thenReturn(page);
+    }
+
+    private Shift buildShift(UUID clientId, UUID authorizationId, UUID caregiverId) {
+        Shift s = new Shift();
+        s.setId(UUID.randomUUID());
+        s.setClientId(clientId);
+        s.setCaregiverId(caregiverId);
+        s.setServiceTypeId(UUID.randomUUID());
+        s.setAuthorizationId(authorizationId);
+        s.setScheduledStart(LocalDateTime.of(2026, 4, 10, 9, 0));
+        s.setScheduledEnd(LocalDateTime.of(2026, 4, 10, 13, 0));
+        return s;
+    }
+
+    private Client buildClient(String serviceState) {
+        Client c = new Client();
+        c.setId(UUID.randomUUID());
+        c.setFirstName("Jane");
+        c.setLastName("Doe");
+        c.setServiceState(serviceState);
+        return c;
+    }
+
+    private Agency buildAgency(String state) {
+        Agency a = new Agency();
+        a.setId(agencyId);
+        a.setState(state);
+        return a;
+    }
+
+    private EvvStateConfig buildStateConfig(String stateCode) {
+        EvvStateConfig c = new EvvStateConfig();
+        c.setStateCode(stateCode);
+        c.setDefaultAggregator(AggregatorType.SANDATA);
+        return c;
+    }
+}
+```
+
+- [ ] **Step 5.5.2: Run tests**
+
+```bash
+cd backend && mvn test -Dtest=EvvHistoryServiceTest -q 2>&1 | tail -10
+```
+
+Expected: 4 tests pass, 0 failures.
+
+- [ ] **Step 5.5.3: Commit**
+
+```bash
+git add backend/src/test/java/com/hcare/api/v1/evv/EvvHistoryServiceTest.java
+git commit -m "test: add EvvHistoryService unit tests"
 ```
 
 ---
@@ -591,9 +1007,13 @@ public class EvvHistoryController {
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end,
-            @PageableDefault(size = 50, sort = "scheduledStart") Pageable pageable) {
+            @PageableDefault(size = 50) Pageable pageable) { // default sort: scheduledStart DESC (applied in service)
         if (!end.isAfter(start)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "end must be after start");
+        }
+        if (java.time.temporal.ChronoUnit.DAYS.between(start, end) > 366) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Date range must not exceed 366 days");
         }
         return ResponseEntity.ok(
             evvHistoryService.getHistory(principal.getAgencyId(), start, end, pageable));
@@ -888,12 +1308,19 @@ import { useQuery } from '@tanstack/react-query'
 import { listEvvHistory } from '../api/evv'
 
 export function useEvvHistory(start: string, end: string, page = 0) {
-  return useQuery({
+  const query = useQuery({
     queryKey: ['evv-history', start, end, page],
     queryFn: () => listEvvHistory(start, end, page, 50),
     enabled: Boolean(start && end),
     staleTime: 30_000,
   })
+
+  return {
+    ...query,
+    rows: query.data?.content ?? [],
+    totalPages: query.data?.totalPages ?? 0,
+    totalElements: query.data?.totalElements ?? 0,
+  }
 }
 ```
 
@@ -1003,9 +1430,19 @@ function EvvRow({ row }: { row: EvvHistoryRow }) {
   )
 }
 
-// Format a Date to ISO-8601 LocalDateTime for API params (no timezone suffix)
+// Format a Date to ISO-8601 LocalDateTime for API params (no timezone suffix).
+// d.toISOString() returns UTC — callers must ensure d is constructed from local-time
+// parts (new Date(y, m, day, h, min, sec)) so that UTC conversion is correct.
 function toLocalDateTime(d: Date): string {
   return d.toISOString().replace('Z', '').replace(/\.\d+$/, '')
+}
+
+// Parse a date-input value ('YYYY-MM-DD') as local midnight.
+// new Date('YYYY-MM-DD') is UTC midnight per the ECMA-262 spec, which is wrong for
+// non-UTC users. new Date(y, m, d) always gives local midnight.
+function parseDateInputAsLocal(value: string): Date {
+  const [y, m, d] = value.split('-').map(Number)
+  return new Date(y, m - 1, d)
 }
 
 export function EvvStatusPage() {
@@ -1022,18 +1459,16 @@ export function EvvStatusPage() {
   const startParam = useMemo(() => toLocalDateTime(rangeStart), [rangeStart])
   const endParam = useMemo(() => toLocalDateTime(rangeEnd), [rangeEnd])
 
-  const { data, isLoading, isError } = useEvvHistory(startParam, endParam, page)
-
-  const rows = data?.content ?? []
-  const totalPages = data?.totalPages ?? 0
-  const totalElements = data?.totalElements ?? 0
+  const { rows, totalPages, totalElements, isLoading, isError } = useEvvHistory(startParam, endParam, page)
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'ALL') return rows
     return rows.filter((r) => r.evvStatus === statusFilter)
   }, [rows, statusFilter])
 
-  // Status summary counts from current page
+  // Status counts from the current page only — not a global total.
+  // The "All" chip shows totalElements (API total); status chips show page-local counts.
+  // TODO (P1): add status breakdown to the API response so counts reflect all pages.
   const statusCounts = useMemo(() => {
     const counts: Partial<Record<EvvComplianceStatus, number>> = {}
     for (const row of rows) {
@@ -1043,20 +1478,26 @@ export function EvvStatusPage() {
   }, [rows])
 
   const handleDateChange = (field: 'start' | 'end', value: string) => {
-    const d = new Date(value)
+    // parseDateInputAsLocal constructs a local-midnight Date from the 'YYYY-MM-DD'
+    // string, avoiding the ECMA-262 gotcha where new Date('YYYY-MM-DD') is UTC midnight.
+    const d = parseDateInputAsLocal(value)
     if (!isNaN(d.getTime())) {
       if (field === 'start') {
         setRangeStart(d)
         setPage(0)
       } else {
+        d.setHours(23, 59, 59, 0) // local end-of-day; toISOString() converts to UTC correctly
         setRangeEnd(d)
         setPage(0)
       }
     }
   }
 
-  // Convert Date to YYYY-MM-DD for date input value
-  const toDateInputValue = (d: Date) => d.toISOString().split('T')[0]
+  // Convert Date to YYYY-MM-DD for date input value using LOCAL date parts.
+  // toISOString().split('T')[0] would give the UTC date, which is wrong for non-UTC users
+  // (e.g. a user at UTC-5 at 9pm local would see tomorrow's date in the picker).
+  const toDateInputValue = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
   return (
     <div className="flex flex-col h-full bg-surface">
@@ -1121,7 +1562,7 @@ export function EvvStatusPage() {
                   border: `1px solid ${EVV_COLORS[status]}`,
                 }}
               >
-                {status} ({count})
+                {status} ({count} this page)
               </button>
             )
           })}
@@ -1140,7 +1581,11 @@ export function EvvStatusPage() {
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex items-center justify-center h-32">
-            <p className="text-sm text-text-muted">No visits found for this range.</p>
+            <p className="text-sm text-text-muted">
+              {rows.length > 0 && statusFilter !== 'ALL'
+                ? `No ${statusFilter} visits on this page.`
+                : 'No visits found for this range.'}
+            </p>
           </div>
         ) : (
           <table className="w-full text-left">
@@ -1171,7 +1616,7 @@ export function EvvStatusPage() {
       {totalPages > 1 && (
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border bg-white">
           <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            onClick={() => { setPage((p) => Math.max(0, p - 1)); setStatusFilter('ALL') }}
             disabled={page === 0}
             className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
           >
@@ -1181,7 +1626,7 @@ export function EvvStatusPage() {
             Page {page + 1} of {totalPages}
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            onClick={() => { setPage((p) => Math.min(totalPages - 1, p + 1)); setStatusFilter('ALL') }}
             disabled={page === totalPages - 1}
             className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
           >

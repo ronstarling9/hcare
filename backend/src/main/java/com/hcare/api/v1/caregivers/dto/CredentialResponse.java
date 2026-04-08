@@ -14,12 +14,13 @@ public record CredentialResponse(
     LocalDate expiryDate,
     boolean verified,
     UUID verifiedBy,
+    LocalDateTime verifiedAt,
     LocalDateTime createdAt
 ) {
     public static CredentialResponse from(CaregiverCredential c) {
         return new CredentialResponse(
             c.getId(), c.getCaregiverId(), c.getCredentialType(),
             c.getIssueDate(), c.getExpiryDate(), c.isVerified(),
-            c.getVerifiedBy(), c.getCreatedAt());
+            c.getVerifiedBy(), c.getVerifiedAt(), c.getCreatedAt());
     }
 }

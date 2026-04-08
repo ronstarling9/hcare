@@ -386,7 +386,7 @@ public class ClientService {
     // --- helpers (package-private for subclasses/tests in same package) ---
 
     Client requireClient(UUID clientId) {
-        return clientRepository.findById(clientId)
+        return clientRepository.findByIdAndAgencyId(clientId, TenantContext.get())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                 "Client not found: " + clientId));
     }

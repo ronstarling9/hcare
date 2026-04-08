@@ -38,6 +38,9 @@ public class CaregiverCredential {
     @Column(name = "verified_by")
     private UUID verifiedBy;
 
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -55,6 +58,7 @@ public class CaregiverCredential {
     public void verify(UUID adminUserId) {
         this.verified = true;
         this.verifiedBy = adminUserId;
+        this.verifiedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     public UUID getId() { return id; }
@@ -65,5 +69,6 @@ public class CaregiverCredential {
     public LocalDate getExpiryDate() { return expiryDate; }
     public boolean isVerified() { return verified; }
     public UUID getVerifiedBy() { return verifiedBy; }
+    public LocalDateTime getVerifiedAt() { return verifiedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

@@ -67,554 +67,646 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ClientServiceTest {
 
-    @Mock ClientRepository clientRepository;
-    @Mock ClientDiagnosisRepository diagnosisRepository;
-    @Mock ClientMedicationRepository medicationRepository;
-    @Mock CarePlanRepository carePlanRepository;
-    @Mock AdlTaskRepository adlTaskRepository;
-    @Mock GoalRepository goalRepository;
-    @Mock AuthorizationRepository authorizationRepository;
-    @Mock FamilyPortalUserRepository familyPortalUserRepository;
+  @Mock ClientRepository clientRepository;
+  @Mock ClientDiagnosisRepository diagnosisRepository;
+  @Mock ClientMedicationRepository medicationRepository;
+  @Mock CarePlanRepository carePlanRepository;
+  @Mock AdlTaskRepository adlTaskRepository;
+  @Mock GoalRepository goalRepository;
+  @Mock AuthorizationRepository authorizationRepository;
+  @Mock FamilyPortalUserRepository familyPortalUserRepository;
 
-    ClientService service;
+  ClientService service;
 
-    UUID agencyId = UUID.randomUUID();
-    UUID clientId = UUID.randomUUID();
+  UUID agencyId = UUID.randomUUID();
+  UUID clientId = UUID.randomUUID();
 
-    @BeforeEach
-    void setUp() {
-        service = new ClientService(clientRepository, diagnosisRepository, medicationRepository,
-            carePlanRepository, adlTaskRepository, goalRepository,
-            authorizationRepository, familyPortalUserRepository);
+  @BeforeEach
+  void setUp() {
+    service = new ClientService(clientRepository, diagnosisRepository, medicationRepository,
+        carePlanRepository, adlTaskRepository, goalRepository,
+        authorizationRepository, familyPortalUserRepository);
+  }
+
+  private Client makeClient() {
+    return new Client(agencyId, "Alice", "Smith", LocalDate.of(1960, 3, 15));
+  }
+
+  // --- listClients ---
+
+  @Test
+  void listClients_returns_all_clients_for_agency() {
+    Client client = makeClient();
+    Pageable pageable = PageRequest.of(0, 25);
+    when(clientRepository.findByAgencyId(agencyId, pageable)).thenReturn(new PageImpl<>(List.of(client)));
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      Page<ClientResponse> result = service.listClients(pageable);
+
+      assertThat(result.getContent()).hasSize(1);
+      assertThat(result.getContent().get(0).firstName()).isEqualTo("Alice");
+      verify(clientRepository).findByAgencyId(agencyId, pageable);
     }
+  }
 
-    private Client makeClient() {
-        return new Client(agencyId, "Alice", "Smith", LocalDate.of(1960, 3, 15));
+  // --- createClient ---
+
+  @Test
+  void createClient_saves_and_returns_response() {
+    CreateClientRequest req = new CreateClientRequest(
+        "Bob", "Jones", LocalDate.of(1975, 6, 20),
+        "123 Main St", "555-1234", null, null, null, "[]", false);
+    Client saved = new Client(agencyId, "Bob", "Jones", LocalDate.of(1975, 6, 20));
+    when(clientRepository.save(any(Client.class))).thenReturn(saved);
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      ClientResponse result = service.createClient(req);
+
+      assertThat(result.firstName()).isEqualTo("Bob");
+      verify(clientRepository).save(any(Client.class));
     }
+  }
 
-    // --- listClients ---
+  // --- getClient ---
 
-    @Test
-    void listClients_returns_all_clients_for_agency() {
-        Client client = makeClient();
-        Pageable pageable = PageRequest.of(0, 25);
-        when(clientRepository.findByAgencyId(agencyId, pageable)).thenReturn(new PageImpl<>(List.of(client)));
+  @Test
+  void getClient_returns_client_when_found() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-            Page<ClientResponse> result = service.listClients(pageable);
+      ClientResponse result = service.getClient(clientId);
 
-            assertThat(result.getContent()).hasSize(1);
-            assertThat(result.getContent().get(0).firstName()).isEqualTo("Alice");
-            verify(clientRepository).findByAgencyId(agencyId, pageable);
-        }
+      assertThat(result.firstName()).isEqualTo("Alice");
     }
+  }
 
-    // --- createClient ---
+  @Test
+  void getClient_throws_404_when_not_found() {
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.empty());
 
-    @Test
-    void createClient_saves_and_returns_response() {
-        CreateClientRequest req = new CreateClientRequest(
-            "Bob", "Jones", LocalDate.of(1975, 6, 20),
-            "123 Main St", "555-1234", null, null, null, "[]", false);
-        Client saved = new Client(agencyId, "Bob", "Jones", LocalDate.of(1975, 6, 20));
-        when(clientRepository.save(any(Client.class))).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
-
-            ClientResponse result = service.createClient(req);
-
-            assertThat(result.firstName()).isEqualTo("Bob");
-            verify(clientRepository).save(any(Client.class));
-        }
+      assertThatThrownBy(() -> service.getClient(clientId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    // --- getClient ---
+  // --- updateClient ---
 
-    @Test
-    void getClient_returns_client_when_found() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+  @Test
+  void updateClient_applies_non_null_fields_and_saves() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(clientRepository.save(client)).thenReturn(client);
 
-        ClientResponse result = service.getClient(clientId);
+    UpdateClientRequest req = new UpdateClientRequest(
+        "Alicia", null, null, "456 Oak Ave", null, null, null, null, null, null, null);
 
-        assertThat(result.firstName()).isEqualTo("Alice");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      ClientResponse result = service.updateClient(clientId, req);
+
+      assertThat(result.firstName()).isEqualTo("Alicia");
+      assertThat(result.address()).isEqualTo("456 Oak Ave");
+      assertThat(result.lastName()).isEqualTo("Smith"); // unchanged
+      verify(clientRepository).save(client);
     }
+  }
 
-    @Test
-    void getClient_throws_404_when_not_found() {
-        when(clientRepository.findById(clientId)).thenReturn(Optional.empty());
+  @Test
+  void updateClient_throws_404_when_not_found() {
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getClient(clientId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      assertThatThrownBy(() -> service.updateClient(clientId,
+          new UpdateClientRequest(null, null, null, null, null, null, null, null, null, null, null)))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    // --- updateClient ---
+  @Test
+  void updateClient_can_set_status_to_discharged() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(clientRepository.save(client)).thenReturn(client);
 
-    @Test
-    void updateClient_applies_non_null_fields_and_saves() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(clientRepository.save(client)).thenReturn(client);
+    UpdateClientRequest req = new UpdateClientRequest(
+        null, null, null, null, null, null, null, null, null, null, ClientStatus.DISCHARGED);
 
-        UpdateClientRequest req = new UpdateClientRequest(
-            "Alicia", null, null, "456 Oak Ave", null, null, null, null, null, null, null);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        ClientResponse result = service.updateClient(clientId, req);
+      service.updateClient(clientId, req);
 
-        assertThat(result.firstName()).isEqualTo("Alicia");
-        assertThat(result.address()).isEqualTo("456 Oak Ave");
-        assertThat(result.lastName()).isEqualTo("Smith"); // unchanged
-        verify(clientRepository).save(client);
+      assertThat(client.getStatus()).isEqualTo(ClientStatus.DISCHARGED);
     }
+  }
 
-    @Test
-    void updateClient_throws_404_when_not_found() {
-        when(clientRepository.findById(clientId)).thenReturn(Optional.empty());
+  // --- diagnoses ---
 
-        assertThatThrownBy(() -> service.updateClient(clientId,
-            new UpdateClientRequest(null, null, null, null, null, null, null, null, null, null, null)))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+  @Test
+  void addDiagnosis_saves_and_returns_response() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientDiagnosis saved = new ClientDiagnosis(clientId, agencyId, "E11.9");
+    when(diagnosisRepository.save(any())).thenReturn(saved);
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      DiagnosisResponse result = service.addDiagnosis(clientId,
+          new AddDiagnosisRequest("E11.9", "Type 2 Diabetes", null));
+
+      assertThat(result.icd10Code()).isEqualTo("E11.9");
+      verify(diagnosisRepository).save(any(ClientDiagnosis.class));
     }
+  }
 
-    @Test
-    void updateClient_can_set_status_to_discharged() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(clientRepository.save(client)).thenReturn(client);
+  @Test
+  void listDiagnoses_returns_all_for_client() {
+    Client client = makeClient();
+    Pageable pageable = PageRequest.of(0, 25);
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, "E11.9");
+    when(diagnosisRepository.findByClientId(clientId, pageable))
+        .thenReturn(new PageImpl<>(List.of(diag)));
 
-        UpdateClientRequest req = new UpdateClientRequest(
-            null, null, null, null, null, null, null, null, null, null, ClientStatus.DISCHARGED);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        service.updateClient(clientId, req);
+      Page<DiagnosisResponse> result = service.listDiagnoses(clientId, pageable);
 
-        assertThat(client.getStatus()).isEqualTo(ClientStatus.DISCHARGED);
+      assertThat(result.getContent()).hasSize(1);
     }
+  }
 
-    // --- diagnoses ---
+  @Test
+  void deleteDiagnosis_removes_when_belongs_to_client() {
+    UUID diagId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, "E11.9");
+    when(diagnosisRepository.findById(diagId)).thenReturn(Optional.of(diag));
 
-    @Test
-    void addDiagnosis_saves_and_returns_response() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientDiagnosis saved = new ClientDiagnosis(clientId, agencyId, "E11.9");
-        when(diagnosisRepository.save(any())).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+      service.deleteDiagnosis(clientId, diagId);
 
-            DiagnosisResponse result = service.addDiagnosis(clientId,
-                new AddDiagnosisRequest("E11.9", "Type 2 Diabetes", null));
-
-            assertThat(result.icd10Code()).isEqualTo("E11.9");
-            verify(diagnosisRepository).save(any(ClientDiagnosis.class));
-        }
+      verify(diagnosisRepository).delete(diag);
     }
+  }
 
-    @Test
-    void listDiagnoses_returns_all_for_client() {
-        Client client = makeClient();
-        Pageable pageable = PageRequest.of(0, 25);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, "E11.9");
-        when(diagnosisRepository.findByClientId(clientId, pageable))
-            .thenReturn(new PageImpl<>(List.of(diag)));
+  @Test
+  void deleteDiagnosis_throws_404_when_belongs_to_other_client() {
+    UUID diagId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientDiagnosis diag = new ClientDiagnosis(UUID.randomUUID(), agencyId, "E11.9");
+    when(diagnosisRepository.findById(diagId)).thenReturn(Optional.of(diag));
 
-        Page<DiagnosisResponse> result = service.listDiagnoses(clientId, pageable);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(result.getContent()).hasSize(1);
+      assertThatThrownBy(() -> service.deleteDiagnosis(clientId, diagId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void deleteDiagnosis_removes_when_belongs_to_client() {
-        UUID diagId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientDiagnosis diag = new ClientDiagnosis(clientId, agencyId, "E11.9");
-        when(diagnosisRepository.findById(diagId)).thenReturn(Optional.of(diag));
+  // --- medications ---
 
-        service.deleteDiagnosis(clientId, diagId);
+  @Test
+  void addMedication_saves_and_returns_response() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientMedication saved = new ClientMedication(clientId, agencyId, "Metformin");
+    when(medicationRepository.save(any())).thenReturn(saved);
 
-        verify(diagnosisRepository).delete(diag);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      MedicationResponse result = service.addMedication(clientId,
+          new AddMedicationRequest("Metformin", "500mg", "oral", "twice daily", "Dr. Brown"));
+
+      assertThat(result.name()).isEqualTo("Metformin");
+      verify(medicationRepository).save(any(ClientMedication.class));
     }
+  }
 
-    @Test
-    void deleteDiagnosis_throws_404_when_belongs_to_other_client() {
-        UUID diagId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientDiagnosis diag = new ClientDiagnosis(UUID.randomUUID(), agencyId, "E11.9");
-        when(diagnosisRepository.findById(diagId)).thenReturn(Optional.of(diag));
+  @Test
+  void updateMedication_applies_non_null_fields() {
+    UUID medId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientMedication med = new ClientMedication(clientId, agencyId, "Metformin");
+    when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
+    when(medicationRepository.save(med)).thenReturn(med);
 
-        assertThatThrownBy(() -> service.deleteDiagnosis(clientId, diagId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      service.updateMedication(clientId, medId,
+          new UpdateMedicationRequest(null, "1000mg", null, null, null));
+
+      assertThat(med.getDosage()).isEqualTo("1000mg");
+      assertThat(med.getName()).isEqualTo("Metformin"); // unchanged
     }
+  }
 
-    // --- medications ---
+  @Test
+  void deleteMedication_removes_when_belongs_to_client() {
+    UUID medId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientMedication med = new ClientMedication(clientId, agencyId, "Metformin");
+    when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
 
-    @Test
-    void addMedication_saves_and_returns_response() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientMedication saved = new ClientMedication(clientId, agencyId, "Metformin");
-        when(medicationRepository.save(any())).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+      service.deleteMedication(clientId, medId);
 
-            MedicationResponse result = service.addMedication(clientId,
-                new AddMedicationRequest("Metformin", "500mg", "oral", "twice daily", "Dr. Brown"));
-
-            assertThat(result.name()).isEqualTo("Metformin");
-            verify(medicationRepository).save(any(ClientMedication.class));
-        }
+      verify(medicationRepository).delete(med);
     }
+  }
 
-    @Test
-    void updateMedication_applies_non_null_fields() {
-        UUID medId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientMedication med = new ClientMedication(clientId, agencyId, "Metformin");
-        when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
-        when(medicationRepository.save(med)).thenReturn(med);
+  // --- care plans ---
 
-        service.updateMedication(clientId, medId,
-            new UpdateMedicationRequest(null, "1000mg", null, null, null));
+  @Test
+  void createCarePlan_creates_draft_with_next_version_number() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findMaxPlanVersionByClientId(clientId)).thenReturn(1);
+    when(carePlanRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThat(med.getDosage()).isEqualTo("1000mg");
-        assertThat(med.getName()).isEqualTo("Metformin"); // unchanged
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      CarePlanResponse result = service.createCarePlan(clientId,
+          new CreateCarePlanRequest(null));
+
+      assertThat(result.planVersion()).isEqualTo(2);
+      assertThat(result.status()).isEqualTo(CarePlanStatus.DRAFT);
     }
+  }
 
-    @Test
-    void deleteMedication_removes_when_belongs_to_client() {
-        UUID medId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientMedication med = new ClientMedication(clientId, agencyId, "Metformin");
-        when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
+  @Test
+  void activateCarePlan_supersedes_current_active_and_activates_new_one() {
+    UUID planId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    CarePlan currentActive = new CarePlan(clientId, agencyId, 1);
+    currentActive.activate();
+    when(carePlanRepository.findByClientIdAndStatus(clientId, CarePlanStatus.ACTIVE))
+        .thenReturn(Optional.of(currentActive));
+    CarePlan newPlan = new CarePlan(clientId, agencyId, 2);
+    when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(newPlan));
+    when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.deleteMedication(clientId, medId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        verify(medicationRepository).delete(med);
+      service.activateCarePlan(clientId, planId);
+
+      assertThat(currentActive.getStatus()).isEqualTo(CarePlanStatus.SUPERSEDED);
+      assertThat(newPlan.getStatus()).isEqualTo(CarePlanStatus.ACTIVE);
     }
+  }
 
-    // --- care plans ---
+  @Test
+  void activateCarePlan_throws_409_when_plan_already_active() {
+    UUID planId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    plan.activate();
+    when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
 
-    @Test
-    void createCarePlan_creates_draft_with_next_version_number() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findMaxPlanVersionByClientId(clientId)).thenReturn(1);
-        when(carePlanRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
-
-            CarePlanResponse result = service.createCarePlan(clientId,
-                new CreateCarePlanRequest(null));
-
-            assertThat(result.planVersion()).isEqualTo(2);
-            assertThat(result.status()).isEqualTo(CarePlanStatus.DRAFT);
-        }
+      assertThatThrownBy(() -> service.activateCarePlan(clientId, planId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("409");
     }
+  }
 
-    @Test
-    void activateCarePlan_supersedes_current_active_and_activates_new_one() {
-        UUID planId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        CarePlan currentActive = new CarePlan(clientId, agencyId, 1);
-        currentActive.activate();
-        when(carePlanRepository.findByClientIdAndStatus(clientId, CarePlanStatus.ACTIVE))
-            .thenReturn(Optional.of(currentActive));
-        CarePlan newPlan = new CarePlan(clientId, agencyId, 2);
-        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(newPlan));
-        when(carePlanRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+  @Test
+  void activateCarePlan_throws_409_when_plan_is_superseded() {
+    UUID planId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    plan.activate();
+    plan.supersede();
+    when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
 
-        service.activateCarePlan(clientId, planId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(currentActive.getStatus()).isEqualTo(CarePlanStatus.SUPERSEDED);
-        assertThat(newPlan.getStatus()).isEqualTo(CarePlanStatus.ACTIVE);
+      assertThatThrownBy(() -> service.activateCarePlan(clientId, planId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("409");
     }
+  }
 
-    @Test
-    void activateCarePlan_throws_409_when_plan_already_active() {
-        UUID planId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        plan.activate();
-        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
+  @Test
+  void activateCarePlan_throws_404_when_plan_belongs_to_other_client() {
+    UUID planId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    CarePlan plan = new CarePlan(UUID.randomUUID(), agencyId, 1); // different clientId
+    when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
 
-        assertThatThrownBy(() -> service.activateCarePlan(clientId, planId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("409");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      assertThatThrownBy(() -> service.activateCarePlan(clientId, planId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void activateCarePlan_throws_409_when_plan_is_superseded() {
-        UUID planId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        plan.activate();
-        plan.supersede();
-        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
+  // --- ADL tasks ---
 
-        assertThatThrownBy(() -> service.activateCarePlan(clientId, planId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("409");
+  @Test
+  void addAdlTask_saves_task_on_care_plan() {
+    UUID planId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    AdlTask saved = new AdlTask(planId, agencyId, "Bathing", AssistanceLevel.MODERATE_ASSIST);
+    when(adlTaskRepository.save(any())).thenReturn(saved);
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      AdlTaskResponse result = service.addAdlTask(clientId, planId,
+          new AddAdlTaskRequest("Bathing", AssistanceLevel.MODERATE_ASSIST, null, null, null));
+
+      assertThat(result.name()).isEqualTo("Bathing");
+      assertThat(result.assistanceLevel()).isEqualTo(AssistanceLevel.MODERATE_ASSIST);
+      verify(adlTaskRepository).save(any(AdlTask.class));
     }
+  }
 
-    @Test
-    void activateCarePlan_throws_404_when_plan_belongs_to_other_client() {
-        UUID planId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        CarePlan plan = new CarePlan(UUID.randomUUID(), agencyId, 1); // different clientId
-        when(carePlanRepository.findByIdWithLock(planId)).thenReturn(Optional.of(plan));
+  @Test
+  void deleteAdlTask_removes_task_when_belongs_to_plan() {
+    UUID planId = UUID.randomUUID();
+    UUID taskId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    AdlTask task = new AdlTask(planId, agencyId, "Bathing", AssistanceLevel.MINIMAL_ASSIST);
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    when(adlTaskRepository.findById(taskId)).thenReturn(Optional.of(task));
 
-        assertThatThrownBy(() -> service.activateCarePlan(clientId, planId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      service.deleteAdlTask(clientId, planId, taskId);
+
+      verify(adlTaskRepository).delete(task);
     }
+  }
 
-    // --- ADL tasks ---
+  // --- Goals ---
 
-    @Test
-    void addAdlTask_saves_task_on_care_plan() {
-        UUID planId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        AdlTask saved = new AdlTask(planId, agencyId, "Bathing", AssistanceLevel.MODERATE_ASSIST);
-        when(adlTaskRepository.save(any())).thenReturn(saved);
+  @Test
+  void addGoal_saves_goal_on_care_plan() {
+    UUID planId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    Goal saved = new Goal(planId, agencyId, "Improve mobility");
+    when(goalRepository.save(any())).thenReturn(saved);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-            AdlTaskResponse result = service.addAdlTask(clientId, planId,
-                new AddAdlTaskRequest("Bathing", AssistanceLevel.MODERATE_ASSIST, null, null, null));
+      GoalResponse result = service.addGoal(clientId, planId,
+          new AddGoalRequest("Improve mobility", null));
 
-            assertThat(result.name()).isEqualTo("Bathing");
-            assertThat(result.assistanceLevel()).isEqualTo(AssistanceLevel.MODERATE_ASSIST);
-            verify(adlTaskRepository).save(any(AdlTask.class));
-        }
+      assertThat(result.description()).isEqualTo("Improve mobility");
+      assertThat(result.status()).isEqualTo(GoalStatus.ACTIVE);
     }
+  }
 
-    @Test
-    void deleteAdlTask_removes_task_when_belongs_to_plan() {
-        UUID planId = UUID.randomUUID();
-        UUID taskId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        AdlTask task = new AdlTask(planId, agencyId, "Bathing", AssistanceLevel.MINIMAL_ASSIST);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        when(adlTaskRepository.findById(taskId)).thenReturn(Optional.of(task));
+  @Test
+  void updateGoal_updates_non_null_fields() {
+    UUID planId = UUID.randomUUID();
+    UUID goalId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    Goal goal = new Goal(planId, agencyId, "Improve mobility");
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+    when(goalRepository.save(goal)).thenReturn(goal);
 
-        service.deleteAdlTask(clientId, planId, taskId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        verify(adlTaskRepository).delete(task);
+      service.updateGoal(clientId, planId, goalId,
+          new UpdateGoalRequest(null, null, GoalStatus.ACHIEVED));
+
+      assertThat(goal.getStatus()).isEqualTo(GoalStatus.ACHIEVED);
+      assertThat(goal.getDescription()).isEqualTo("Improve mobility"); // unchanged
     }
+  }
 
-    // --- Goals ---
+  @Test
+  void deleteAdlTask_throws_404_when_task_belongs_to_other_plan() {
+    UUID planId = UUID.randomUUID();
+    UUID otherPlanId = UUID.randomUUID();
+    UUID taskId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    AdlTask task = new AdlTask(otherPlanId, agencyId, "Bathing", AssistanceLevel.MINIMAL_ASSIST);
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    when(adlTaskRepository.findById(taskId)).thenReturn(Optional.of(task));
 
-    @Test
-    void addGoal_saves_goal_on_care_plan() {
-        UUID planId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        Goal saved = new Goal(planId, agencyId, "Improve mobility");
-        when(goalRepository.save(any())).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
-
-            GoalResponse result = service.addGoal(clientId, planId,
-                new AddGoalRequest("Improve mobility", null));
-
-            assertThat(result.description()).isEqualTo("Improve mobility");
-            assertThat(result.status()).isEqualTo(GoalStatus.ACTIVE);
-        }
+      assertThatThrownBy(() -> service.deleteAdlTask(clientId, planId, taskId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void updateGoal_updates_non_null_fields() {
-        UUID planId = UUID.randomUUID();
-        UUID goalId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        Goal goal = new Goal(planId, agencyId, "Improve mobility");
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
-        when(goalRepository.save(goal)).thenReturn(goal);
+  @Test
+  void updateGoal_throws_404_when_goal_belongs_to_other_plan() {
+    UUID planId = UUID.randomUUID();
+    UUID otherPlanId = UUID.randomUUID();
+    UUID goalId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    Goal goal = new Goal(otherPlanId, agencyId, "Improve mobility");
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
 
-        service.updateGoal(clientId, planId, goalId,
-            new UpdateGoalRequest(null, null, GoalStatus.ACHIEVED));
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(goal.getStatus()).isEqualTo(GoalStatus.ACHIEVED);
-        assertThat(goal.getDescription()).isEqualTo("Improve mobility"); // unchanged
+      assertThatThrownBy(() -> service.updateGoal(clientId, planId, goalId,
+          new UpdateGoalRequest(null, null, null)))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void deleteAdlTask_throws_404_when_task_belongs_to_other_plan() {
-        UUID planId = UUID.randomUUID();
-        UUID otherPlanId = UUID.randomUUID();
-        UUID taskId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        AdlTask task = new AdlTask(otherPlanId, agencyId, "Bathing", AssistanceLevel.MINIMAL_ASSIST);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        when(adlTaskRepository.findById(taskId)).thenReturn(Optional.of(task));
+  @Test
+  void deleteGoal_throws_404_when_goal_belongs_to_other_plan() {
+    UUID planId = UUID.randomUUID();
+    UUID otherPlanId = UUID.randomUUID();
+    UUID goalId = UUID.randomUUID();
+    Client client = makeClient();
+    CarePlan plan = new CarePlan(clientId, agencyId, 1);
+    Goal goal = new Goal(otherPlanId, agencyId, "Improve mobility");
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
+    when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
 
-        assertThatThrownBy(() -> service.deleteAdlTask(clientId, planId, taskId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      assertThatThrownBy(() -> service.deleteGoal(clientId, planId, goalId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void updateGoal_throws_404_when_goal_belongs_to_other_plan() {
-        UUID planId = UUID.randomUUID();
-        UUID otherPlanId = UUID.randomUUID();
-        UUID goalId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        Goal goal = new Goal(otherPlanId, agencyId, "Improve mobility");
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+  @Test
+  void deleteMedication_throws_404_when_belongs_to_other_client() {
+    UUID medId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    ClientMedication med = new ClientMedication(UUID.randomUUID(), agencyId, "Metformin");
+    when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
 
-        assertThatThrownBy(() -> service.updateGoal(clientId, planId, goalId,
-            new UpdateGoalRequest(null, null, null)))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      assertThatThrownBy(() -> service.deleteMedication(clientId, medId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
+  }
 
-    @Test
-    void deleteGoal_throws_404_when_goal_belongs_to_other_plan() {
-        UUID planId = UUID.randomUUID();
-        UUID otherPlanId = UUID.randomUUID();
-        UUID goalId = UUID.randomUUID();
-        Client client = makeClient();
-        CarePlan plan = new CarePlan(clientId, agencyId, 1);
-        Goal goal = new Goal(otherPlanId, agencyId, "Improve mobility");
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(carePlanRepository.findById(planId)).thenReturn(Optional.of(plan));
-        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+  // --- authorizations ---
 
-        assertThatThrownBy(() -> service.deleteGoal(clientId, planId, goalId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+  @Test
+  void createAuthorization_saves_and_returns_response() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    Authorization saved = new Authorization(
+        clientId, UUID.randomUUID(), UUID.randomUUID(), agencyId,
+        "AUTH-001", BigDecimal.valueOf(40), UnitType.HOURS,
+        LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
+    when(authorizationRepository.save(any())).thenReturn(saved);
+
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      AuthorizationResponse result = service.createAuthorization(clientId,
+          new CreateAuthorizationRequest(
+              UUID.randomUUID(), UUID.randomUUID(), "AUTH-001",
+              BigDecimal.valueOf(40), UnitType.HOURS,
+              LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
+
+      assertThat(result.authNumber()).isEqualTo("AUTH-001");
+      verify(authorizationRepository).save(any(Authorization.class));
     }
+  }
 
-    @Test
-    void deleteMedication_throws_404_when_belongs_to_other_client() {
-        UUID medId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        ClientMedication med = new ClientMedication(UUID.randomUUID(), agencyId, "Metformin");
-        when(medicationRepository.findById(medId)).thenReturn(Optional.of(med));
+  @Test
+  void listAuthorizations_returns_all_for_client() {
+    Client client = makeClient();
+    Pageable pageable = PageRequest.of(0, 25);
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    when(authorizationRepository.findByClientId(clientId, pageable))
+        .thenReturn(new PageImpl<>(List.of()));
 
-        assertThatThrownBy(() -> service.deleteMedication(clientId, medId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
+
+      Page<AuthorizationResponse> result = service.listAuthorizations(clientId, pageable);
+
+      assertThat(result.getContent()).isEmpty();
+      verify(authorizationRepository).findByClientId(clientId, pageable);
     }
+  }
 
-    // --- authorizations ---
+  // --- family portal users ---
 
-    @Test
-    void createAuthorization_saves_and_returns_response() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        Authorization saved = new Authorization(
-            clientId, UUID.randomUUID(), UUID.randomUUID(), agencyId,
-            "AUTH-001", BigDecimal.valueOf(40), UnitType.HOURS,
-            LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
-        when(authorizationRepository.save(any())).thenReturn(saved);
+  @Test
+  void addFamilyPortalUser_saves_and_returns_response() {
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    FamilyPortalUser saved = new FamilyPortalUser(clientId, agencyId, "family@example.com");
+    when(familyPortalUserRepository.save(any())).thenReturn(saved);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-            AuthorizationResponse result = service.createAuthorization(clientId,
-                new CreateAuthorizationRequest(
-                    UUID.randomUUID(), UUID.randomUUID(), "AUTH-001",
-                    BigDecimal.valueOf(40), UnitType.HOURS,
-                    LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
+      FamilyPortalUserResponse result = service.addFamilyPortalUser(clientId,
+          new AddFamilyPortalUserRequest("Jane Doe", "family@example.com"));
 
-            assertThat(result.authNumber()).isEqualTo("AUTH-001");
-            verify(authorizationRepository).save(any(Authorization.class));
-        }
+      assertThat(result.email()).isEqualTo("family@example.com");
+      verify(familyPortalUserRepository).save(any(FamilyPortalUser.class));
     }
+  }
 
-    @Test
-    void listAuthorizations_returns_all_for_client() {
-        Client client = makeClient();
-        Pageable pageable = PageRequest.of(0, 25);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        when(authorizationRepository.findByClientId(clientId, pageable))
-            .thenReturn(new PageImpl<>(List.of()));
+  @Test
+  void removeFamilyPortalUser_removes_when_belongs_to_client() {
+    UUID fpuId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    FamilyPortalUser fpu = new FamilyPortalUser(clientId, agencyId, "family@example.com");
+    when(familyPortalUserRepository.findById(fpuId)).thenReturn(Optional.of(fpu));
 
-        Page<AuthorizationResponse> result = service.listAuthorizations(clientId, pageable);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        assertThat(result.getContent()).isEmpty();
-        verify(authorizationRepository).findByClientId(clientId, pageable);
+      service.removeFamilyPortalUser(clientId, fpuId);
+
+      verify(familyPortalUserRepository).delete(fpu);
     }
+  }
 
-    // --- family portal users ---
+  @Test
+  void removeFamilyPortalUser_throws_404_when_belongs_to_other_client() {
+    UUID fpuId = UUID.randomUUID();
+    Client client = makeClient();
+    when(clientRepository.findByIdAndAgencyId(clientId, agencyId)).thenReturn(Optional.of(client));
+    FamilyPortalUser fpu = new FamilyPortalUser(UUID.randomUUID(), agencyId, "family@example.com");
+    when(familyPortalUserRepository.findById(fpuId)).thenReturn(Optional.of(fpu));
 
-    @Test
-    void addFamilyPortalUser_saves_and_returns_response() {
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        FamilyPortalUser saved = new FamilyPortalUser(clientId, agencyId, "family@example.com");
-        when(familyPortalUserRepository.save(any())).thenReturn(saved);
+    try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
+      ctx.when(TenantContext::get).thenReturn(agencyId);
 
-        try (MockedStatic<TenantContext> ctx = mockStatic(TenantContext.class)) {
-            ctx.when(TenantContext::get).thenReturn(agencyId);
-
-            FamilyPortalUserResponse result = service.addFamilyPortalUser(clientId,
-                new AddFamilyPortalUserRequest("Jane Doe", "family@example.com"));
-
-            assertThat(result.email()).isEqualTo("family@example.com");
-            verify(familyPortalUserRepository).save(any(FamilyPortalUser.class));
-        }
+      assertThatThrownBy(() -> service.removeFamilyPortalUser(clientId, fpuId))
+          .isInstanceOf(ResponseStatusException.class)
+          .hasMessageContaining("404");
     }
-
-    @Test
-    void removeFamilyPortalUser_removes_when_belongs_to_client() {
-        UUID fpuId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        FamilyPortalUser fpu = new FamilyPortalUser(clientId, agencyId, "family@example.com");
-        when(familyPortalUserRepository.findById(fpuId)).thenReturn(Optional.of(fpu));
-
-        service.removeFamilyPortalUser(clientId, fpuId);
-
-        verify(familyPortalUserRepository).delete(fpu);
-    }
-
-    @Test
-    void removeFamilyPortalUser_throws_404_when_belongs_to_other_client() {
-        UUID fpuId = UUID.randomUUID();
-        Client client = makeClient();
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
-        FamilyPortalUser fpu = new FamilyPortalUser(UUID.randomUUID(), agencyId, "family@example.com");
-        when(familyPortalUserRepository.findById(fpuId)).thenReturn(Optional.of(fpu));
-
-        assertThatThrownBy(() -> service.removeFamilyPortalUser(clientId, fpuId))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("404");
-    }
+  }
 }

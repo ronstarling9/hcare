@@ -232,7 +232,8 @@ public class EvvHistoryService {
                       statusReason,
                       evvRecord != null ? evvRecord.getTimeIn() : null,
                       evvRecord != null ? evvRecord.getTimeOut() : null,
-                      evvRecord != null ? evvRecord.getVerificationMethod() : null);
+                      evvRecord != null ? evvRecord.getVerificationMethod() : null,
+                      shift.getStatus() != null ? shift.getStatus().name() : null);
                 })
             .toList();
 

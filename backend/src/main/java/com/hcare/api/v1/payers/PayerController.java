@@ -1,5 +1,6 @@
 package com.hcare.api.v1.payers;
 
+import com.hcare.api.v1.clients.dto.AuthorizationResponse;
 import com.hcare.api.v1.payers.dto.PayerResponse;
 import com.hcare.security.UserPrincipal;
 import org.springframework.data.domain.Page;
@@ -36,5 +37,13 @@ public class PayerController {
       @AuthenticationPrincipal UserPrincipal principal,
       @PathVariable UUID id) {
     return ResponseEntity.ok(payerService.getPayer(id));
+  }
+
+  @GetMapping("/{id}/authorizations")
+  @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+  public ResponseEntity<Page<AuthorizationResponse>> listAuthorizations(
+      @PathVariable UUID id,
+      @PageableDefault(size = 20) Pageable pageable) {
+    return ResponseEntity.ok(payerService.listAuthorizationsForPayer(id, pageable));
   }
 }

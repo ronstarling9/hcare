@@ -89,7 +89,7 @@ public class CaregiverService {
     }
 
     Caregiver requireCaregiver(UUID caregiverId) {
-        return caregiverRepository.findById(caregiverId)
+        return caregiverRepository.findByIdAndAgencyId(caregiverId, TenantContext.get())
             .orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.NOT_FOUND, "Caregiver not found: " + caregiverId));
     }
@@ -123,6 +123,21 @@ public class CaregiverService {
                 HttpStatus.NOT_FOUND, "Credential not found: " + credentialId);
         }
         credentialRepository.delete(cred);
+    }
+
+    @Transactional
+    public CredentialResponse verifyCredential(UUID caregiverId, UUID credentialId,
+        UUID adminUserId) {
+        requireCaregiver(caregiverId);
+        CaregiverCredential cred = credentialRepository.findById(credentialId)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Credential not found: " + credentialId));
+        if (!cred.getCaregiverId().equals(caregiverId)) {
+            throw new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Credential not found: " + credentialId);
+        }
+        cred.verify(adminUserId);
+        return CredentialResponse.from(credentialRepository.save(cred));
     }
 
     // --- background checks ---
