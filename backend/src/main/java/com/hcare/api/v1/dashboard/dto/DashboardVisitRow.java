@@ -5,18 +5,17 @@ import com.hcare.evv.EvvComplianceStatus;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * One row in the dashboard visit list for today.
- * Names are denormalized from Client and Caregiver at query time.
- */
 public record DashboardVisitRow(
     UUID shiftId,
     String clientFirstName,
     String clientLastName,
+    UUID caregiverId,
     String caregiverFirstName,
     String caregiverLastName,
+    String serviceTypeName,
     LocalDateTime scheduledStart,
     LocalDateTime scheduledEnd,
     ShiftStatus status,
-    EvvComplianceStatus evvStatus
+    EvvComplianceStatus evvStatus,
+    String evvStatusReason
 ) {}

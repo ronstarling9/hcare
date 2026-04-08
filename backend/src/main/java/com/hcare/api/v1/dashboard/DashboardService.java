@@ -19,6 +19,8 @@ import com.hcare.domain.EvvRecordRepository;
 import com.hcare.domain.Payer;
 import com.hcare.domain.PayerRepository;
 import com.hcare.domain.PayerType;
+import com.hcare.domain.ServiceType;
+import com.hcare.domain.ServiceTypeRepository;
 import com.hcare.domain.Shift;
 import com.hcare.domain.ShiftRepository;
 import com.hcare.evv.EvvComplianceService;
@@ -63,6 +65,7 @@ public class DashboardService {
     private final CaregiverCredentialRepository credentialRepository;
     private final BackgroundCheckRepository backgroundCheckRepository;
     private final EvvComplianceService evvComplianceService;
+    private final ServiceTypeRepository serviceTypeRepository;
 
     public DashboardService(
             ShiftRepository shiftRepository,
@@ -74,7 +77,8 @@ public class DashboardService {
             PayerRepository payerRepository,
             CaregiverCredentialRepository credentialRepository,
             BackgroundCheckRepository backgroundCheckRepository,
-            EvvComplianceService evvComplianceService) {
+            EvvComplianceService evvComplianceService,
+            ServiceTypeRepository serviceTypeRepository) {
         this.shiftRepository = shiftRepository;
         this.clientRepository = clientRepository;
         this.caregiverRepository = caregiverRepository;
@@ -85,6 +89,7 @@ public class DashboardService {
         this.credentialRepository = credentialRepository;
         this.backgroundCheckRepository = backgroundCheckRepository;
         this.evvComplianceService = evvComplianceService;
+        this.serviceTypeRepository = serviceTypeRepository;
     }
 
     @Transactional(readOnly = true)
@@ -113,6 +118,9 @@ public class DashboardService {
         Map<UUID, Payer> payerById = payerRepository.findByAgencyId(agencyId).stream()
                 .collect(Collectors.toMap(Payer::getId, p -> p));
 
+        Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepository.findByAgencyId(agencyId).stream()
+                .collect(Collectors.toMap(ServiceType::getId, st -> st));
+
         // EVV state config cache (keyed by state code); findByStateCode returns Optional so unwrap
         Map<String, EvvStateConfig> stateConfigCache = new HashMap<>();
 
@@ -123,7 +131,7 @@ public class DashboardService {
 
         // Build visit rows
         List<DashboardVisitRow> visitRows = new ArrayList<>();
-        int completed = 0, inProgress = 0, open = 0, redCount = 0;
+        int redCount = 0, yellowCount = 0, uncoveredCount = 0;
 
         for (Shift shift : todayShifts) {
             Client client = clientMap.get(shift.getClientId());
@@ -162,24 +170,25 @@ public class DashboardService {
             }
 
             if (evvStatus == EvvComplianceStatus.RED) redCount++;
+            if (evvStatus == EvvComplianceStatus.YELLOW) yellowCount++;
+            if (shift.getStatus() == com.hcare.domain.ShiftStatus.OPEN) uncoveredCount++;
 
-            switch (shift.getStatus()) {
-                case COMPLETED -> completed++;
-                case IN_PROGRESS -> inProgress++;
-                case OPEN, ASSIGNED -> open++;
-                default -> { /* CANCELLED / MISSED — still shown in list */ }
-            }
-
+            String serviceTypeName = serviceTypeMap.containsKey(shift.getServiceTypeId())
+                    ? serviceTypeMap.get(shift.getServiceTypeId()).getName()
+                    : "Unknown";
             visitRows.add(new DashboardVisitRow(
                     shift.getId(),
                     client != null ? client.getFirstName() : "Unknown",
                     client != null ? client.getLastName() : "Client",
+                    caregiver != null ? caregiver.getId() : null,
                     caregiver != null ? caregiver.getFirstName() : null,
                     caregiver != null ? caregiver.getLastName() : null,
+                    serviceTypeName,
                     shift.getScheduledStart(),
                     shift.getScheduledEnd(),
                     shift.getStatus(),
-                    evvStatus
+                    evvStatus,
+                    null
             ));
         }
 
@@ -195,11 +204,12 @@ public class DashboardService {
             Caregiver cg = caregiverMap.get(cred.getCaregiverId());
             String name = cg != null ? cg.getFirstName() + " " + cg.getLastName() : "Unknown Caregiver";
             alerts.add(new DashboardAlert(
-                    AlertType.CREDENTIAL_EXPIRING,
+                    AlertType.CREDENTIAL_EXPIRY,
                     cred.getId(),
                     name,
                     cred.getCredentialType().name() + " expires",
-                    cred.getExpiryDate()
+                    cred.getExpiryDate(),
+                    "CAREGIVER"
             ));
         }
 
@@ -214,7 +224,8 @@ public class DashboardService {
                     bc.getId(),
                     name,
                     bc.getCheckType().name() + " renewal due",
-                    bc.getRenewalDueDate()
+                    bc.getRenewalDueDate(),
+                    "CAREGIVER"
             ));
         }
 
@@ -233,18 +244,19 @@ public class DashboardService {
                             auth.getId(),
                             name,
                             "Auth " + auth.getAuthNumber() + " at " + pct + "% utilization",
-                            auth.getEndDate()
+                            auth.getEndDate(),
+                            "CLIENT"
                     ));
                 }
             }
         }
 
+        int onTrackCount = Math.max(0, todayShifts.size() - redCount - yellowCount - uncoveredCount);
         return new DashboardTodayResponse(
-                todayShifts.size(),
-                completed,
-                inProgress,
-                open,
                 redCount,
+                yellowCount,
+                uncoveredCount,
+                onTrackCount,
                 visitRows,
                 alerts
         );

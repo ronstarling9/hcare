@@ -119,7 +119,8 @@ class DashboardControllerIT extends AbstractIntegrationTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         DashboardTodayResponse body = resp.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.totalVisitsToday()).isEqualTo(0);
+        assertThat(body.visits().size() + body.onTrackCount() + body.redEvvCount()
+            + body.yellowEvvCount() + body.uncoveredCount()).isEqualTo(0);
         assertThat(body.visits()).isEmpty();
         assertThat(body.alerts()).isNotNull();
     }
@@ -156,10 +157,10 @@ class DashboardControllerIT extends AbstractIntegrationTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         DashboardTodayResponse body = resp.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.totalVisitsToday()).isEqualTo(1);
         assertThat(body.visits()).hasSize(1);
         assertThat(body.visits().get(0).clientFirstName()).isEqualTo("Alice");
         assertThat(body.visits().get(0).caregiverFirstName()).isEqualTo("Bob");
+        assertThat(body.visits().get(0).serviceTypeName()).isEqualTo("PCS");
     }
 
     // -------------------------------------------------------------------------
@@ -188,7 +189,7 @@ class DashboardControllerIT extends AbstractIntegrationTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isNotNull();
-        assertThat(resp.getBody().totalVisitsToday()).isEqualTo(0);
+        assertThat(resp.getBody().visits()).isEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -210,7 +211,7 @@ class DashboardControllerIT extends AbstractIntegrationTest {
     }
 
     // -------------------------------------------------------------------------
-    // Test 5: expiring credential generates CREDENTIAL_EXPIRING alert
+    // Test 5: expiring credential generates CREDENTIAL_EXPIRY alert
     // -------------------------------------------------------------------------
 
     @Test
@@ -238,9 +239,9 @@ class DashboardControllerIT extends AbstractIntegrationTest {
 
         assertThat(body.alerts())
             .anyMatch(alert ->
-                alert.alertType() == AlertType.CREDENTIAL_EXPIRING
-                && alert.subjectName() != null
-                && alert.subjectName().contains("Carol"));
+                alert.type() == AlertType.CREDENTIAL_EXPIRY
+                && alert.subject() != null
+                && alert.subject().contains("Carol"));
     }
 
     // -------------------------------------------------------------------------
@@ -275,7 +276,6 @@ class DashboardControllerIT extends AbstractIntegrationTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         DashboardTodayResponse body = resp.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.totalVisitsToday()).isEqualTo(0);
         assertThat(body.visits()).isEmpty();
     }
 
@@ -309,9 +309,9 @@ class DashboardControllerIT extends AbstractIntegrationTest {
 
         assertThat(body.alerts())
             .anyMatch(alert ->
-                alert.alertType() == AlertType.BACKGROUND_CHECK_DUE
-                && alert.subjectName() != null
-                && alert.subjectName().contains("Grace"));
+                alert.type() == AlertType.BACKGROUND_CHECK_DUE
+                && alert.subject() != null
+                && alert.subject().contains("Grace"));
     }
 
     // -------------------------------------------------------------------------
@@ -350,7 +350,7 @@ class DashboardControllerIT extends AbstractIntegrationTest {
         assertThat(body.alerts()).isNotNull();
 
         assertThat(body.alerts())
-            .anyMatch(alert -> alert.alertType() == AlertType.AUTHORIZATION_LOW);
+            .anyMatch(alert -> alert.type() == AlertType.AUTHORIZATION_LOW);
     }
 
     // -------------------------------------------------------------------------
@@ -380,7 +380,7 @@ class DashboardControllerIT extends AbstractIntegrationTest {
         assertThat(body).isNotNull();
 
         assertThat(body.alerts())
-            .anyMatch(alert -> alert.alertType() == AlertType.CREDENTIAL_EXPIRING);
+            .anyMatch(alert -> alert.type() == AlertType.CREDENTIAL_EXPIRY);
     }
 
     // -------------------------------------------------------------------------
@@ -410,7 +410,7 @@ class DashboardControllerIT extends AbstractIntegrationTest {
         assertThat(body).isNotNull();
 
         assertThat(body.alerts())
-            .noneMatch(alert -> alert.alertType() == AlertType.CREDENTIAL_EXPIRING);
+            .noneMatch(alert -> alert.type() == AlertType.CREDENTIAL_EXPIRY);
     }
 
     // -------------------------------------------------------------------------
