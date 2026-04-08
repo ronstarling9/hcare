@@ -37,8 +37,7 @@ export function ClientDetailPanel({ clientId, backLabel, initialTab }: ClientDet
         <div className="px-6 py-4 border-b border-border">
           <button
             type="button"
-            className="text-[13px] mb-2 hover:underline"
-            style={{ color: '#1a9afa' }}
+            className="text-[13px] mb-2 hover:underline text-blue"
             onClick={closePanel}
           >
             {backLabel}
@@ -79,8 +78,7 @@ export function ClientDetailPanel({ clientId, backLabel, initialTab }: ClientDet
       <div className="px-6 py-4 border-b border-border">
         <button
           type="button"
-          className="text-[13px] mb-2 hover:underline"
-          style={{ color: '#1a9afa' }}
+          className="text-[13px] mb-2 hover:underline text-blue"
           onClick={closePanel}
         >
           {backLabel}
