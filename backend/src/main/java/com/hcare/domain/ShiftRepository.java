@@ -21,6 +21,12 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
                                                         LocalDateTime end,
                                                         Pageable pageable);
 
+    Page<Shift> findByAgencyIdAndStatusAndScheduledStartBetween(UUID agencyId,
+                                                                  ShiftStatus status,
+                                                                  LocalDateTime start,
+                                                                  LocalDateTime end,
+                                                                  Pageable pageable);
+
     List<Shift> findByClientIdAndScheduledStartBetween(UUID clientId,
                                                         LocalDateTime start,
                                                         LocalDateTime end);

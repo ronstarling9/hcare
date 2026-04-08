@@ -64,9 +64,14 @@ public class ShiftSchedulingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ShiftSummaryResponse> listShifts(UUID agencyId, LocalDateTime start, LocalDateTime end, Pageable pageable) {
+    public Page<ShiftSummaryResponse> listShifts(UUID agencyId, LocalDateTime start, LocalDateTime end,
+                                                  ShiftStatus status, Pageable pageable) {
         if (!end.isAfter(start)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "end must be after start");
+        }
+        if (status != null) {
+            return shiftRepository.findByAgencyIdAndStatusAndScheduledStartBetween(agencyId, status, start, end, pageable)
+                .map(this::toSummary);
         }
         return shiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end, pageable)
             .map(this::toSummary);

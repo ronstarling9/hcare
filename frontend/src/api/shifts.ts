@@ -25,6 +25,13 @@ export async function listShifts(
   return response.data
 }
 
+export async function listOpenShifts(start: string, end: string): Promise<ShiftSummaryResponse[]> {
+  const response = await apiClient.get<PageResponse<ShiftSummaryResponse>>('/shifts', {
+    params: { start, end, status: 'OPEN', size: 200, sort: 'scheduledStart' },
+  })
+  return response.data.content
+}
+
 export async function getShift(id: string): Promise<ShiftDetailResponse> {
   const response = await apiClient.get<ShiftDetailResponse>(`/shifts/${id}`)
   return response.data

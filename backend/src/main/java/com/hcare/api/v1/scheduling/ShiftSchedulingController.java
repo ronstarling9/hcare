@@ -7,6 +7,7 @@ import com.hcare.api.v1.scheduling.dto.RankedCaregiverResponse;
 import com.hcare.api.v1.scheduling.dto.RespondToOfferRequest;
 import com.hcare.api.v1.scheduling.dto.ShiftOfferSummary;
 import com.hcare.api.v1.scheduling.dto.ShiftSummaryResponse;
+import com.hcare.domain.ShiftStatus;
 import com.hcare.security.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -18,7 +19,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,11 +40,9 @@ public class ShiftSchedulingController {
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end,
+            @RequestParam(required = false) ShiftStatus status,
             @PageableDefault(size = 20, sort = "scheduledStart") Pageable pageable) {
-        if (!end.isAfter(start)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "end must be after start");
-        }
-        return ResponseEntity.ok(shiftSchedulingService.listShifts(principal.getAgencyId(), start, end, pageable));
+        return ResponseEntity.ok(shiftSchedulingService.listShifts(principal.getAgencyId(), start, end, status, pageable));
     }
 
     @PostMapping

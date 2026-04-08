@@ -38,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -77,7 +78,7 @@ class ShiftSchedulingServiceTest {
         when(shiftRepository.findByAgencyIdAndScheduledStartBetween(agencyId, start, end, Pageable.unpaged()))
             .thenReturn(new PageImpl<>(List.of(shift)));
 
-        Page<ShiftSummaryResponse> result = service.listShifts(agencyId, start, end, Pageable.unpaged());
+        Page<ShiftSummaryResponse> result = service.listShifts(agencyId, start, end, null, Pageable.unpaged());
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).clientId()).isEqualTo(clientId);
@@ -89,10 +90,44 @@ class ShiftSchedulingServiceTest {
         LocalDateTime start = LocalDateTime.of(2026, 5, 8, 0, 0);
         LocalDateTime end   = LocalDateTime.of(2026, 5, 1, 0, 0); // end before start
 
-        assertThatThrownBy(() -> service.listShifts(agencyId, start, end, Pageable.unpaged()))
+        assertThatThrownBy(() -> service.listShifts(agencyId, start, end, null, Pageable.unpaged()))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("400");
         verifyNoInteractions(shiftRepository);
+    }
+
+    @Test
+    void listShifts_withStatusFilter_delegates_to_status_filtered_repo() {
+        LocalDateTime start = LocalDateTime.now();
+        LocalDateTime end = start.plusDays(7);
+        Shift shift = new Shift(agencyId, null, clientId, null, serviceTypeId, null,
+            start.plusHours(1), start.plusHours(5));
+        when(shiftRepository.findByAgencyIdAndStatusAndScheduledStartBetween(
+            eq(agencyId), eq(ShiftStatus.OPEN), eq(start), eq(end), any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(shift)));
+
+        Page<ShiftSummaryResponse> result = service.listShifts(agencyId, start, end, ShiftStatus.OPEN, Pageable.unpaged());
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).status()).isEqualTo(ShiftStatus.OPEN);
+        verify(shiftRepository).findByAgencyIdAndStatusAndScheduledStartBetween(
+            eq(agencyId), eq(ShiftStatus.OPEN), eq(start), eq(end), any(Pageable.class));
+        verify(shiftRepository, never()).findByAgencyIdAndScheduledStartBetween(any(), any(), any(), any());
+    }
+
+    @Test
+    void listShifts_withoutStatusFilter_delegates_to_unfiltered_repo() {
+        LocalDateTime start = LocalDateTime.now();
+        LocalDateTime end = start.plusDays(7);
+        when(shiftRepository.findByAgencyIdAndScheduledStartBetween(eq(agencyId), eq(start), eq(end), any(Pageable.class)))
+            .thenReturn(Page.empty());
+
+        service.listShifts(agencyId, start, end, null, Pageable.unpaged());
+
+        verify(shiftRepository).findByAgencyIdAndScheduledStartBetween(
+            eq(agencyId), eq(start), eq(end), any(Pageable.class));
+        verify(shiftRepository, never()).findByAgencyIdAndStatusAndScheduledStartBetween(
+            any(), any(), any(), any(), any());
     }
 
     // --- createShift ---

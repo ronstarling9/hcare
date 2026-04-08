@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import MockAdapter from 'axios-mock-adapter'
 import { apiClient } from './client'
-import { listShifts, getShift, createShift, assignCaregiver, broadcastShift, getCandidates, clockIn } from './shifts'
+import { listShifts, listOpenShifts, getShift, createShift, assignCaregiver, broadcastShift, getCandidates, clockIn } from './shifts'
 import type { ShiftSummaryResponse, ShiftDetailResponse, RankedCaregiverResponse, PageResponse } from '../types/api'
 
 vi.mock('../store/authStore', () => ({
@@ -31,6 +31,19 @@ describe('shifts API', () => {
     const result = await listShifts('2026-04-06T00:00:00', '2026-04-13T00:00:00')
     expect(result.content).toHaveLength(1)
     expect(result.content[0].id).toBe('s1')
+  })
+
+  it('listOpenShifts calls GET /shifts with status=OPEN', async () => {
+    const page: PageResponse<ShiftSummaryResponse> = {
+      content: [summary], totalElements: 1, totalPages: 1, number: 0, size: 200, first: true, last: true,
+    }
+    mock.onGet('/shifts', {
+      params: { start: '2026-04-06T00:00:00', end: '2026-04-13T00:00:00', status: 'OPEN', size: 200, sort: 'scheduledStart' },
+    }).reply(200, page)
+
+    const result = await listOpenShifts('2026-04-06T00:00:00', '2026-04-13T00:00:00')
+    expect(result).toHaveLength(1)
+    expect(result[0].status).toBe('OPEN')
   })
 
   it('getShift calls GET /shifts/:id', async () => {

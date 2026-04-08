@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { WeekCalendar } from './WeekCalendar'
 import { AlertStrip } from './AlertStrip'
+import { BroadcastOpenModal } from './BroadcastOpenModal'
 import { usePanelStore } from '../../store/panelStore'
 import { useShifts } from '../../hooks/useShifts'
 import { useAllClients } from '../../hooks/useClients'
@@ -44,6 +45,7 @@ export function SchedulePage() {
     return toLocalISODateTime(end)
   }, [weekStart])
 
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false)
   const { data: shiftsPage, isLoading: shiftsLoading } = useShifts(weekStartStr, weekEndStr)
   const { clientMap } = useAllClients()
   const { caregiverMap } = useAllCaregivers()
@@ -104,7 +106,7 @@ export function SchedulePage() {
           <button
             type="button"
             className="px-3 py-1.5 text-[12px] font-semibold border border-border text-dark hover:brightness-95 ml-2"
-            onClick={() => alert(t('broadcastOpenAlert'))}
+            onClick={() => setBroadcastModalOpen(true)}
           >
             {t('broadcastOpen')}
           </button>
@@ -143,6 +145,13 @@ export function SchedulePage() {
           />
         )}
       </div>
+      <BroadcastOpenModal
+        open={broadcastModalOpen}
+        onClose={() => setBroadcastModalOpen(false)}
+        weekStart={weekStartStr}
+        weekEnd={weekEndStr}
+        clientMap={clientMap}
+      />
     </div>
   )
 }

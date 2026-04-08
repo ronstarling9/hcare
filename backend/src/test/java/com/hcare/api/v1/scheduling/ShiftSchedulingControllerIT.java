@@ -126,6 +126,37 @@ class ShiftSchedulingControllerIT extends AbstractIntegrationTest {
         assertThat(content).isEmpty();
     }
 
+    @Test
+    void listShifts_withStatusFilter_returnsOnlyOpenShifts() {
+        // Create one OPEN and one ASSIGNED shift
+        shiftRepo.save(new Shift(agency.getId(), null, client.getId(), null,
+            serviceType.getId(), null,
+            LocalDateTime.of(2026, 5, 3, 9, 0), LocalDateTime.of(2026, 5, 3, 13, 0)));
+        Shift assigned = new Shift(agency.getId(), null, client.getId(), caregiver.getId(),
+            serviceType.getId(), null,
+            LocalDateTime.of(2026, 5, 4, 9, 0), LocalDateTime.of(2026, 5, 4, 13, 0));
+        shiftRepo.save(assigned);
+
+        ResponseEntity<Map<String, Object>> resp = restTemplate.exchange(
+            "/api/v1/shifts?start=2026-05-01T00:00:00&end=2026-05-08T00:00:00&status=OPEN",
+            HttpMethod.GET, new HttpEntity<>(auth()),
+            new ParameterizedTypeReference<>() {});
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<?> content = (List<?>) resp.getBody().get("content");
+        assertThat(content).hasSize(1);
+        Map<?, ?> first = (Map<?, ?>) content.get(0);
+        assertThat(first.get("status")).isEqualTo("OPEN");
+    }
+
+    @Test
+    void listShifts_withInvalidStatus_returns400() {
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/shifts?start=2026-05-01T00:00:00&end=2026-05-08T00:00:00&status=NOT_A_STATUS",
+            HttpMethod.GET, new HttpEntity<>(auth()), String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
     // --- POST /shifts ---
 
     @Test
