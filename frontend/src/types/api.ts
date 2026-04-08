@@ -159,6 +159,19 @@ export interface AuthorizationResponse {
   createdAt: string
 }
 
+export interface CreateClientRequest {
+  firstName: string
+  lastName: string
+  dateOfBirth: string               // YYYY-MM-DD — Jackson reads directly as LocalDate
+  phone?: string
+  address?: string
+  serviceState?: string             // 2-letter abbreviation; omit (not "") when blank
+  medicaidId?: string
+  preferredCaregiverGender?: string // "FEMALE" | "MALE"; omit (not "") for no preference
+  preferredLanguages?: string       // JSON array string e.g. '["English","Spanish"]'
+  noPetCaregiver?: boolean
+}
+
 // ── Caregivers ────────────────────────────────────────────────────────────────
 
 export interface CaregiverResponse {

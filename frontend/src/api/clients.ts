@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { ClientResponse, AuthorizationResponse, PageResponse } from '../types/api'
+import type { ClientResponse, AuthorizationResponse, PageResponse, CreateClientRequest } from '../types/api'
 
 export async function listClients(page = 0, size = 100): Promise<PageResponse<ClientResponse>> {
   const response = await apiClient.get<PageResponse<ClientResponse>>('/clients', {
@@ -22,5 +22,10 @@ export async function listAuthorizations(
     `/clients/${clientId}/authorizations`,
     { params: { page, size } },
   )
+  return response.data
+}
+
+export async function createClient(req: CreateClientRequest): Promise<ClientResponse> {
+  const response = await apiClient.post<ClientResponse>('/clients', req)
   return response.data
 }
