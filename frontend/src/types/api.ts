@@ -242,12 +242,12 @@ export interface EvvHistoryRow {
   clientLastName: string
   caregiverFirstName: string | null
   caregiverLastName: string | null
-  serviceTypeName: string
-  scheduledStart: string
+  serviceTypeName: string | null
+  scheduledStart: string // ISO-8601 LocalDateTime
   scheduledEnd: string
   evvStatus: EvvComplianceStatus
   evvStatusReason: string | null
   timeIn: string | null
   timeOut: string | null
-  verificationMethod: VerificationMethod | null
+  verificationMethod: string | null
 }
