@@ -1,59 +1,109 @@
-import { useTranslation } from 'react-i18next'
-import { mockPayers } from '../../mock/data'
-import { usePanelStore } from '../../store/panelStore'
+import { useState } from 'react'
+import { usePayers } from '../../hooks/usePayers'
+import type { PayerResponse } from '../../types/api'
+
+const PAYER_TYPE_LABELS: Record<string, string> = {
+  MEDICAID: 'Medicaid',
+  PRIVATE_PAY: 'Private Pay',
+  LTC_INSURANCE: 'LTC Insurance',
+  VA: 'VA',
+  MEDICARE: 'Medicare',
+}
+
+function PayerRow({ payer }: { payer: PayerResponse }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 bg-white border border-border rounded">
+      <div>
+        <p className="text-sm font-medium text-dark">
+          {payer.name}
+        </p>
+        <p className="text-xs mt-0.5 text-text-secondary">
+          {PAYER_TYPE_LABELS[payer.payerType] ?? payer.payerType}
+          {' · '}
+          {payer.state}
+        </p>
+      </div>
+      <div className="text-right">
+        {payer.evvAggregator ? (
+          <span className="inline-block text-xs px-2 py-0.5 rounded bg-surface text-text-secondary border border-border">
+            {payer.evvAggregator}
+          </span>
+        ) : (
+          <span className="text-xs text-text-muted">No EVV aggregator</span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export function PayersPage() {
-  const { t } = useTranslation('payers')
-  const tCommon = useTranslation('common').t
-  const { openPanel } = usePanelStore()
+  const [page, setPage] = useState(0)
+  const { payers, isLoading, isError, totalPages, totalElements } = usePayers(page, 20)
 
-  const PAYER_TYPE_LABEL: Record<string, string> = {
-    MEDICAID: t('typeMedicaid'),
-    PRIVATE_PAY: t('typePrivatePay'),
-    LTC_INSURANCE: t('typeLtcInsurance'),
-    VA: t('typeVa'),
-    MEDICARE: t('typeMedicare'),
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-surface">
+        <span className="text-sm text-text-muted">Loading payers…</span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-full bg-surface">
+        <p className="text-sm text-red-600">Failed to load payers.</p>
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center px-6 py-4 bg-white border-b border-border">
-        <h1 className="text-[16px] font-bold tracking-[-0.02em] text-dark">{t('pageTitle')}</h1>
-        <button
-          type="button"
-          className="ml-auto px-4 py-1.5 text-[12px] font-bold bg-dark text-white hover:brightness-110"
-          onClick={() => alert(t('addPayerAlert'))}
-        >
-          {t('addPayer')}
-        </button>
+    <div className="flex flex-col h-full bg-surface">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-border">
+        <div>
+          <h1 className="text-lg font-semibold text-dark">Payers</h1>
+          <p className="text-xs mt-0.5 text-text-muted">
+            {totalElements} total
+          </p>
+        </div>
       </div>
-      <div className="flex-1 overflow-auto">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="border-b border-border bg-surface">
-              {[t('colPayerName'), t('colType'), t('colState'), t('colEvvAggregator')].map((h) => (
-                <th
-                  key={h}
-                  className="text-left px-6 py-2 text-[9px] font-bold uppercase tracking-[0.1em] text-text-secondary"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {mockPayers.map((payer) => (
-              <tr key={payer.id} className="border-b border-border hover:bg-surface cursor-pointer" onClick={() => openPanel('payer', payer.id)}>
-                <td className="px-6 py-3 font-medium text-dark">{payer.name}</td>
-                <td className="px-6 py-3 text-text-secondary">
-                  {PAYER_TYPE_LABEL[payer.payerType] ?? payer.payerType}
-                </td>
-                <td className="px-6 py-3 text-text-secondary">{payer.state}</td>
-                <td className="px-6 py-3 text-text-secondary">{payer.evvAggregator ?? tCommon('noDash')}</td>
-              </tr>
+
+      {/* List */}
+      <div className="flex-1 overflow-auto p-6">
+        {payers.length === 0 ? (
+          <div className="flex items-center justify-center h-32">
+            <p className="text-sm text-text-muted">No payers configured yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {payers.map((payer) => (
+              <PayerRow key={payer.id} payer={payer} />
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-end gap-2 mt-4">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-text-secondary">
+              Page {page + 1} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page === totalPages - 1}
+              className="px-3 py-1.5 text-sm disabled:opacity-40 border border-border text-text-secondary"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
