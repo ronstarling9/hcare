@@ -37,5 +37,20 @@
   "noShiftHistory": "No shift history on file.",
   "prev": "Prev",
   "next": "Next",
-  "pageOf": "Page {{page}} of {{total}}"
+  "pageOf": "Page {{page}} of {{total}}",
+  "addCaregiverPanelTitle": "Add Caregiver",
+  "addCaregiverRequiredNote": "* Required field",
+  "sectionIdentity": "Caregiver Identity",
+  "sectionEmployment": "Employment & Contact",
+  "fieldFirstName": "First Name",
+  "fieldLastName": "Last Name",
+  "fieldEmail": "Email",
+  "validationFirstNameRequired": "First name is required",
+  "validationLastNameRequired": "Last name is required",
+  "validationEmailRequired": "Email is required",
+  "validationEmailInvalid": "Enter a valid email address",
+  "saveAndAddCredentials": "Save & Add Credentials",
+  "saveAndClose": "Save & Close",
+  "saveCloseToast": "Caregiver saved. Add credentials to enable scheduling.",
+  "saveCloseToastLink": "Add Credentials"
 }
