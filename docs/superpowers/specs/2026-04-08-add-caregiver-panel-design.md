@@ -74,7 +74,7 @@ Header
 | phone | `tel` | Optional |
 | address | `text` | Optional; single line is sufficient for intake |
 | hireDate | `date` | Optional |
-| hasPet | `checkbox` | Defaults unchecked (false); informs caregiver–client matching |
+| hasPet | `checkbox` | Defaults unchecked (false); actively used by the AI scoring engine — deducts from preference score when matched with a client who has `noPetCaregiver: true` |
 
 ---
 
@@ -93,13 +93,20 @@ Header
 | `src/types/api.ts` | Add `CreateCaregiverRequest` interface |
 | `src/api/caregivers.ts` | Add `createCaregiver(req: CreateCaregiverRequest)` |
 | `src/hooks/useCaregivers.ts` | Add `useCreateCaregiver()` mutation |
-| `src/store/panelStore.ts` | Add `'newCaregiver'` to `PanelType` union; add `initialTab?: string` to `PanelPrefill` |
-| `src/components/layout/Shell.tsx` | Register `newCaregiver` in `PanelContent`; pass `initialTab` to `CaregiverDetailPanel` |
-| `src/components/caregivers/CaregiverDetailPanel.tsx` | Accept optional `initialTab` prop; default to `'overview'` |
+| `src/store/panelStore.ts` | Add `'newCaregiver'` to `PanelType` union; `initialTab?: string` is already added by the Add Client spec as a top-level `PanelState` field and `openPanel` option — no additional change needed |
+| `src/components/layout/Shell.tsx` | Register `newCaregiver` in `PanelContent`; pass `initialTab` from `PanelState` as a direct prop to `CaregiverDetailPanel` |
+| `src/components/caregivers/CaregiverDetailPanel.tsx` | Accept optional `initialTab?: string` prop; cast to `Tab` with `(initialTab as Tab \| undefined) ?? 'overview'` as the `useState` initial value — mirrors `ClientDetailPanel` |
 | `src/components/caregivers/CaregiversPage.tsx` | Replace `alert()` with `openPanel('newCaregiver', undefined, { backLabel: t('backLabel') })` |
 | `public/locales/en/caregivers.json` | Add keys for new panel (see i18n section below) |
 
 **Shared infrastructure note:** `src/store/toastStore.ts` and `src/components/common/Toast.tsx` are introduced by the Add Client spec and reused here unchanged. If Add Caregiver ships before Add Client, those two files must be included in this implementation instead.
+
+The toastStore interface (defined in the Add Client spec) is fully generic: `{ targetId, panelType, panelTab, backLabel }`. `Toast.tsx` calls `openPanel(panelType, targetId, { initialTab: panelTab, backLabel })` — no feature-specific constants. Both specs share this interface unchanged.
+
+**Implementation dependencies:** The following shared changes must land in a single prerequisite PR before either Add Client or Add Caregiver is built:
+- `toastStore.ts` and `Toast.tsx` (new files)
+- `panelStore.ts` — `PanelType` union additions and `initialTab` in `PanelPrefill`
+- `Shell.tsx` — `<Toast />` rendering and `initialTab` forwarding
 
 ---
 
@@ -138,11 +145,11 @@ const caregiver = await createMutation.mutateAsync(payload)
 closePanel()
 openPanel('caregiver', caregiver.id, {
   backLabel: t('backLabel'),
-  prefill: { initialTab: 'credentials' },
+  initialTab: 'credentials',
 })
 ```
 
-`CaregiverDetailPanel` reads `initialTab` from `prefill` and passes it as the default `useState` value for `activeTab`.
+`initialTab` is a top-level field on `PanelState` (not inside `PanelPrefill`), consistent with the Add Client spec. `Shell.tsx` passes it as a direct prop to `CaregiverDetailPanel`, which casts it and uses it as the `useState<Tab>` initial value. React 18 automatic batching coalesces `closePanel()` and `openPanel()` into a single render — no blank-panel flash.
 
 **Save & Close:**
 ```ts
@@ -150,7 +157,10 @@ const caregiver = await createMutation.mutateAsync(payload)
 toastStore.show({
   message: t('saveCloseToast'),
   linkLabel: t('saveCloseToastLink'),
-  clientId: caregiver.id,
+  targetId: caregiver.id,
+  panelType: 'caregiver',
+  panelTab: 'credentials',
+  backLabel: t('backLabel'),
 })
 closePanel()
 ```
@@ -172,7 +182,6 @@ The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismi
 "fieldPhone": "Phone",
 "fieldAddress": "Address",
 "fieldHireDate": "Hire Date",
-"fieldHasPet": "Has pet at home",
 "validationFirstNameRequired": "First name is required",
 "validationLastNameRequired": "Last name is required",
 "validationEmailRequired": "Email is required",
@@ -212,6 +221,12 @@ All other fields are optional — no client-side validation beyond the required 
 | Save & Close path | `toastStore.show` called; `closePanel` called |
 
 Add a `useCreateCaregiver` mutation test in `useCaregivers.test.ts` confirming query invalidation on success.
+
+---
+
+## Known Gaps
+
+- **Email uniqueness** — the `caregivers` table has no unique constraint on `email` per agency. Duplicate caregiver profiles with the same email can be created silently. This is a data quality issue today and will become an authentication bug when caregivers log into the mobile app. A backend migration adding a `UNIQUE(agency_id, email)` constraint should be tracked as a separate ticket; it is out of scope for this frontend-only spec.
 
 ---
 
