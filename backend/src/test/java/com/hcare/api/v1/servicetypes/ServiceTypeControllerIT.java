@@ -42,6 +42,8 @@ class ServiceTypeControllerIT extends AbstractIntegrationTest {
         agencyA = agencyRepo.save(new Agency("Agency Alpha", "TX"));
         userRepo.save(new AgencyUser(agencyA.getId(), "admin-a@test.com",
             passwordEncoder.encode(TEST_PASSWORD), UserRole.ADMIN));
+        userRepo.save(new AgencyUser(agencyA.getId(), "scheduler-a@test.com",
+            passwordEncoder.encode(TEST_PASSWORD), UserRole.SCHEDULER));
         serviceTypeRepo.save(new ServiceType(agencyA.getId(), "Skilled Nursing Visit", "SNV", true, "[]"));
         serviceTypeRepo.save(new ServiceType(agencyA.getId(), "Personal Care Services", "PCS", false, "[]"));
 
@@ -105,6 +107,17 @@ class ServiceTypeControllerIT extends AbstractIntegrationTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isEmpty();
+    }
+
+    @Test
+    void listServiceTypes_returns_200_for_scheduler_role() {
+        ResponseEntity<List<ServiceTypeResponse>> resp = restTemplate.exchange(
+            "/api/v1/service-types", HttpMethod.GET,
+            new HttpEntity<>(authFor("scheduler-a@test.com")),
+            new ParameterizedTypeReference<>() {});
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody()).hasSize(2);
     }
 
     @Test

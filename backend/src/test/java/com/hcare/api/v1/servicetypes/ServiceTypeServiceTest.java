@@ -74,6 +74,16 @@ class ServiceTypeServiceTest {
   }
 
   @Test
+  void listServiceTypes_returns_empty_credentials_when_requiredCredentials_is_null() {
+    ServiceType st = new ServiceType(agencyId, "PCS", "PCS", false, null);
+    when(serviceTypeRepository.findByAgencyId(agencyId)).thenReturn(List.of(st));
+
+    List<ServiceTypeResponse> result = service.listServiceTypes(agencyId);
+
+    assertThat(result.get(0).requiredCredentials()).isEmpty();
+  }
+
+  @Test
   void listServiceTypes_returns_empty_list_for_agency_with_no_service_types() {
     when(serviceTypeRepository.findByAgencyId(agencyId)).thenReturn(List.of());
 

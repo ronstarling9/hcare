@@ -39,11 +39,17 @@ public class ServiceTypeService {
 
   private ServiceTypeResponse toResponse(ServiceType st) {
     List<String> credentials;
-    try {
-      credentials = objectMapper.readValue(st.getRequiredCredentials(), STRING_LIST_TYPE);
-    } catch (Exception e) {
-      log.warn("Failed to parse requiredCredentials for ServiceType {}: {}", st.getId(), e.getMessage());
+    String raw = st.getRequiredCredentials();
+    if (raw == null || raw.isBlank()) {
       credentials = List.of();
+    } else {
+      try {
+        credentials = objectMapper.readValue(raw, STRING_LIST_TYPE);
+      } catch (Exception e) {
+        log.warn("Failed to parse requiredCredentials for ServiceType {}: {}",
+            st.getId(), e.getMessage());
+        credentials = List.of();
+      }
     }
     return new ServiceTypeResponse(
         st.getId(),
