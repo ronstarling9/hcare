@@ -199,4 +199,46 @@ class ClientControllerIT extends AbstractIntegrationTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
+
+    // --- GET /clients/{id}/care-plans/active ---
+
+    @Test
+    void getActiveCarePlan_returns_200_with_active_plan() {
+        CarePlan plan = carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 1));
+        plan.activate();
+        carePlanRepo.save(plan);
+
+        ResponseEntity<CarePlanResponse> resp = restTemplate.exchange(
+            "/api/v1/clients/" + client.getId() + "/care-plans/active",
+            HttpMethod.GET, new HttpEntity<>(auth()), CarePlanResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody().id()).isEqualTo(plan.getId());
+        assertThat(resp.getBody().status()).isEqualTo(CarePlanStatus.ACTIVE);
+        assertThat(resp.getBody().planVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void getActiveCarePlan_returns_404_when_no_plan_exists() {
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/clients/" + client.getId() + "/care-plans/active",
+            HttpMethod.GET, new HttpEntity<>(auth()), String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void getActiveCarePlan_returns_404_after_plan_is_superseded() {
+        CarePlan v1 = carePlanRepo.save(new CarePlan(client.getId(), agency.getId(), 1));
+        v1.activate();
+        carePlanRepo.save(v1);
+        v1.supersede();
+        carePlanRepo.save(v1);
+
+        ResponseEntity<String> resp = restTemplate.exchange(
+            "/api/v1/clients/" + client.getId() + "/care-plans/active",
+            HttpMethod.GET, new HttpEntity<>(auth()), String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }

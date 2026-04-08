@@ -163,6 +163,12 @@ public class ClientController {
         return ResponseEntity.ok(clientService.activateCarePlan(id, planId));
     }
 
+    @GetMapping("/{id}/care-plans/active")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<CarePlanResponse> getActiveCarePlan(@PathVariable UUID id) {
+        return ResponseEntity.ok(clientService.getActiveCarePlan(id));
+    }
+
     // --- ADL Tasks ---
 
     @GetMapping("/{id}/care-plans/{planId}/adl-tasks")
