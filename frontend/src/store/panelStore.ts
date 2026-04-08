@@ -3,6 +3,7 @@ import { create } from 'zustand'
 export type PanelType =
   | 'shift'
   | 'newShift'
+  | 'newClient'
   | 'client'
   | 'caregiver'
   | 'payer'
@@ -25,10 +26,11 @@ interface PanelState {
   selectedId: string | null
   prefill: PanelPrefill | null
   backLabel: string   // e.g. "← Schedule", "← Clients"
+  initialTab: string | undefined   // top-level nav state — NOT part of PanelPrefill
   openPanel: (
     type: Exclude<PanelType, null>,
     id?: string,
-    options?: { prefill?: PanelPrefill; backLabel?: string }
+    options?: { prefill?: PanelPrefill; backLabel?: string; initialTab?: string }
   ) => void
   closePanel: () => void
 }
@@ -39,6 +41,7 @@ export const usePanelStore = create<PanelState>((set) => ({
   selectedId: null,
   prefill: null,
   backLabel: '← Back',
+  initialTab: undefined,
 
   openPanel: (type, id, options) =>
     set({
@@ -47,8 +50,9 @@ export const usePanelStore = create<PanelState>((set) => ({
       selectedId: id ?? null,
       prefill: options?.prefill ?? null,
       backLabel: options?.backLabel ?? '← Back',
+      initialTab: options?.initialTab,
     }),
 
   closePanel: () =>
-    set({ open: false, type: null, selectedId: null, prefill: null }),
+    set({ open: false, type: null, selectedId: null, prefill: null, initialTab: undefined }),
 }))

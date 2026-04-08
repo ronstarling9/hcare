@@ -9,13 +9,15 @@ type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPor
 interface ClientDetailPanelProps {
   clientId: string
   backLabel: string
+  initialTab?: string
 }
 
-export function ClientDetailPanel({ clientId, backLabel }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ clientId, backLabel, initialTab }: ClientDetailPanelProps) {
   const { t, i18n } = useTranslation('clients')
   const tCommon = useTranslation('common').t
   const { closePanel } = usePanelStore()
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const [activeTab, setActiveTab] = useState<Tab>((initialTab as Tab | undefined) ?? 'overview')
+  // useState reads initialTab only once on mount — an invalid value silently falls back to 'overview'
 
   const { data: client, isLoading, isError } = useClientDetail(clientId)
   const { data: authsPage } = useClientAuthorizations(clientId)
