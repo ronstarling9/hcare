@@ -21,8 +21,8 @@ public interface AgencyIntegrationConfigRepository extends JpaRepository<AgencyI
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("FROM AgencyIntegrationConfig c WHERE c.agencyId = :agencyId AND c.integrationType = :type " +
-           "AND c.stateCode IS NOT DISTINCT FROM :stateCode " +
-           "AND c.payerType IS NOT DISTINCT FROM :payerType")
+           "AND (:stateCode IS NULL AND c.stateCode IS NULL OR c.stateCode = :stateCode) " +
+           "AND (:payerType IS NULL AND c.payerType IS NULL OR c.payerType = :payerType)")
     Optional<AgencyIntegrationConfig> findForUpdate(
             @Param("agencyId") UUID agencyId,
             @Param("type") String type,

@@ -45,8 +45,7 @@ CREATE TABLE agency_integration_configs (
     config_json          TEXT,
     active               BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_agency_integration_type UNIQUE (agency_id, integration_type)
+    updated_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE integration_audit_log (

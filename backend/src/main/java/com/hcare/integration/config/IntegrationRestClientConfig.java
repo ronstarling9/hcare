@@ -1,10 +1,11 @@
 package com.hcare.integration.config;
 
+import java.net.http.HttpClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 @Configuration
@@ -42,16 +43,14 @@ public class IntegrationRestClientConfig {
     }
 
     private RestClient buildClient(IntegrationConnectorProperties.ConnectorConfig cfg) {
-        if (cfg == null || cfg.baseUrl() == null) {
-            return RestClient.builder().build();
+        if (cfg == null) {
+            throw new IllegalStateException("ConnectorConfig must not be null");
         }
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        if (cfg.connectTimeout() != null) {
-            factory.setConnectTimeout((int) cfg.connectTimeout().toMillis());
-        }
-        if (cfg.readTimeout() != null) {
-            factory.setReadTimeout((int) cfg.readTimeout().toMillis());
-        }
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(cfg.connectTimeout())
+                .build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(cfg.readTimeout());
         return RestClient.builder()
                 .baseUrl(cfg.baseUrl())
                 .requestFactory(factory)
