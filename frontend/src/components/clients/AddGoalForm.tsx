@@ -9,6 +9,7 @@ interface AddGoalFormProps {
 
 export function AddGoalForm({ onConfirm, onCancel, isLoading }: AddGoalFormProps) {
   const { t } = useTranslation('clients')
+  const { t: tCommon } = useTranslation('common')
   const [description, setDescription] = useState('')
   const [targetDate, setTargetDate] = useState('')
 
@@ -58,7 +59,7 @@ export function AddGoalForm({ onConfirm, onCancel, isLoading }: AddGoalFormProps
           onClick={onCancel}
           className="border border-border text-text-secondary text-[11px] px-3 py-1.5 bg-transparent"
         >
-          Cancel
+          {tCommon('cancel')}
         </button>
         <button
           type="button"

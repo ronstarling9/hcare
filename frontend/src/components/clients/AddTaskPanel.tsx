@@ -34,6 +34,7 @@ const ASSISTANCE_OPTIONS: { value: AssistanceLevel; labelKey: string }[] = [
 
 export function AddTaskPanel({ onConfirm, onCancel, isLoading }: AddTaskPanelProps) {
   const { t } = useTranslation('clients')
+  const { t: tCommon } = useTranslation('common')
   const { data: templates = [] } = useAdlTaskTemplates()
 
   const [search, setSearch] = useState('')
@@ -193,7 +194,7 @@ export function AddTaskPanel({ onConfirm, onCancel, isLoading }: AddTaskPanelPro
           onClick={onCancel}
           className="flex-1 bg-transparent border border-border text-text-secondary text-[11px] font-semibold py-2 cursor-pointer"
         >
-          Cancel
+          {tCommon('cancel')}
         </button>
         <button
           type="button"
