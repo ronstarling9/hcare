@@ -6,6 +6,7 @@ PID_FILE="/tmp/hcare-dev.pids"
 BACKEND_LOG="/tmp/hcare-backend.log"
 FRONTEND_LOG="/tmp/hcare-frontend.log"
 BACKEND_URL="http://localhost:8080/api/v1/auth/login"
+BFF_URL="http://localhost:8081/actuator/health"
 FRONTEND_URL="http://localhost:5173"
 
 # ── Cleanup any stale processes ───────────────────────────────────────────────
@@ -21,6 +22,14 @@ SPRING_PROFILES_ACTIVE=dev mvn -f "$REPO_DIR/backend/pom.xml" spring-boot:run \
 BACKEND_PID=$!
 echo "   PID $BACKEND_PID → logs at $BACKEND_LOG"
 
+# ── Start BFF ─────────────────────────────────────────────────────────────────
+echo "▶  Starting BFF..."
+BFF_LOG="/tmp/hcare-bff.log"
+mvn -f "$REPO_DIR/bff/pom.xml" spring-boot:run \
+  > "$BFF_LOG" 2>&1 &
+BFF_PID=$!
+echo "   PID $BFF_PID → logs at $BFF_LOG"
+
 # ── Start frontend ────────────────────────────────────────────────────────────
 echo "▶  Starting frontend..."
 npm --prefix "$REPO_DIR/frontend" run dev \
@@ -29,7 +38,7 @@ FRONTEND_PID=$!
 echo "   PID $FRONTEND_PID → logs at $FRONTEND_LOG"
 
 # ── Save PIDs ─────────────────────────────────────────────────────────────────
-echo "$BACKEND_PID $FRONTEND_PID" > "$PID_FILE"
+echo "$BACKEND_PID $BFF_PID $FRONTEND_PID" > "$PID_FILE"
 
 # ── Wait for backend ──────────────────────────────────────────────────────────
 echo -n "⏳ Waiting for backend"
@@ -45,6 +54,22 @@ for i in $(seq 1 60); do
   if [[ $i -eq 60 ]]; then
     echo ""
     echo "✗  Backend did not start within 120s. Check $BACKEND_LOG"
+    exit 1
+  fi
+done
+
+# ── Wait for BFF ─────────────────────────────────────────────────────────────
+echo -n "⏳ Waiting for BFF"
+for i in $(seq 1 60); do
+  if curl -s -o /dev/null "$BFF_URL" 2>/dev/null; then
+    echo " ready."
+    break
+  fi
+  echo -n "."
+  sleep 2
+  if [[ $i -eq 60 ]]; then
+    echo ""
+    echo "✗  BFF did not start within 120s. Check $BFF_LOG"
     exit 1
   fi
 done
@@ -72,6 +97,7 @@ open -a "Google Chrome" "$FRONTEND_URL"
 echo ""
 echo "✅ hcare dev environment is running."
 echo "   Backend:  http://localhost:8080"
+echo "   BFF:      http://localhost:8081"
 echo "   Frontend: $FRONTEND_URL"
 echo "   Login:    admin@sunrise.dev / Admin1234!"
 echo "   Stop:     ./dev-stop.sh"

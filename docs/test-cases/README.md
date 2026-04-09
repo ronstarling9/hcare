@@ -42,7 +42,7 @@ When running a suite, annotate each case inline:
 ### Dev environment quick-start
 
 ```bash
-./dev-start.sh          # starts backend (:8080) + frontend (:5173)
+./dev-start.sh          # starts backend (:8080) + BFF (:8081) + frontend (:5173)
 ```
 
 Default credentials (all passwords `Admin1234!`):

@@ -22,8 +22,9 @@ describe('CarePlanScreen', () => {
 
   it('loads and displays ADL tasks from mock', async () => {
     render(<CarePlanScreen navigation={nav} route={route} />, { wrapper });
+    // CarePlanScreen renders tasks as `• {name}` so match via regex, not exact string.
     await waitFor(() =>
-      expect(screen.getByText(mockCarePlan.adlTasks[0].name)).toBeTruthy()
+      expect(screen.getByText(new RegExp(mockCarePlan.adlTasks[0].name))).toBeTruthy()
     );
   });
 });

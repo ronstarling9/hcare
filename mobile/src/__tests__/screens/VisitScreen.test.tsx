@@ -61,8 +61,9 @@ describe('VisitScreen', () => {
     await waitFor(() => expect(screen.getByText('Clock Out')).toBeTruthy());
     fireEvent.press(screen.getByText('Clock Out'));
     // Modal should appear warning about incomplete tasks
+    // Modal title is exactly "Tasks remaining" — match it to confirm the modal appeared.
     await waitFor(() =>
-      expect(screen.getByText(/incomplete/i)).toBeTruthy()
+      expect(screen.getByText('Tasks remaining')).toBeTruthy()
     );
   });
 

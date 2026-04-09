@@ -13,10 +13,11 @@ kill_pid() {
 
 # ── Kill from PID file ────────────────────────────────────────────────────────
 if [[ -f "$PID_FILE" ]]; then
-  read -r BACKEND_PID FRONTEND_PID < "$PID_FILE"
+  read -r BACKEND_PID BFF_PID FRONTEND_PID < "$PID_FILE"
   echo "▶  Stopping hcare dev servers..."
 
   kill_pid "$BACKEND_PID" "backend"
+  kill_pid "$BFF_PID" "bff"
   kill_pid "$FRONTEND_PID" "frontend"
 
   rm -f "$PID_FILE"
@@ -25,7 +26,7 @@ else
 fi
 
 # ── Fallback: kill anything still on these ports ──────────────────────────────
-for port in 8080 5173; do
+for port in 8080 8081 5173; do
   pid=$(lsof -ti :"$port" 2>/dev/null || true)
   if [[ -n "$pid" ]]; then
     kill "$pid" 2>/dev/null && echo "   Killed process on port $port (PID $pid)"

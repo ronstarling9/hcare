@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 /frontend        # React (TypeScript) — web admin app
 /mobile          # React Native — caregiver mobile app
 /infra           # IaC / deployment configs
+/docs            # Project docs: glossary.md, dev-seed-reference.md, test-cases/ (manual test suites)
 ```
 
 Primary packages under `com.hcare`:
@@ -216,6 +217,12 @@ mvn flyway:info                 # check migration status
 mvn test -Dtest=ClassName       # run a single test class
 ```
 
+### Database Migrations
+Flyway migrations live in `backend/src/main/resources/db/migration/`. Naming: `V<N>__<description>.sql`. Always use the next sequential integer — gaps break Flyway. Dev H2 console: `http://localhost:8080/h2-console` (JDBC URL: `jdbc:h2:mem:hcaredb`, no credentials).
+
+### JWT Key Design
+Two separate signing keys are in use. `hcare.jwt.secret` signs admin/scheduler tokens; `hcare.portal.jwt.secret` signs family portal tokens. `JwtTokenProvider` exposes `parseAdminClaims()` and `parsePortalClaims()` as separate entry points — never use a unified parse path that accepts both. `validateToken()` / `getUserId()` / `getRole()` are admin-only; only `parseAndValidate()` (used by `JwtAuthenticationFilter`) attempts the portal key as a fallback.
+
 ---
 
 ## Testing Standards
@@ -257,6 +264,9 @@ mvn test -Dtest=ClassName       # run a single test class
 # Backend
 SPRING_PROFILES_ACTIVE=dev|staging|prod
 JWT_SECRET=<256-bit minimum HMAC-SHA256 secret, required in prod>
+HCARE_PORTAL_JWT_SECRET=<256-bit minimum HMAC-SHA256 secret, required in prod — startup fails without it>
+HCARE_PORTAL_BASE_URL=<base URL for portal invite links, default http://localhost:5173>
+HCARE_PORTAL_JWT_EXPIRATION_DAYS=<portal JWT lifetime in days, default 30>
 HCARE_SCORING_WEEKLY_RESET_CRON=<cron expression, default "0 0 0 * * MON" (Monday 00:00 UTC); set to "-" in tests>
 
 # Frontend
@@ -268,7 +278,7 @@ EXPO_PUBLIC_USE_MOCKS=true|false      # true = axios-mock-adapter; false = real 
 EXPO_PUBLIC_BFF_URL=http://localhost:8081
 ```
 
-Dev profile uses H2 in-memory DB. Test profile uses Testcontainers PostgreSQL 16. Prod requires external Postgres and a real `JWT_SECRET`.
+Dev profile uses H2 in-memory DB. Test profile uses Testcontainers PostgreSQL 16. Prod requires external Postgres and real `JWT_SECRET` + `HCARE_PORTAL_JWT_SECRET`.
 
 ---
 

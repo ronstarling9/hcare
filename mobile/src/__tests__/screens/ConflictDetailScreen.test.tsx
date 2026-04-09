@@ -1,6 +1,10 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import { ConflictDetailScreen } from '@/screens/conflict/ConflictDetailScreen';
+
+// ConflictDetailScreen calls useFocusEffect which requires a NavigationContainer.
+const wrapper = ({ children }: any) => <NavigationContainer>{children}</NavigationContainer>;
 
 describe('ConflictDetailScreen', () => {
   const conflict = {
@@ -13,12 +17,12 @@ describe('ConflictDetailScreen', () => {
   const route = { params: { conflict } };
 
   it('shows the client name', () => {
-    render(<ConflictDetailScreen navigation={nav} route={route} />);
+    render(<ConflictDetailScreen navigation={nav} route={route} />, { wrapper });
     expect(screen.getByText(/Eleanor Vance/)).toBeTruthy();
   });
 
   it('shows agency contact guidance', () => {
-    render(<ConflictDetailScreen navigation={nav} route={route} />);
+    render(<ConflictDetailScreen navigation={nav} route={route} />, { wrapper });
     expect(screen.getByText(/contact your agency/i)).toBeTruthy();
   });
 });
