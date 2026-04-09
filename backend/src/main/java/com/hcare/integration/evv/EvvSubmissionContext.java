@@ -10,6 +10,10 @@ import java.util.UUID;
  *
  * <p>C16: NEVER includes decrypted credential values — credentials resolved at submit time by the
  * caller. Safe to serialize to context_json without leaking plaintext secrets.
+ *
+ * @param stateCode Two-letter state code for aggregator routing and timezone resolution
+ * @param serviceState Two-letter state code where the service was delivered (for EVV payload body
+ *     — may differ from routing state for interstate clients)
  */
 public record EvvSubmissionContext(
         UUID evvRecordId,

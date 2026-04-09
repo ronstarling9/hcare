@@ -41,7 +41,11 @@ public class DatabaseEvvBatchQueue implements EvvBatchQueue {
         try {
             repo.save(record);
         } catch (DataIntegrityViolationException e) {
-            log.warn("Duplicate batch enqueue ignored for evvRecordId={}", ctx.evvRecordId());
+            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("evv_record_id")) {
+                log.warn("Duplicate batch enqueue ignored for evvRecordId={}", ctx.evvRecordId());
+            } else {
+                throw e;
+            }
         }
     }
 

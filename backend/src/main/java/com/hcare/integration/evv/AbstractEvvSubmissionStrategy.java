@@ -16,6 +16,8 @@ public abstract class AbstractEvvSubmissionStrategy implements EvvSubmissionStra
         return doSubmit(ctx, payload);
     }
 
+    // Note: update() and void_() do not call validate() — subclasses are responsible
+    // for any validation needed in doUpdate()/doVoid_() implementations.
     @Override
     public EvvSubmissionResult update(EvvSubmissionContext ctx, Object typedCreds) {
         return doUpdate(ctx, typedCreds);

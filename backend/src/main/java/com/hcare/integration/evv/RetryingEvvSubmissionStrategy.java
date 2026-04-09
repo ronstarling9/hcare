@@ -82,10 +82,13 @@ public class RetryingEvvSubmissionStrategy implements EvvSubmissionStrategy {
     }
 
     private boolean isTerminalError(String errorCode) {
-        if (errorCode == null) {
-            return false;
+        if (errorCode == null) return false;
+        try {
+            int code = Integer.parseInt(errorCode);
+            return code >= 400 && code < 500;
+        } catch (NumberFormatException ignored) {
+            return errorCode.contains("4xx");
         }
-        return errorCode.startsWith("4") || errorCode.contains("4xx");
     }
 
     private void sleep(long baseMs) {
