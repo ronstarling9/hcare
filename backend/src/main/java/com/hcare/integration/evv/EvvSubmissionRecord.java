@@ -47,6 +47,9 @@ public class EvvSubmissionRecord {
     @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
+    @Column(name = "in_flight_since")
+    private LocalDateTime inFlightSince;
+
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
 
@@ -72,6 +75,7 @@ public class EvvSubmissionRecord {
     public String getContextJson() { return contextJson; }
     public int getRetryCount() { return retryCount; }
     public String getLastError() { return lastError; }
+    public LocalDateTime getInFlightSince() { return inFlightSince; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 
@@ -84,5 +88,6 @@ public class EvvSubmissionRecord {
     public void setContextJson(String contextJson) { this.contextJson = contextJson; }
     public void setRetryCount(int retryCount) { this.retryCount = retryCount; }
     public void setLastError(String lastError) { this.lastError = lastError; }
+    public void setInFlightSince(LocalDateTime inFlightSince) { this.inFlightSince = inFlightSince; }
     public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }
 }

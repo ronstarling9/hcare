@@ -1,5 +1,6 @@
 package com.hcare.integration.evv;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -20,12 +21,12 @@ public interface EvvSubmissionRecordSystemRepository extends JpaRepository<EvvSu
     @Query("SELECT DISTINCT r.agencyId FROM EvvSubmissionRecord r WHERE r.submissionMode = 'BATCH' AND r.status = 'PENDING'")
     List<UUID> findDistinctAgenciesWithPendingBatch();
 
-    @Query("SELECT r FROM EvvSubmissionRecord r WHERE r.agencyId = :agencyId AND r.submissionMode = 'BATCH' AND r.status = 'PENDING' ORDER BY r.id ASC")
-    EvvSubmissionRecord findFirstByAgencyIdAndSubmissionModeBatchAndStatusPending(@Param("agencyId") UUID agencyId);
+    @Query("SELECT r FROM EvvSubmissionRecord r WHERE r.agencyId = :agencyId AND r.submissionMode = 'BATCH' AND r.status = 'PENDING' ORDER BY r.createdAt ASC")
+    List<EvvSubmissionRecord> findNextBatchPending(@Param("agencyId") UUID agencyId, Pageable pageable);
 
     /** Tx 1: claim a record by transitioning PENDING → IN_FLIGHT. Returns 1 if claimed, 0 if already claimed by another node. */
     @Modifying
-    @Query("UPDATE EvvSubmissionRecord r SET r.status = 'IN_FLIGHT' WHERE r.id = :id AND r.status = 'PENDING'")
+    @Query("UPDATE EvvSubmissionRecord r SET r.status = 'IN_FLIGHT', r.inFlightSince = CURRENT_TIMESTAMP WHERE r.id = :id AND r.status = 'PENDING'")
     int markInFlight(@Param("id") UUID id);
 
     /** Tx 2: finalize a record after submission. */
@@ -35,6 +36,6 @@ public interface EvvSubmissionRecordSystemRepository extends JpaRepository<EvvSu
 
     /** Startup watchdog: reset stale IN_FLIGHT rows back to PENDING. */
     @Modifying
-    @Query("UPDATE EvvSubmissionRecord r SET r.status = 'PENDING' WHERE r.status = 'IN_FLIGHT' AND r.submittedAt IS NULL AND r.createdAt < :cutoff")
+    @Query("UPDATE EvvSubmissionRecord r SET r.status = 'PENDING', r.inFlightSince = NULL WHERE r.status = 'IN_FLIGHT' AND r.inFlightSince < :cutoff")
     int resetStaleInFlight(@Param("cutoff") java.time.LocalDateTime cutoff);
 }

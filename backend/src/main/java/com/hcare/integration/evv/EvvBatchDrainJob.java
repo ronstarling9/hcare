@@ -1,8 +1,6 @@
 package com.hcare.integration.evv;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hcare.domain.EvvRecord;
-import com.hcare.domain.EvvRecordRepository;
 import com.hcare.evv.AggregatorType;
 import com.hcare.integration.CredentialEncryptionService;
 import com.hcare.integration.audit.IntegrationAuditWriter;
@@ -11,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -47,7 +46,7 @@ public class EvvBatchDrainJob {
     private static final Logger log = LoggerFactory.getLogger(EvvBatchDrainJob.class);
 
     private final EvvSubmissionRecordSystemRepository systemRepo;
-    private final EvvRecordRepository evvRecordRepository;
+    private final EvvBatchRecordManager batchRecordManager;
     private final AgencyEvvCredentialsRepository credentialsRepository;
     private final CredentialEncryptionService encryptionService;
     private final EvvStrategyFactory strategyFactory;
@@ -57,7 +56,7 @@ public class EvvBatchDrainJob {
 
     public EvvBatchDrainJob(
             EvvSubmissionRecordSystemRepository systemRepo,
-            EvvRecordRepository evvRecordRepository,
+            EvvBatchRecordManager batchRecordManager,
             AgencyEvvCredentialsRepository credentialsRepository,
             CredentialEncryptionService encryptionService,
             EvvStrategyFactory strategyFactory,
@@ -65,7 +64,7 @@ public class EvvBatchDrainJob {
             IntegrationAuditWriter auditWriter,
             ObjectMapper objectMapper) {
         this.systemRepo = systemRepo;
-        this.evvRecordRepository = evvRecordRepository;
+        this.batchRecordManager = batchRecordManager;
         this.credentialsRepository = credentialsRepository;
         this.encryptionService = encryptionService;
         this.strategyFactory = strategyFactory;
@@ -119,14 +118,15 @@ public class EvvBatchDrainJob {
         // Process records one at a time (two-phase claim + finalize)
         int processed = 0;
         while (true) {
-            EvvSubmissionRecord record = systemRepo
-                    .findFirstByAgencyIdAndSubmissionModeBatchAndStatusPending(agencyId);
-            if (record == null) {
+            List<EvvSubmissionRecord> candidates = systemRepo
+                    .findNextBatchPending(agencyId, PageRequest.of(0, 1));
+            if (candidates.isEmpty()) {
                 break;
             }
+            EvvSubmissionRecord record = candidates.get(0);
 
             // Tx 1: claim the record (optimistic lock via status transition PENDING → IN_FLIGHT)
-            int claimed = claimRecord(record.getId());
+            int claimed = batchRecordManager.claimRecord(record.getId());
             if (claimed == 0) {
                 // M_new_9: already claimed by another node — skip
                 log.debug("EvvBatchDrainJob: record id={} already claimed by another node — skipping",
@@ -138,7 +138,8 @@ public class EvvBatchDrainJob {
             if (record.getContextJson() == null || record.getContextJson().isBlank()) {
                 log.error("EvvBatchDrainJob: null/empty contextJson for record id={} agencyId={} — marking REJECTED",
                         record.getId(), agencyId);
-                finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(), null);
+                batchRecordManager.finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(),
+                        null, null);
                 processed++;
                 continue;
             }
@@ -150,7 +151,8 @@ public class EvvBatchDrainJob {
             } catch (Exception e) {
                 log.error("EvvBatchDrainJob: failed to deserialize contextJson for record id={} — marking REJECTED",
                         record.getId(), e);
-                finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(), null);
+                batchRecordManager.finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(),
+                        null, null);
                 processed++;
                 continue;
             }
@@ -166,7 +168,8 @@ public class EvvBatchDrainJob {
             } catch (Exception e) {
                 log.error("EvvBatchDrainJob: failed to resolve strategy/credentials for record id={} aggregator={} — marking REJECTED",
                         record.getId(), aggregatorType, e);
-                finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(), null);
+                batchRecordManager.finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(),
+                        null, null);
                 auditWriter.record(agencyId, ctx.evvRecordId(), aggregatorType.name(),
                         "BATCH_SUBMIT", false, 0L, "CREDENTIAL_ERROR");
                 processed++;
@@ -182,16 +185,15 @@ public class EvvBatchDrainJob {
                     "BATCH_SUBMIT", result.success(), durationMs,
                     result.success() ? null : result.errorCode());
 
-            // Tx 2: finalize — write outcome and C11 dual-write to EvvRecord
+            // Tx 2: finalize — write outcome and C11 dual-write to EvvRecord in the SAME transaction
             String finalStatus = result.success()
                     ? EvvSubmissionStatus.SUBMITTED.name()
                     : EvvSubmissionStatus.REJECTED.name();
-            finalizeRecord(record.getId(), finalStatus, result.aggregatorVisitId());
-
-            // C11: dual-write aggregatorVisitId to EvvRecord in Tx 2
-            if (result.success() && result.aggregatorVisitId() != null) {
-                updateEvvRecordAggregatorVisitId(ctx.evvRecordId(), result.aggregatorVisitId());
-            }
+            UUID evvRecordIdForC11 = (result.success() && result.aggregatorVisitId() != null)
+                    ? ctx.evvRecordId()
+                    : null;
+            batchRecordManager.finalizeRecord(record.getId(), finalStatus,
+                    result.aggregatorVisitId(), evvRecordIdForC11);
 
             if (result.success()) {
                 log.info("EvvBatchDrainJob: submitted record id={} aggregatorVisitId={} aggregator={}",
@@ -205,38 +207,6 @@ public class EvvBatchDrainJob {
         }
 
         log.info("EvvBatchDrainJob: processed {} records for agencyId={}", processed, agencyId);
-    }
-
-    /**
-     * Tx 1: atomically claim a record by transitioning PENDING → IN_FLIGHT.
-     *
-     * @return 1 if claimed, 0 if already claimed by another node
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int claimRecord(UUID recordId) {
-        return systemRepo.markInFlight(recordId);
-    }
-
-    /**
-     * Tx 2: finalize a record after submission.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void finalizeRecord(UUID recordId, String status, String aggregatorVisitId) {
-        systemRepo.markFinal(recordId, status, aggregatorVisitId);
-    }
-
-    /**
-     * C11 dual-write: update EvvRecord.aggregatorVisitId in a REQUIRES_NEW transaction.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void updateEvvRecordAggregatorVisitId(UUID evvRecordId, String aggregatorVisitId) {
-        evvRecordRepository.findById(evvRecordId).ifPresentOrElse(
-                evvRecord -> {
-                    evvRecord.setAggregatorVisitId(aggregatorVisitId);
-                    evvRecordRepository.save(evvRecord);
-                },
-                () -> log.warn("EvvBatchDrainJob: EvvRecord not found for C11 dual-write: evvRecordId={}",
-                        evvRecordId));
     }
 
     /**

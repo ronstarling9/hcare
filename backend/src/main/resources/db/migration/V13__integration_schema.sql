@@ -26,6 +26,7 @@ CREATE TABLE evv_submission_records (
     aggregator_visit_id  VARCHAR(100),
     submission_mode      VARCHAR(10)  NOT NULL DEFAULT 'REAL_TIME',
     status               VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    in_flight_since      TIMESTAMP,
     context_json         TEXT,
     retry_count          INT          NOT NULL DEFAULT 0,
     last_error           TEXT,
