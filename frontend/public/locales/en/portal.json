@@ -2,6 +2,8 @@
   "verifyingTitle": "Signing you in…",
   "linkExpiredHeading": "Link expired",
   "linkExpiredBody": "This link has expired or is invalid. Ask your care coordinator for a new one.",
+  "serverErrorHeading": "Something went wrong",
+  "serverErrorBody": "Unable to verify your link. Please try again or contact your care coordinator.",
   "sessionExpiredHeading": "Session expired",
   "sessionExpiredBody": "Your session has expired. Ask your care coordinator for a new link.",
   "noSessionHeading": "No active session",

@@ -7,6 +7,7 @@ import { usePortalAuthStore } from '../store/portalAuthStore'
 type VerifyState =
   | 'verifying'
   | 'token_invalid'
+  | 'server_error'
   | 'session_expired'
   | 'no_session'
   | 'signed_out'
@@ -53,8 +54,13 @@ export default function PortalVerifyPage() {
         login(res.jwt, res.clientId, res.agencyId)
         navigate('/portal/dashboard', { replace: true })
       })
-      .catch(() => {
-        setDisplayState('token_invalid')
+      .catch((err) => {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status !== undefined && status >= 400 && status < 500) {
+          setDisplayState('token_invalid')
+        } else {
+          setDisplayState('server_error')
+        }
       })
   // login and navigate are stable refs (Zustand selector + useNavigate) — intentionally omitted
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -83,6 +89,7 @@ function VerifyErrorCard({
 }) {
   const headingKey = {
     token_invalid: 'linkExpiredHeading',
+    server_error: 'serverErrorHeading',
     session_expired: 'sessionExpiredHeading',
     no_session: 'noSessionHeading',
     signed_out: 'signedOutHeading',
@@ -91,6 +98,7 @@ function VerifyErrorCard({
 
   const bodyKey = {
     token_invalid: 'linkExpiredBody',
+    server_error: 'serverErrorBody',
     session_expired: 'sessionExpiredBody',
     no_session: 'noSessionBody',
     signed_out: 'signedOutBody',
