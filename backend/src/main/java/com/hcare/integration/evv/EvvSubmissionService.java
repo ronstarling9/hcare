@@ -229,14 +229,8 @@ public class EvvSubmissionService {
             return;
         }
 
-        // Step 7b: submit
-        long startMs = System.currentTimeMillis();
+        // Step 7b: submit — AuditingEvvSubmissionStrategy (decorator) records the audit entry.
         EvvSubmissionResult result = strategy.submit(ctx, typedCreds);
-        long durationMs = System.currentTimeMillis() - startMs;
-
-        auditWriter.record(agencyId, ctx.evvRecordId(), ctx.aggregatorType().name(),
-                "SUBMIT", result.success(), durationMs,
-                result.success() ? null : result.errorCode());
 
         if (result.success()) {
             // C11 dual-write: update BOTH EvvSubmissionRecord AND EvvRecord in this REQUIRES_NEW tx

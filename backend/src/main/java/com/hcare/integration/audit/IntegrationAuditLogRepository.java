@@ -11,4 +11,6 @@ public interface IntegrationAuditLogRepository extends JpaRepository<Integration
 
     List<IntegrationAuditLog> findByAgencyIdAndConnectorOrderByRecordedAtDesc(
             UUID agencyId, String connector);
+
+    List<IntegrationAuditLog> findByEntityId(UUID entityId);
 }

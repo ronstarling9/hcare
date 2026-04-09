@@ -1,5 +1,7 @@
 package com.hcare.integration.evv;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.hcare.AbstractIntegrationTest;
 import com.hcare.domain.Agency;
 import com.hcare.domain.AgencyRepository;
@@ -25,21 +27,19 @@ import com.hcare.integration.CredentialEncryptionService;
 import com.hcare.integration.audit.IntegrationAuditLog;
 import com.hcare.integration.audit.IntegrationAuditLogRepository;
 import com.hcare.integration.evv.sandata.SandataCredentials;
-import org.awaitility.Awaitility;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Integration test for the full {@link EvvSubmissionService#onShiftCompleted} event-listener path.
@@ -78,7 +78,7 @@ class EvvSubmissionServiceIT extends AbstractIntegrationTest {
     private AgencyEvvCredentialsRepository agencyEvvCredentialsRepository;
 
     @Autowired
-    private IntegrationAuditLogRepository integrationAuditLogRepository;
+    private IntegrationAuditLogRepository auditLogRepository;
 
     @Autowired
     private CredentialEncryptionService credentialEncryptionService;
@@ -89,22 +89,29 @@ class EvvSubmissionServiceIT extends AbstractIntegrationTest {
     @Autowired
     private PlatformTransactionManager txManager;
 
+    private TransactionTemplate txTemplate;
+
+    @BeforeEach
+    void setUpTransactionTemplate() {
+        txTemplate = new TransactionTemplate(txManager);
+    }
+
     /**
      * Happy-path: credentials present, Sandata connector unavailable (no REST client configured
      * in test profile). Verifies that the event listener fires, resolves SANDATA via CA state
-     * config, attempts real-time submission, and writes an audit log entry with
+     * config, attempts real-time submission, and writes exactly one audit log entry with
      * {@code errorCode = "CONNECTOR_UNAVAILABLE"}.
      *
-     * <p>Note: RetryingEvvSubmissionStrategy retries CONNECTOR_UNAVAILABLE three times with
-     * delays of ~2s + ~4s. Awaitility timeout is set to 25s to accommodate retries.
+     * <p>Note: RetryingEvvSubmissionStrategy sleeps ~2s + ~4s between 3 attempts (+-25% jitter,
+     * worst-case ~7.5s). 25s provides comfortable headroom for Testcontainers + virtual thread
+     * scheduling overhead.
      */
     @Test
-    void onShiftCompleted_withValidData_writesAuditLogWithConnectorUnavailable() throws Exception {
+    void onShiftCompleted_withValidData_writesAuditLogWithConnectorUnavailable() {
         // Seed all entities in a committing transaction so the @TransactionalEventListener fires.
         UUID[] evvRecordIdHolder = new UUID[1];
         UUID[] agencyIdHolder = new UUID[1];
 
-        TransactionTemplate txTemplate = new TransactionTemplate(txManager);
         txTemplate.execute(status -> {
             // 1. Agency
             Agency agency = new Agency("IT Agency Connector Test", "CA");
@@ -185,41 +192,28 @@ class EvvSubmissionServiceIT extends AbstractIntegrationTest {
         UUID agencyId = agencyIdHolder[0];
         assertThat(evvRecordId).isNotNull();
 
-        // Wait for async EVV submission including RetryingEvvSubmissionStrategy delays (~6s total)
+        // Wait for async EVV submission including RetryingEvvSubmissionStrategy delays.
         Awaitility.await()
                 .atMost(25, TimeUnit.SECONDS)
-                .until(() -> integrationAuditLogRepository.findAll().stream()
-                        .anyMatch(log -> evvRecordId.equals(log.getEntityId())));
+                .pollInterval(200, TimeUnit.MILLISECONDS)
+                .until(() -> !auditLogRepository.findByEntityId(evvRecordId).isEmpty());
 
-        // The EvvSubmissionService.submitRealTime() writes one audit entry after strategy.submit()
-        // returns. Assert the entry written by the service-level auditWriter.record() call.
-        List<IntegrationAuditLog> logs = integrationAuditLogRepository.findAll();
-        List<IntegrationAuditLog> relevant = logs.stream()
-                .filter(l -> evvRecordId.equals(l.getEntityId())
-                        && agencyId.equals(l.getAgencyId()))
-                .toList();
+        // AuditingEvvSubmissionStrategy decorator writes exactly one entry per submit call.
+        List<IntegrationAuditLog> entries = auditLogRepository.findByEntityId(evvRecordId);
+        assertThat(entries).hasSize(1);
 
-        assertThat(relevant).as("Expected at least one audit log entry for evvRecordId=%s", evvRecordId)
-                .isNotEmpty();
-
-        // At least one entry must reflect the CONNECTOR_UNAVAILABLE failure
-        IntegrationAuditLog auditEntry = relevant.stream()
-                .filter(l -> "CONNECTOR_UNAVAILABLE".equals(l.getErrorCode()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError(
-                        "No CONNECTOR_UNAVAILABLE audit entry found. Entries: " + relevant));
-
-        assertThat(auditEntry.getConnector()).isEqualTo("SANDATA");
-        assertThat(auditEntry.getOperation()).isEqualTo("SUBMIT");
-        assertThat(auditEntry.getAgencyId()).isEqualTo(agencyId);
-        assertThat(auditEntry.isSuccess()).isFalse();
-        assertThat(auditEntry.getErrorCode()).isEqualTo("CONNECTOR_UNAVAILABLE");
-        assertThat(auditEntry.getRecordedAt()).isNotNull();
+        IntegrationAuditLog entry = entries.get(0);
+        assertThat(entry.getConnector()).isEqualTo("SANDATA");
+        assertThat(entry.getOperation()).isEqualTo("SUBMIT");
+        assertThat(entry.getAgencyId()).isEqualTo(agencyId);
+        assertThat(entry.isSuccess()).isFalse();
+        assertThat(entry.getErrorCode()).isEqualTo("CONNECTOR_UNAVAILABLE");
+        assertThat(entry.getRecordedAt()).isNotNull();
     }
 
     /**
      * Missing credentials path: no {@link AgencyEvvCredentials} seeded. Verifies that
-     * {@code EvvSubmissionService} writes an audit log entry with
+     * {@code EvvSubmissionService} writes exactly one audit log entry with
      * {@code errorCode = "MISSING_CREDENTIALS"} and does not attempt aggregator submission.
      */
     @Test
@@ -227,7 +221,6 @@ class EvvSubmissionServiceIT extends AbstractIntegrationTest {
         UUID[] evvRecordIdHolder = new UUID[1];
         UUID[] agencyIdHolder = new UUID[1];
 
-        TransactionTemplate txTemplate = new TransactionTemplate(txManager);
         txTemplate.execute(status -> {
             // 1. Agency (distinct slug to avoid conflicts with other test)
             Agency agency = new Agency("IT Agency Missing Creds Test", "CA");
@@ -258,9 +251,9 @@ class EvvSubmissionServiceIT extends AbstractIntegrationTest {
                     LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
             auth = authorizationRepository.save(auth);
 
-            // 6. Caregiver
+            // 6. Caregiver — distinct NPI from test 1
             Caregiver caregiver = new Caregiver(agencyId, "Bob", "Jones", "bob.it2@test.dev");
-            caregiver.setNpi("1234567893");
+            caregiver.setNpi("1003000126");
             caregiver = caregiverRepository.save(caregiver);
 
             // 7. Shift
@@ -298,25 +291,22 @@ class EvvSubmissionServiceIT extends AbstractIntegrationTest {
         UUID agencyId = agencyIdHolder[0];
         assertThat(evvRecordId).isNotNull();
 
-        // Missing credentials path is fast — no retries, writes immediately
+        // Missing credentials path is fast — no retries, writes immediately.
         Awaitility.await()
                 .atMost(10, TimeUnit.SECONDS)
-                .until(() -> integrationAuditLogRepository.findAll().stream()
-                        .anyMatch(log -> evvRecordId.equals(log.getEntityId())));
+                .pollInterval(200, TimeUnit.MILLISECONDS)
+                .until(() -> !auditLogRepository.findByEntityId(evvRecordId).isEmpty());
 
-        List<IntegrationAuditLog> logs = integrationAuditLogRepository.findAll();
-        IntegrationAuditLog auditEntry = logs.stream()
-                .filter(l -> evvRecordId.equals(l.getEntityId())
-                        && agencyId.equals(l.getAgencyId()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError(
-                        "No audit log entry found for evvRecordId=" + evvRecordId));
+        // EvvSubmissionService writes exactly one audit entry for the MISSING_CREDENTIALS path.
+        List<IntegrationAuditLog> entries = auditLogRepository.findByEntityId(evvRecordId);
+        assertThat(entries).hasSize(1);
 
-        assertThat(auditEntry.getConnector()).isEqualTo("SANDATA");
-        assertThat(auditEntry.getOperation()).isEqualTo("SUBMIT");
-        assertThat(auditEntry.getAgencyId()).isEqualTo(agencyId);
-        assertThat(auditEntry.isSuccess()).isFalse();
-        assertThat(auditEntry.getErrorCode()).isEqualTo("MISSING_CREDENTIALS");
-        assertThat(auditEntry.getRecordedAt()).isNotNull();
+        IntegrationAuditLog entry = entries.get(0);
+        assertThat(entry.getConnector()).isEqualTo("SANDATA");
+        assertThat(entry.getOperation()).isEqualTo("SUBMIT");
+        assertThat(entry.getAgencyId()).isEqualTo(agencyId);
+        assertThat(entry.isSuccess()).isFalse();
+        assertThat(entry.getErrorCode()).isEqualTo("MISSING_CREDENTIALS");
+        assertThat(entry.getRecordedAt()).isNotNull();
     }
 }
