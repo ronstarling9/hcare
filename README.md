@@ -69,250 +69,23 @@ hcare/
 
 ## Domain Model
 
-```mermaid
-erDiagram
-    Agency {
-        UUID id PK
-        string name
-        char2 state
-        datetime createdAt
-    }
-    AgencyUser {
-        UUID id PK
-        UUID agencyId FK
-        string email
-        string passwordHash
-        enum role "ADMIN | SCHEDULER | CAREGIVER"
-    }
-    Caregiver {
-        UUID id PK
-        UUID agencyId FK
-        string firstName
-        string lastName
-        string email
-        decimal homeLat
-        decimal homeLng
-        enum status "ACTIVE | INACTIVE | TERMINATED"
-        string languages "JSON array"
-        string fcmToken
-    }
-    CaregiverCredential {
-        UUID id PK
-        UUID caregiverId FK
-        enum credentialType
-        date expiryDate
-        bool verified
-        datetime verifiedAt
-    }
-    BackgroundCheck {
-        UUID id PK
-        UUID caregiverId FK
-        enum checkType
-        enum result
-        date completedDate
-    }
-    CaregiverAvailability {
-        UUID id PK
-        UUID caregiverId FK
-        enum dayOfWeek
-        time startTime
-        time endTime
-    }
-    CaregiverScoringProfile {
-        UUID id PK
-        UUID caregiverId FK
-        UUID agencyId FK
-        decimal cancelRate
-        decimal currentWeekHours
-        int totalCompletedShifts
-        int totalCancelledShifts
-    }
-    CaregiverClientAffinity {
-        UUID id PK
-        UUID scoringProfileId FK
-        UUID clientId FK
-        UUID agencyId FK
-        int visitCount
-    }
-    Client {
-        UUID id PK
-        UUID agencyId FK
-        string firstName
-        string lastName
-        date dateOfBirth
-        string medicaidId
-        char2 serviceState
-        enum status "ACTIVE | INACTIVE | DISCHARGED"
-        string preferredLanguages "JSON array"
-        bool noPetCaregiver
-    }
-    CarePlan {
-        UUID id PK
-        UUID clientId FK
-        UUID agencyId FK
-        int planVersion
-        enum status "DRAFT | ACTIVE | SUPERSEDED"
-        datetime activatedAt
-    }
-    ClientDiagnosis {
-        UUID id PK
-        UUID clientId FK
-        UUID agencyId FK
-        string icdCode
-    }
-    ClientMedication {
-        UUID id PK
-        UUID clientId FK
-        UUID agencyId FK
-        string name
-        string dosage
-    }
-    FamilyPortalUser {
-        UUID id PK
-        UUID clientId FK
-        UUID agencyId FK
-        string email
-        string passwordHash
-    }
-    Payer {
-        UUID id PK
-        UUID agencyId FK
-        string name
-        enum payerType "MEDICAID | PRIVATE_PAY | LTC_INSURANCE | VA | MEDICARE"
-        char2 state
-    }
-    ServiceType {
-        UUID id PK
-        UUID agencyId FK
-        string name
-        string code
-        bool requiresEvv
-        string requiredCredentials "JSON array of CredentialType"
-    }
-    Authorization {
-        UUID id PK
-        UUID clientId FK
-        UUID payerId FK
-        UUID serviceTypeId FK
-        UUID agencyId FK
-        string authNumber
-        decimal authorizedUnits
-        decimal usedUnits
-        enum unitType
-        date startDate
-        date endDate
-    }
-    RecurrencePattern {
-        UUID id PK
-        UUID agencyId FK
-        UUID clientId FK
-        UUID caregiverId FK
-        UUID serviceTypeId FK
-        UUID authorizationId FK
-        time scheduledStartTime
-        int scheduledDurationMinutes
-        string daysOfWeek "JSON array of DayOfWeek"
-        date startDate
-        date endDate
-        date generatedThrough
-        bool active
-    }
-    Shift {
-        UUID id PK
-        UUID agencyId FK
-        UUID sourcePatternId FK
-        UUID clientId FK
-        UUID caregiverId FK
-        UUID serviceTypeId FK
-        UUID authorizationId FK
-        datetime scheduledStart
-        datetime scheduledEnd
-        enum status "OPEN | ASSIGNED | IN_PROGRESS | COMPLETED | CANCELLED | MISSED"
-    }
-    EvvRecord {
-        UUID id PK
-        UUID shiftId FK
-        UUID agencyId FK
-        string clientMedicaidId
-        decimal locationLat
-        decimal locationLon
-        datetime timeIn
-        datetime timeOut
-        enum verificationMethod "GPS | TELEPHONY_LANDLINE | TELEPHONY_CELL | FIXED_DEVICE | FOB | BIOMETRIC | MANUAL"
-        bool coResident
-        bool capturedOffline
-        datetime deviceCapturedAt
-        string stateFields "JSON"
-    }
-    ShiftOffer {
-        UUID id PK
-        UUID shiftId FK
-        UUID caregiverId FK
-        UUID agencyId FK
-        enum response
-    }
-    AdlTaskCompletion {
-        UUID id PK
-        UUID shiftId FK
-        UUID adlTaskId FK
-        UUID agencyId FK
-        bool completed
-    }
-    EvvStateConfig {
-        UUID id PK
-        char2 stateCode
-        enum defaultAggregator "SANDATA | HHAEXCHANGE | AUTHENTICARE | CAREBRIDGE | NETSMART | THERAP | STATE_BUILT | CLOSED"
-        enum systemModel "OPEN | CLOSED"
-        string allowedVerificationMethods
-        decimal gpsToleranceMiles
-        bool requiresRealTimeSubmission
-        int manualEntryCapPercent
-        bool coResidentExemptionSupported
-        int complianceThresholdPercent
-        bool closedSystemAcknowledgedByAgency
-    }
-    PhiAuditLog {
-        UUID id PK
-        UUID userId
-        UUID agencyId FK
-        enum resourceType
-        UUID resourceId
-        enum action
-        datetime occurredAt
-        string ipAddress
-    }
-    FeatureFlags {
-        UUID id PK
-        UUID agencyId FK
-        bool aiSchedulingEnabled
-        bool familyPortalEnabled
-    }
+**Agency** — top-level tenant. Has many `AgencyUser` (ADMIN | SCHEDULER), `Caregiver`, `Client`, `Payer`, `ServiceType`, and one `FeatureFlags` row.
 
-    Agency ||--o{ AgencyUser : "has"
-    Agency ||--o{ Caregiver : "employs"
-    Agency ||--o{ Client : "serves"
-    Agency ||--o{ Payer : "bills via"
-    Agency ||--o{ ServiceType : "offers"
-    Agency ||--|| FeatureFlags : "has"
-    Caregiver ||--o{ CaregiverCredential : "holds"
-    Caregiver ||--o{ BackgroundCheck : "has"
-    Caregiver ||--o{ CaregiverAvailability : "sets"
-    Caregiver ||--o| CaregiverScoringProfile : "has"
-    CaregiverScoringProfile ||--o{ CaregiverClientAffinity : "tracks"
-    Client ||--o{ CarePlan : "has versioned"
-    Client ||--o{ ClientDiagnosis : "has"
-    Client ||--o{ ClientMedication : "has"
-    Client ||--o{ FamilyPortalUser : "has"
-    Client ||--o{ Authorization : "covered by"
-    Authorization }o--|| Payer : "issued by"
-    Authorization }o--|| ServiceType : "for"
-    RecurrencePattern ||--o{ Shift : "generates"
-    Shift ||--o| EvvRecord : "captures"
-    Shift ||--o{ ShiftOffer : "sent to caregivers"
-    Shift ||--o{ AdlTaskCompletion : "documents"
-```
+**Caregiver** — belongs to an agency. Has credentials (with expiry), background checks, weekly availability windows, and one `CaregiverScoringProfile` that tracks cancel rate and hours. The scoring profile in turn holds `CaregiverClientAffinity` records (visit history per client, used by the AI match engine).
 
-> `EvvStateConfig` has no `agencyId` — it is a global reference table (one row per US state), Flyway-seeded in `V2__evv_state_config_seed.sql`. `PhiAuditLog` is append-only and stored in a separate schema partition. All other entities carry `agencyId` and are isolated by the Hibernate `agencyFilter`.
+**Client** — belongs to an agency. Has versioned `CarePlan` records, diagnoses, medications, `Authorization` records (payer + authorized units with real-time utilization), and `FamilyPortalUser` records (family members with read-only portal access).
+
+**RecurrencePattern → Shift** — a recurrence pattern generates `Shift` instances on a rolling 8-week horizon (nightly job). Each shift references a client, caregiver, service type, and optionally an authorization. Shift status: `OPEN → ASSIGNED → IN_PROGRESS → COMPLETED` (or `CANCELLED` / `MISSED`).
+
+**Shift → EvvRecord** — one optional EVV record per shift capturing the six federal elements (location, time-in, time-out, verification method, client Medicaid ID, caregiver ID). Compliance status is computed on read from `EvvStateConfig` rules — never stored.
+
+**Shift → ShiftOffer / AdlTaskCompletion** — offers track caregiver accept/decline responses; ADL task completions document care activities performed during the visit.
+
+**EvvStateConfig** — global reference table (no `agencyId`), one row per US state, Flyway-seeded. Controls GPS tolerance, allowed verification methods, aggregator routing, and compliance thresholds.
+
+**PhiAuditLog** — append-only, stored in a separate schema partition. Captures every PHI access with user, resource, action, IP, and timestamp.
+
+All entities except `EvvStateConfig` and `PhiAuditLog` carry `agencyId` and are isolated by the Hibernate `agencyFilter`.
 
 ---
 
@@ -498,6 +271,9 @@ npm run lint --fix     # ESLint + Prettier (run before committing)
 | `HCARE_STORAGE_SIGNING_KEY` | Yes (prod) | dev default | Document URL signing key |
 | `HCARE_BASE_URL` | No | `http://localhost:8080` | Base URL for signed document links |
 | `HCARE_SCORING_WEEKLY_RESET_CRON` | No | `0 0 0 * * MON` | Weekly hour reset cron; set to `-` in tests |
+| `HCARE_PORTAL_JWT_SECRET` | **Yes** | _(none — startup fails without it)_ | HMAC-SHA256 secret for family portal JWTs; must differ from `JWT_SECRET` |
+| `HCARE_PORTAL_BASE_URL` | No | `http://localhost:5173` | Base URL prepended to invite links sent to family members |
+| `HCARE_PORTAL_JWT_EXPIRATION_DAYS` | No | `30` | Lifetime of a family portal JWT in days |
 
 JWT token lifetime is 24 hours (`expiration-ms: 86400000`). Virtual threads are enabled globally (`spring.threads.virtual.enabled: true`). `TenantContext` uses plain `ThreadLocal` — safe because each virtual thread has isolated `ThreadLocal` storage.
 
