@@ -1010,9 +1010,6 @@ class FamilyPortalAuthControllerIT extends AbstractIntegrationTest {
     @Test
     void inviteThenVerify_happyPath_returnsPortalJwt() {
         // Generate invite
-        HttpEntity<String> inviteReq = new HttpEntity<>(
-            "{\"email\":\"family@example.com\"}", adminAuth());
-        inviteReq.getHeaders().set("Content-Type", "application/json");
         ResponseEntity<InviteResponse> inviteResp = restTemplate.exchange(
             "/api/v1/clients/" + clientId + "/family-portal-users/invite",
             HttpMethod.POST,
