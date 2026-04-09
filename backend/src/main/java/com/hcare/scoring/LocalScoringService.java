@@ -3,6 +3,7 @@ package com.hcare.scoring;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hcare.domain.*;
+import com.hcare.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -160,43 +161,58 @@ public class LocalScoringService implements ScoringService {
     // latency for P1 (1–25 caregivers: ~3–6 DB calls). Add @Async at P2 if profiling shows
     // this exceeds acceptable response budgets; note that @Async + REQUIRES_NEW requires an
     // explicit PlatformTransactionManager binding.
+    //
+    // C1: @TransactionalEventListener fires after the outer transaction commits. TenantContext
+    // (ThreadLocal) has already been cleared by TenantFilterInterceptor.afterCompletion().
+    // Re-bind before any repository call; clear in finally to prevent cross-tenant leakage.
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCompleted(ShiftCompletedEvent event) {
-        if (event.caregiverId() == null) return;
+        TenantContext.set(event.agencyId()); // C1: re-bind before any repo call
+        try {
+            if (event.caregiverId() == null) return;
 
-        if (!event.timeOut().isAfter(event.timeIn())) {
-            log.error("ShiftCompletedEvent has non-positive duration — skipping profile update: " +
-                "shift={} caregiverId={} timeIn={} timeOut={}",
-                event.shiftId(), event.caregiverId(), event.timeIn(), event.timeOut());
-            return;
+            if (!event.timeOut().isAfter(event.timeIn())) {
+                log.error("ShiftCompletedEvent has non-positive duration — skipping profile update: " +
+                    "shift={} caregiverId={} timeIn={} timeOut={}",
+                    event.shiftId(), event.caregiverId(), event.timeIn(), event.timeOut());
+                return;
+            }
+
+            CaregiverScoringProfile profile = scoringProfileRepository
+                .findByCaregiverId(event.caregiverId())
+                .orElseGet(() -> scoringProfileRepository.save(
+                    new CaregiverScoringProfile(event.caregiverId(), event.agencyId())));
+
+            long minutes = Duration.between(event.timeIn(), event.timeOut()).toMinutes();
+            BigDecimal hours = BigDecimal.valueOf(minutes)
+                .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+            profile.updateAfterShiftCompletion(hours);
+            scoringProfileRepository.save(profile);
+
+            updateAffinity(profile.getId(), event.clientId(), event.agencyId());
+        } finally {
+            TenantContext.clear(); // C1: always clean up
         }
-
-        CaregiverScoringProfile profile = scoringProfileRepository
-            .findByCaregiverId(event.caregiverId())
-            .orElseGet(() -> scoringProfileRepository.save(
-                new CaregiverScoringProfile(event.caregiverId(), event.agencyId())));
-
-        long minutes = Duration.between(event.timeIn(), event.timeOut()).toMinutes();
-        BigDecimal hours = BigDecimal.valueOf(minutes)
-            .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-        profile.updateAfterShiftCompletion(hours);
-        scoringProfileRepository.save(profile);
-
-        updateAffinity(profile.getId(), event.clientId(), event.agencyId());
     }
 
+    // C1: same TenantContext re-bind fix applied here.
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onShiftCancelled(ShiftCancelledEvent event) {
-        if (event.caregiverId() == null) return;
+        TenantContext.set(event.agencyId()); // C1: re-bind before any repo call
+        try {
+            if (event.caregiverId() == null) return;
 
-        CaregiverScoringProfile profile = scoringProfileRepository
-            .findByCaregiverId(event.caregiverId())
-            .orElseGet(() -> scoringProfileRepository.save(
-                new CaregiverScoringProfile(event.caregiverId(), event.agencyId())));
-        profile.updateAfterShiftCancellation();
-        scoringProfileRepository.save(profile);
+            CaregiverScoringProfile profile = scoringProfileRepository
+                .findByCaregiverId(event.caregiverId())
+                .orElseGet(() -> scoringProfileRepository.save(
+                    new CaregiverScoringProfile(event.caregiverId(), event.agencyId())));
+            profile.updateAfterShiftCancellation();
+            scoringProfileRepository.save(profile);
+        } finally {
+            TenantContext.clear(); // C1: always clean up
+        }
     }
 
     /**

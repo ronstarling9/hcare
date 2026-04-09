@@ -1,6 +1,7 @@
 package com.hcare.exception;
 
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.hcare.integration.config.DuplicateIntegrationConfigException;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -43,6 +44,13 @@ public class GlobalExceptionHandler {
         log.error("Data integrity violation: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ErrorResponse.of(ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.value()));
+    }
+
+    @ExceptionHandler(DuplicateIntegrationConfigException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateIntegrationConfig(
+            DuplicateIntegrationConfigException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(ex.getMessage(), HttpStatus.CONFLICT.value()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

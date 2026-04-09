@@ -2,6 +2,7 @@ package com.hcare.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -46,6 +47,15 @@ public class Shift {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "hcpcs_code", length = 10)
+    private String hcpcsCode;
+
+    @Column(name = "billed_amount", precision = 10, scale = 2)
+    private BigDecimal billedAmount;
+
+    @Column(name = "units")
+    private Integer units;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -77,6 +87,9 @@ public class Shift {
     public void setScheduledStart(LocalDateTime scheduledStart) { this.scheduledStart = scheduledStart; }
     public void setScheduledEnd(LocalDateTime scheduledEnd) { this.scheduledEnd = scheduledEnd; }
     public void setNotes(String notes) { this.notes = notes; }
+    public void setHcpcsCode(String hcpcsCode) { this.hcpcsCode = hcpcsCode; }
+    public void setBilledAmount(BigDecimal billedAmount) { this.billedAmount = billedAmount; }
+    public void setUnits(Integer units) { this.units = units; }
 
     public UUID getId() { return id; }
     public UUID getAgencyId() { return agencyId; }
@@ -89,5 +102,8 @@ public class Shift {
     public LocalDateTime getScheduledEnd() { return scheduledEnd; }
     public ShiftStatus getStatus() { return status; }
     public String getNotes() { return notes; }
+    public String getHcpcsCode() { return hcpcsCode; }
+    public BigDecimal getBilledAmount() { return billedAmount; }
+    public Integer getUnits() { return units; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }
