@@ -156,6 +156,13 @@ npx expo start --android        # start on Android emulator
 npx expo start --ios            # start on iOS simulator
 ```
 
+**iOS simulator prerequisite:** `xcode-select -p` must return `/Applications/Xcode.app/Contents/Developer` (not Command Line Tools). If it doesn't:
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+```
+Then open Xcode once to install additional components before running `npx expo start --ios`.
+
 ### Mock vs Live API
 The app ships with `axios-mock-adapter` intercepting all 21 BFF endpoints when `EXPO_PUBLIC_USE_MOCKS=true` (default in `mobile/.env`). To point at a real BFF:
 ```
