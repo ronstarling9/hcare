@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "hcare",
+    "slug": "hcare",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a24"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.hcare.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a24"
+      },
+      "package": "com.hcare.mobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1a9afa"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow hcare to use your location for visit verification (EVV compliance).",
+          "locationWhenInUsePermission": "Allow hcare to use your location for visit clock-in and clock-out verification."
+        }
+      ]
+    ],
+    "scheme": "hcare"
+  }
+}
