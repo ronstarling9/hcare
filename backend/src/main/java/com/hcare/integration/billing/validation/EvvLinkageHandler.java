@@ -3,6 +3,7 @@ package com.hcare.integration.billing.validation;
 import com.hcare.integration.billing.Claim;
 import com.hcare.integration.evv.EvvSubmissionRecord;
 import com.hcare.integration.evv.EvvSubmissionRecordRepository;
+import com.hcare.integration.evv.EvvSubmissionStatus;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -29,7 +30,7 @@ public class EvvLinkageHandler extends ClaimValidationHandler {
     public void validate(Claim claim) {
         Optional<EvvSubmissionRecord> record =
                 evvSubmissionRecordRepository.findByEvvRecordId(evvRecordId);
-        if (record.isEmpty() || !"ACCEPTED".equals(record.get().getStatus())) {
+        if (record.isEmpty() || !EvvSubmissionStatus.ACCEPTED.name().equals(record.get().getStatus())) {
             throw new ClaimValidationException(
                     "No ACCEPTED EVV record found for this claim");
         }

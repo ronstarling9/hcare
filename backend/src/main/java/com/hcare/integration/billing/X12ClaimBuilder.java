@@ -98,6 +98,8 @@ public class X12ClaimBuilder {
     }
 
     public Claim build() {
+        Objects.requireNonNull(agencyId, "agencyId is required");
+        Objects.requireNonNull(payerId, "payerId is required");
         Objects.requireNonNull(billingNpi, "billingNpi is required");
         Objects.requireNonNull(serviceDate, "serviceDate is required");
         Objects.requireNonNull(serviceCode, "serviceCode is required");

@@ -5,10 +5,13 @@ import com.hcare.integration.billing.AbstractClaimTransmissionStrategy;
 import com.hcare.integration.billing.Claim;
 import com.hcare.integration.billing.ClaimSubmissionReceipt;
 import com.hcare.integration.billing.RemittanceResult;
+import com.hcare.integration.billing.validation.ClaimValidationHandler;
+import com.hcare.integration.billing.validation.NpiFormatHandler;
+import com.hcare.integration.billing.validation.TimelyFilingHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -30,7 +33,6 @@ public class StediTransmissionStrategy extends AbstractClaimTransmissionStrategy
     private final RestClient stediRestClient;
     private final StediClaimAdapter claimAdapter;
 
-    @Autowired
     public StediTransmissionStrategy(
             @Qualifier("stediRestClient") @Nullable RestClient stediRestClient) {
         this.stediRestClient = stediRestClient;
@@ -40,6 +42,17 @@ public class StediTransmissionStrategy extends AbstractClaimTransmissionStrategy
     @Override
     public String connectorType() {
         return "STEDI";
+    }
+
+    @Override
+    protected ClaimValidationHandler validationChain() {
+        // Stateless handlers wired here; AuthorizationHandler and EvvLinkageHandler
+        // require per-submission context (authorizationId, evvRecordId) and must be
+        // assembled by the caller before passing to submit() — see ClaimValidationHandler.then()
+        NpiFormatHandler npiHandler = new NpiFormatHandler();
+        TimelyFilingHandler timelyHandler = new TimelyFilingHandler();
+        npiHandler.then(timelyHandler);
+        return npiHandler;
     }
 
     @Override
@@ -54,13 +67,12 @@ public class StediTransmissionStrategy extends AbstractClaimTransmissionStrategy
         log.debug("Submitting {} claim to Stedi for agency {}", claim.claimType(), claim.agencyId());
 
         try {
-            @SuppressWarnings("unchecked")
             Map<String, Object> response = stediRestClient.post()
                     .uri("/v1/claims")
                     .header("Authorization", "Bearer " + creds.apiKey())
                     .body(payload)
                     .retrieve()
-                    .body(Map.class);
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
 
             if (response != null && response.containsKey("batchId")) {
                 String batchId = String.valueOf(response.get("batchId"));
