@@ -1,9 +1,12 @@
 package com.hcare.api.v1.family;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -12,8 +15,15 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+// H3 fix: @Order(Ordered.HIGHEST_PRECEDENCE) ensures this filter always runs before
+// JwtAuthenticationFilter (and all other Spring Security filters), making rate limiting
+// deterministic regardless of filter registration order.
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @Component
 public class VerifyRateLimiter extends OncePerRequestFilter {
 
@@ -24,9 +34,18 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
         DateTimeFormatter.ofPattern("yyyyMMddHHmm");
 
     // Key: "IP:yyyyMMddHHmm" — one counter per IP per minute.
-    // The map grows at most (active IPs * minutes in window). Entries become stale after
-    // one minute and are evicted lazily when the map exceeds 10,000 entries.
     private final ConcurrentHashMap<String, AtomicInteger> counters = new ConcurrentHashMap<>();
+
+    // L4 fix: eviction moved off the hot path to a background scheduler that ticks every
+    // 60 seconds, removing all entries from any minute other than the current one. This
+    // avoids a ConcurrentHashMap.removeIf scan on every request and eliminates the
+    // arbitrary 10,000-entry threshold that could allow stale memory to accumulate.
+    private final ScheduledExecutorService evictionScheduler =
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "rate-limiter-eviction");
+            t.setDaemon(true);
+            return t;
+        });
 
     // When true, trust the X-Real-IP header set by the reverse proxy.
     // ONLY enable this when the backend is not directly reachable by clients (i.e., all
@@ -39,6 +58,12 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
             @org.springframework.beans.factory.annotation.Value(
                 "${hcare.portal.trusted-proxy:false}") boolean trustedProxy) {
         this.trustedProxy = trustedProxy;
+        evictionScheduler.scheduleAtFixedRate(this::evictStaleCounters, 60, 60, TimeUnit.SECONDS);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        evictionScheduler.shutdown();
     }
 
     @Override
@@ -55,12 +80,6 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
         String minute = ZonedDateTime.now(ZoneOffset.UTC).format(MINUTE_FMT);
         String key = ip + ":" + minute;
 
-        // Lazy eviction: if map is large, clear stale minute entries.
-        if (counters.size() > 10_000) {
-            String currentMinute = minute;
-            counters.entrySet().removeIf(e -> !e.getKey().endsWith(":" + currentMinute));
-        }
-
         AtomicInteger count = counters.computeIfAbsent(key, k -> new AtomicInteger(0));
         if (count.incrementAndGet() > MAX_PER_MINUTE) {
             response.setStatus(429);
@@ -70,6 +89,11 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private void evictStaleCounters() {
+        String currentMinute = ZonedDateTime.now(ZoneOffset.UTC).format(MINUTE_FMT);
+        counters.entrySet().removeIf(e -> !e.getKey().endsWith(":" + currentMinute));
     }
 
     private String getClientIp(HttpServletRequest request) {

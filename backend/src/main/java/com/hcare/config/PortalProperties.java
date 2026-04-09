@@ -17,7 +17,10 @@ public class PortalProperties {
 
     public static class Jwt {
         private int expirationDays = 30;
+        private String secret;
         public int getExpirationDays() { return expirationDays; }
         public void setExpirationDays(int expirationDays) { this.expirationDays = expirationDays; }
+        public String getSecret() { return secret; }
+        public void setSecret(String secret) { this.secret = secret; }
     }
 }

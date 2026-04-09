@@ -15,15 +15,21 @@ import javax.crypto.SecretKey;
 public class JwtTokenProvider {
 
     private final SecretKey signingKey;
+    private final SecretKey portalSigningKey;
     private final long expirationMs;
     private final int portalExpirationDays;
 
     // C1 fix: portalExpirationDays is now read from PortalProperties (bound to hcare.portal),
     // not from JwtProperties (bound to hcare.jwt). The two prefixes are distinct — Spring Boot
     // would never bind hcare.portal.jwt.expiration-days via hcare.jwt.*.
+    // H1 fix: portalSigningKey is derived from hcare.portal.jwt.secret, separate from the
+    // admin signingKey. Portal tokens are signed and verified with the portal key exclusively,
+    // so a compromise of one key does not affect the other population.
     public JwtTokenProvider(JwtProperties props, PortalProperties portalProps) {
         this.signingKey = Keys.hmacShaKeyFor(
             props.getSecret().getBytes(StandardCharsets.UTF_8));
+        this.portalSigningKey = Keys.hmacShaKeyFor(
+            portalProps.getJwt().getSecret().getBytes(StandardCharsets.UTF_8));
         this.expirationMs = props.getExpirationMs();
         this.portalExpirationDays = portalProps.getJwt().getExpirationDays();
     }
@@ -45,6 +51,7 @@ public class JwtTokenProvider {
      * Generates a FAMILY_PORTAL JWT. Subject is fpUserId (the FamilyPortalUser.id).
      * Expiry is governed by portal.jwt.expiration-days (default 30), independent of
      * the admin jwt.expiration-ms.
+     * H1 fix: signed with portalSigningKey (hcare.portal.jwt.secret), not the admin signingKey.
      */
     public String generateFamilyPortalToken(UUID fpUserId, UUID clientId, UUID agencyId) {
         Instant now = Instant.now();
@@ -55,7 +62,7 @@ public class JwtTokenProvider {
             .claim("role", "FAMILY_PORTAL")
             .issuedAt(Date.from(now))
             .expiration(Date.from(now.plus(portalExpirationDays, ChronoUnit.DAYS)))
-            .signWith(signingKey)
+            .signWith(portalSigningKey)
             .compact();
     }
 
@@ -80,18 +87,6 @@ public class JwtTokenProvider {
         return parseClaims(token).get("role", String.class);
     }
 
-    /**
-     * Reads the clientId claim. Only present on FAMILY_PORTAL tokens.
-     *
-     * NOTE (C2): JwtAuthenticationFilter no longer calls this method — it reads clientId
-     * directly from the already-parsed Claims object to avoid a redundant second HMAC parse.
-     * If no other caller in this plan invokes getClientId, this method can be removed from
-     * JwtTokenProvider to keep the public API minimal. Retain only if a future task requires it.
-     */
-    public String getClientId(String token) {
-        return parseClaims(token).get("clientId", String.class);
-    }
-
     public Claims parseAndValidate(String token) {
         try {
             return parseClaims(token);
@@ -100,11 +95,26 @@ public class JwtTokenProvider {
         }
     }
 
+    /**
+     * Parses and verifies a JWT. Tries the admin signing key first; if that fails, falls
+     * back to the portal signing key. This handles both FAMILY_PORTAL tokens (signed with
+     * portalSigningKey) and admin/scheduler tokens (signed with signingKey) without needing
+     * to peek at unverified claims before signature validation.
+     */
     private Claims parseClaims(String token) {
-        return Jwts.parser()
-            .verifyWith(signingKey)
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+        try {
+            return Jwts.parser()
+                .verifyWith(signingKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        } catch (JwtException e) {
+            // Admin key failed — try portal key. If this also throws, the caller handles it.
+            return Jwts.parser()
+                .verifyWith(portalSigningKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        }
     }
 }

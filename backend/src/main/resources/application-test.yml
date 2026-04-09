@@ -7,6 +7,9 @@ hcare:
     shift-generation-cron: "-"
   scoring:
     weekly-reset-cron: "-"
+  portal:
+    jwt:
+      secret: test-portal-jwt-secret-key-must-be-at-least-256-bits-long-for-hmac-sha256-algorithm
   storage:
     provider: local
     documents-dir: /tmp/hcare-test-docs
