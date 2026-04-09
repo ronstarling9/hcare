@@ -55,6 +55,13 @@
 ALTER TABLE agencies
     ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) NOT NULL DEFAULT 'America/New_York';
 
+-- DATA PRECONDITION: The new (client_id, agency_id, email) constraint requires that no two
+-- FamilyPortalUser rows share the same (client_id, agency_id, email) triple.
+-- In production: verify with the query below before running this migration.
+-- SELECT client_id, agency_id, email, COUNT(*) FROM family_portal_users
+-- GROUP BY client_id, agency_id, email HAVING COUNT(*) > 1;
+-- Expected result: 0 rows. If rows are returned, deduplicate before applying.
+-- In dev/test (H2): the DevDataSeeder inserts no duplicate triples, so this is safe.
 ALTER TABLE family_portal_users
     DROP CONSTRAINT IF EXISTS uq_family_portal_users_agency_email,
     ADD CONSTRAINT uq_fpu_client_agency_email UNIQUE (client_id, agency_id, email);
@@ -74,6 +81,8 @@ CREATE INDEX idx_fpt_expires_at ON family_portal_tokens(expires_at);
 ```
 
 - [ ] **Step 2: Verify migration runs cleanly**
+
+Before running in production, execute the precondition query above to verify no duplicate `(client_id, agency_id, email)` rows exist. This migration is safe to run on a fresh dev H2 database.
 
 ```bash
 cd backend
@@ -904,6 +913,32 @@ class JwtAuthenticationFilterTest {
         // Fail closed: no authentication must be present in the SecurityContext
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
+
+    @Test
+    void validlySignedToken_missingAgencyIdClaim_noAuthenticationSet() throws Exception {
+        // C5 fix: a validly-signed token missing the agencyId claim must result in
+        // no authentication being set and a chain.doFilter pass-through (not a 500).
+        // We simulate this by crafting a raw token via JwtTokenProvider using a role-only
+        // token (generateToken omits no required claim, so we use a mock Claims approach).
+        // The simplest way: use Mockito to return null for agencyId from a spy on parseAndValidate.
+        JwtTokenProvider spyProvider = org.mockito.Mockito.spy(tokenProvider);
+        io.jsonwebtoken.Claims mockClaims = org.mockito.Mockito.mock(io.jsonwebtoken.Claims.class);
+        org.mockito.Mockito.when(mockClaims.getSubject()).thenReturn(UUID.randomUUID().toString());
+        org.mockito.Mockito.when(mockClaims.get("agencyId", String.class)).thenReturn(null); // missing
+        org.mockito.Mockito.when(mockClaims.get("role", String.class)).thenReturn("ADMIN");
+        org.mockito.Mockito.doReturn(mockClaims).when(spyProvider).parseAndValidate(anyString());
+
+        JwtAuthenticationFilter spyFilter = new JwtAuthenticationFilter(spyProvider);
+
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        req.addHeader("Authorization", "Bearer some.fake.token");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+
+        spyFilter.doFilterInternal(req, res, chain);
+
+        // Must not set authentication — missing agencyId is rejected with warn log, not 500
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
 }
 ```
 
@@ -951,9 +986,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token)) {
             Claims claims = tokenProvider.parseAndValidate(token);
             if (claims != null) {
-                UUID userId = UUID.fromString(claims.getSubject());
-                UUID agencyId = UUID.fromString(claims.get("agencyId", String.class));
+                String subject = claims.getSubject();
+                String agencyIdStr = claims.get("agencyId", String.class);
                 String role = claims.get("role", String.class);
+
+                if (subject == null || agencyIdStr == null || role == null) {
+                    log.warn("JWT missing required claims (sub/agencyId/role) — rejecting");
+                    chain.doFilter(request, response);
+                    return;
+                }
+
+                UUID userId = UUID.fromString(subject);
+                UUID agencyId = UUID.fromString(agencyIdStr);
 
                 // For FAMILY_PORTAL tokens, extract clientId and populate it on the principal.
                 // This is the hard scope boundary — dashboard controller reads principal.getClientId()
@@ -1001,7 +1045,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 ```bash
 cd backend && mvn test -Dtest=JwtAuthenticationFilterTest -q 2>&1 | tail -5
 ```
-Expected: Tests run: 3, Failures: 0. (familyPortalToken_populatesClientIdOnPrincipal, adminToken_leavesClientIdNull, familyPortalToken_missingClientIdClaim_failsClosed)
+Expected: Tests run: 4, Failures: 0. (familyPortalToken_populatesClientIdOnPrincipal, adminToken_leavesClientIdNull, familyPortalToken_missingClientIdClaim_failsClosed, validlySignedToken_missingAgencyIdClaim_noAuthenticationSet)
 
 - [ ] **Step 5: Update `SecurityConfig` to permit the portal verify endpoint**
 
@@ -1041,7 +1085,7 @@ public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 ```bash
 cd backend && mvn test -Dtest="JwtTokenProviderTest,JwtAuthenticationFilterTest" -q 2>&1 | tail -5
 ```
-Expected: Tests run: 6, Failures: 0. (3 JwtTokenProviderTest + 3 JwtAuthenticationFilterTest)
+Expected: Tests run: 7, Failures: 0. (3 JwtTokenProviderTest + 4 JwtAuthenticationFilterTest)
 
 - [ ] **Step 7: Commit**
 
