@@ -25,6 +25,8 @@ class JwtAuthenticationFilterTest {
     private JwtTokenProvider tokenProvider;
     private final String secret =
         "test-secret-key-must-be-at-least-256-bits-for-hmac-sha256-algorithm-ok";
+    private final String portalSecret =
+        "test-portal-secret-key-must-be-at-least-256-bits-for-hmac-sha256-algorithm-ok";
 
     @Mock private FilterChain chain;
 
@@ -35,8 +37,10 @@ class JwtAuthenticationFilterTest {
         props.setSecret(secret);
         props.setExpirationMs(86_400_000L);
         // C1 fix: use PortalProperties (hcare.portal) not JwtProperties (hcare.jwt)
+        // H1 fix: set a separate portal JWT secret so portal tokens use a dedicated signing key.
         PortalProperties portalProps = new PortalProperties();
         portalProps.getJwt().setExpirationDays(30);
+        portalProps.getJwt().setSecret(portalSecret);
         tokenProvider = new JwtTokenProvider(props, portalProps);
         filter = new JwtAuthenticationFilter(tokenProvider);
         SecurityContextHolder.clearContext();

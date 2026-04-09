@@ -32,10 +32,12 @@ function formatDuration(minutes: number): string {
   return `${h} hr ${m} min`
 }
 
+const LATE_THRESHOLD_MS = 15 * 60 * 1000 // 15-minute grace period before a visit is marked late
+
 function isLate(visit: TodayVisitDto): boolean {
   if (visit.status !== 'GREY' || visit.clockedInAt) return false
   const scheduled = new Date(visit.scheduledStart + (visit.scheduledStart.includes('Z') ? '' : 'Z'))
-  return Date.now() > scheduled.getTime() + 15 * 60 * 1000
+  return Date.now() > scheduled.getTime() + LATE_THRESHOLD_MS
 }
 
 export default function PortalDashboardPage() {

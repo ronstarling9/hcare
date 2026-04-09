@@ -23,9 +23,11 @@ hcare:
   portal:
     base-url: ${APP_BASE_URL:http://localhost:5173}
     trusted-proxy: ${PORTAL_TRUSTED_PROXY:false}
+    # Set to "-" to disable (Spring scheduled task disable sentinel; used in tests via AbstractIntegrationTest)
     cleanup-cron: ${PORTAL_CLEANUP_CRON:0 0 3 * * *}
     jwt:
       expiration-days: ${PORTAL_JWT_EXPIRATION_DAYS:30}
+      secret: ${PORTAL_JWT_SECRET:dev-insecure-portal-secret-not-for-production-use-must-be-at-least-256-bits}
   storage:
     provider: ${HCARE_STORAGE_PROVIDER:local}
     documents-dir: ${HCARE_DOCUMENTS_DIR:/var/hcare/documents}

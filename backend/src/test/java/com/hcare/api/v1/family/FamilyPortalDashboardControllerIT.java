@@ -185,4 +185,41 @@ class FamilyPortalDashboardControllerIT extends AbstractIntegrationTest {
         // CANCELLED shift is excluded from todayVisit (only non-cancelled are shown)
         assertThat(resp.getBody().todayVisit()).isNull();
     }
+
+    @Test
+    void dashboard_crossAgencyIsolation_otherAgencyShiftNotVisible() {
+        // Seed a second agency with its own client and caregiver
+        Agency agency2 = agencyRepo.save(new Agency("Other Agency", "CA"));
+        UUID agency2Id = agency2.getId();
+        Client client2 = clientRepo.save(
+            new Client(agency2Id, "Other", "Client", LocalDate.of(1950, 6, 15)));
+        UUID client2Id = client2.getId();
+        Caregiver cg2 = caregiverRepo.save(
+            new Caregiver(agency2Id, "Other", "Caregiver", "other@example.com"));
+        UUID caregiver2Id = cg2.getId();
+        ServiceType st2 = serviceTypeRepo.save(
+            new ServiceType(agency2Id, "Companion Care", "CC", false, "[]"));
+        UUID serviceType2Id = st2.getId();
+
+        // Create a shift for the second agency's client
+        LocalDateTime today = LocalDateTime.now(ZoneOffset.UTC).withHour(10).withMinute(0).withSecond(0).withNano(0);
+        shiftRepo.save(new Shift(agency2Id, null, client2Id, caregiver2Id, serviceType2Id, null,
+            today, today.plusHours(2)));
+        // Also create an upcoming shift for the second agency's client
+        LocalDateTime upcoming = LocalDateTime.now(ZoneOffset.UTC).plusDays(2).withHour(10).withMinute(0).withSecond(0).withNano(0);
+        shiftRepo.save(new Shift(agency2Id, null, client2Id, caregiver2Id, serviceType2Id, null,
+            upcoming, upcoming.plusHours(2)));
+
+        // Use the FIRST client's portal JWT (agency1) to access the dashboard
+        String jwt = obtainPortalJwt();
+        ResponseEntity<PortalDashboardResponse> resp = restTemplate.exchange(
+            "/api/v1/family/portal/dashboard", HttpMethod.GET,
+            new HttpEntity<>(portalAuth(jwt)), PortalDashboardResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        // The second agency's shifts must NOT appear in any section of the first client's dashboard
+        assertThat(resp.getBody().todayVisit()).isNull();
+        assertThat(resp.getBody().upcomingVisits()).isEmpty();
+        assertThat(resp.getBody().lastVisit()).isNull();
+    }
 }
