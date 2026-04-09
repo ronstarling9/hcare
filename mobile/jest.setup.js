@@ -1,6 +1,11 @@
 // jest.setup.js — Global Jest mock setup for the mobile app
 // Provides stubs for native modules that have no runtime in the Jest/Node environment.
 
+// Expo SDK 55 ships a ReadableStream polyfill that throws when axios probes
+// the fetch adapter at module load. Remove it so axios falls back to the
+// Node.js HTTP adapter, which works fine in Jest.
+delete global.ReadableStream;
+
 // ── react-native-safe-area-context ───────────────────────────────────────────
 const INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
 jest.mock('react-native-safe-area-context', () => ({
