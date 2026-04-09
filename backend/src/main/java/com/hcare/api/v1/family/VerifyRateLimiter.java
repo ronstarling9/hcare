@@ -20,9 +20,11 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-// H3 fix: @Order(Ordered.HIGHEST_PRECEDENCE) ensures this filter always runs before
-// JwtAuthenticationFilter (and all other Spring Security filters), making rate limiting
-// deterministic regardless of filter registration order.
+// Ensures this filter runs before other servlet-layer @Component filters.
+// Note: JwtAuthenticationFilter lives inside Spring Security's FilterChainProxy (inner
+// chain) and always runs after any outer servlet filter regardless of @Order. The two
+// chains are already ordered by the servlet container — outer runs first — so this
+// annotation has no effect on Spring Security filter ordering.
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @Component
 public class VerifyRateLimiter extends OncePerRequestFilter {
@@ -64,6 +66,14 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
     @PreDestroy
     public void shutdown() {
         evictionScheduler.shutdown();
+        try {
+            if (!evictionScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                evictionScheduler.shutdownNow();
+            }
+        } catch (InterruptedException ie) {
+            evictionScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override

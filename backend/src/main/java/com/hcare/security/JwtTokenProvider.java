@@ -108,8 +108,9 @@ public class JwtTokenProvider {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-        } catch (JwtException e) {
-            // Admin key failed — try portal key. If this also throws, the caller handles it.
+        } catch (io.jsonwebtoken.security.SignatureException e) {
+            // Admin key signature mismatch — try portal key. Only signature failures fall
+            // back; expired or malformed tokens propagate immediately so callers fail fast.
             return Jwts.parser()
                 .verifyWith(portalSigningKey)
                 .build()

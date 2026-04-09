@@ -135,6 +135,22 @@ class JwtTokenProviderTest {
         assertThat(claims.get("clientId", String.class)).isNull();
     }
 
+    // C1 fix: an expired admin token must NOT fall back to the portal key — it should
+    // fail immediately so callers see a clean rejection rather than incorrect behavior.
+    @Test
+    void expiredAdminToken_doesNotFallBackToPortalKey() throws InterruptedException {
+        JwtProperties shortProps = new JwtProperties();
+        shortProps.setSecret(SECRET);
+        shortProps.setExpirationMs(1L);
+        JwtTokenProvider shortProvider = new JwtTokenProvider(shortProps, portalProps);
+        String expiredToken = shortProvider.generateToken(UUID.randomUUID(), UUID.randomUUID(), "ADMIN");
+        Thread.sleep(10);
+        // validateToken must return false — not silently succeed via portal-key fallback.
+        assertThat(shortProvider.validateToken(expiredToken)).isFalse();
+        // parseAndValidate must return null — same requirement.
+        assertThat(shortProvider.parseAndValidate(expiredToken)).isNull();
+    }
+
     // H1 fix: verify key isolation — a portal token is NOT accepted by a provider that
     // uses a different admin secret and a different portal secret.
     @Test
