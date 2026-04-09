@@ -18,6 +18,23 @@ spring:
 
 integration:
   encryption-key: ZGV2LWludGVnLWtleS1jaGFuZ2UtaW4tcHJvZCEhISE=  # dev-only 32-byte AES key; MUST be replaced in prod
+  connectors:
+    sandata:
+      base-url: https://evv.sandata.com
+      connect-timeout: 5s
+      read-timeout: 30s
+    hhaexchange:
+      base-url: https://api.hhaexchange.com
+      connect-timeout: 5s
+      read-timeout: 30s
+    stedi:
+      base-url: https://healthcare.us.stedi.com/2024-04-01
+      connect-timeout: 5s
+      read-timeout: 60s
+    viventium:
+      base-url: https://api.viventium.com
+      connect-timeout: 5s
+      read-timeout: 30s
 
 hcare:
   jwt:
