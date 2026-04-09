@@ -14,7 +14,6 @@ import com.hcare.integration.billing.validation.NpiFormatHandler;
 import com.hcare.integration.billing.validation.TimelyFilingHandler;
 import com.hcare.integration.evv.EvvSubmissionRecord;
 import com.hcare.integration.evv.EvvSubmissionRecordRepository;
-import org.mockito.Mockito;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -74,7 +73,7 @@ class ClaimValidationChainTest {
     void evvLinkageHandler_acceptedRecord_passes() {
         EvvSubmissionRecordRepository repo = mock(EvvSubmissionRecordRepository.class);
         UUID evvRecordId = UUID.randomUUID();
-        EvvSubmissionRecord record = Mockito.mock(EvvSubmissionRecord.class);
+        EvvSubmissionRecord record = mock(EvvSubmissionRecord.class);
         when(record.getStatus()).thenReturn("ACCEPTED");
         when(repo.findByEvvRecordId(evvRecordId)).thenReturn(Optional.of(record));
 
@@ -101,7 +100,7 @@ class ClaimValidationChainTest {
     void evvLinkageHandler_nonAcceptedRecord_throwsClaimValidationException() {
         EvvSubmissionRecordRepository repo = mock(EvvSubmissionRecordRepository.class);
         UUID evvRecordId = UUID.randomUUID();
-        EvvSubmissionRecord record = Mockito.mock(EvvSubmissionRecord.class);
+        EvvSubmissionRecord record = mock(EvvSubmissionRecord.class);
         when(record.getStatus()).thenReturn("PENDING");
         when(repo.findByEvvRecordId(evvRecordId)).thenReturn(Optional.of(record));
 
@@ -116,7 +115,7 @@ class ClaimValidationChainTest {
     void fullChain_validNpiAcceptedEvv_passes() {
         EvvSubmissionRecordRepository repo = mock(EvvSubmissionRecordRepository.class);
         UUID evvRecordId = UUID.randomUUID();
-        EvvSubmissionRecord record = Mockito.mock(EvvSubmissionRecord.class);
+        EvvSubmissionRecord record = mock(EvvSubmissionRecord.class);
         when(record.getStatus()).thenReturn("ACCEPTED");
         when(repo.findByEvvRecordId(evvRecordId)).thenReturn(Optional.of(record));
 

@@ -101,6 +101,30 @@ class CsvSerializerTest {
         assertThat(data[2]).isEqualTo("CC-001");
     }
 
+    @Test
+    void serialize_customColumnSubset_generatesExpectedHeaders() {
+        CsvFieldMapping mapping = new CsvFieldMapping(
+                List.of("caregiverId", "regularHours", "grossPay"), "yyyy-MM-dd");
+
+        UUID caregiverId = UUID.randomUUID();
+        GenericPayrollRecord rec = new GenericPayrollRecord(
+                caregiverId,
+                "Jane Doe",
+                BigDecimal.valueOf(8),
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(160),
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(160),
+                "2026-W10",
+                "CC-01");
+
+        byte[] csv = serializer.serialize(List.of(rec), mapping);
+        String content = new String(csv, StandardCharsets.UTF_8);
+
+        String headerLine = content.lines().findFirst().orElse("");
+        assertThat(headerLine).isEqualTo("caregiverId,regularHours,grossPay");
+    }
+
     // -------------------------------------------------------------------------
     // Date format
     // -------------------------------------------------------------------------
