@@ -32,6 +32,13 @@ public class JwtTokenProvider {
             portalProps.getJwt().getSecret().getBytes(StandardCharsets.UTF_8));
         this.expirationMs = props.getExpirationMs();
         this.portalExpirationDays = portalProps.getJwt().getExpirationDays();
+        // Fail fast if the two secrets are the same — using identical keys defeats the
+        // key-separation guarantee introduced by H1 (separate portal JWT signing key).
+        if (this.signingKey.equals(this.portalSigningKey)) {
+            throw new IllegalStateException(
+                "hcare.portal.jwt.secret must differ from hcare.jwt.secret — " +
+                "using the same key defeats portal key separation");
+        }
     }
 
     /** Generates an admin/scheduler JWT (existing method — unchanged). */

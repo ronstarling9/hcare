@@ -135,7 +135,7 @@ class JwtTokenProviderTest {
         assertThat(claims.get("clientId", String.class)).isNull();
     }
 
-    // C1 fix: an expired admin token must NOT fall back to the portal key — it should
+    // H1 fix: an expired admin token must NOT fall back to the portal key — it should
     // fail immediately so callers see a clean rejection rather than incorrect behavior.
     @Test
     void expiredAdminToken_doesNotFallBackToPortalKey() throws InterruptedException {
