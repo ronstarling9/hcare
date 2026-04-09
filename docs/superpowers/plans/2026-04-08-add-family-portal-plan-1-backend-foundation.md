@@ -1149,6 +1149,7 @@ package com.hcare.config;
 import com.hcare.security.JwtAuthenticationFilter;
 import com.hcare.security.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -1211,13 +1212,13 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         // C7 fix: include the portal base URL so the portal frontend origin is permitted
-        // in staging and production. portalProperties.getBaseUrl() defaults to
-        // http://localhost:5173 in dev (same as the admin frontend), so there is no
-        // functional change for local development — the list deduplicates to one entry.
-        config.setAllowedOrigins(List.of(
-            "http://localhost:5173",
-            portalProperties.getBaseUrl()
-        ));
+        // in staging and production. Build the list defensively to avoid duplicates when
+        // hcare.portal.base-url equals the dev admin origin (http://localhost:5173).
+        List<String> origins = new ArrayList<>(List.of("http://localhost:5173"));
+        if (!origins.contains(portalProperties.getBaseUrl())) {
+            origins.add(portalProperties.getBaseUrl());
+        }
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
