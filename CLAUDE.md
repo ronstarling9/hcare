@@ -140,6 +140,49 @@ Slugs: `sunrise`, `golden`, `harmony`. Example: `admin@sunrise.dev` / `Admin1234
 
 ---
 
+## Mobile App (React Native / Expo SDK 52)
+
+**Stack:** Expo SDK 52, React Native 0.76, TypeScript, React Navigation 6, React Query v5, Zustand v4, Expo SQLite v13, Expo SecureStore, Expo Notifications, Expo Location, axios + axios-mock-adapter.
+
+### Common Commands
+```bash
+cd mobile
+npm install                     # install dependencies (first time)
+npm test                        # Jest unit tests (jest-expo preset)
+npm run lint                    # ESLint
+npx expo start                  # start Expo dev server (scan QR with Expo Go)
+npx expo start --android        # start on Android emulator
+npx expo start --ios            # start on iOS simulator
+```
+
+### Mock vs Live API
+The app ships with `axios-mock-adapter` intercepting all 21 BFF endpoints when `EXPO_PUBLIC_USE_MOCKS=true` (default in `mobile/.env`). To point at a real BFF:
+```
+EXPO_PUBLIC_USE_MOCKS=false
+EXPO_PUBLIC_BFF_URL=http://localhost:8081
+```
+No code changes required — the API client reads these at startup.
+
+### Key Architecture
+- `src/mocks/handlers.ts` — axios-mock-adapter setup for all BFF endpoints (350ms simulated delay)
+- `src/mocks/data.ts` — typed mock fixtures with fixed UUIDs
+- `src/store/authStore.ts` — Zustand store; tokens and caregiver profile persisted via Expo SecureStore (`caregiverProfile` key)
+- `src/store/visitStore.ts` — active visit state (cleared on clock-out or void)
+- `src/db/events.ts` — SQLite offline event queue; drained by `useOfflineSync` on reconnect
+- `src/navigation/TabBar.tsx` — custom tab bar with raised center FAB; turns red when a visit is active
+
+### Conventions
+- All server state via React Query (`useQuery` / `useMutation`); UI-only state via Zustand.
+- Never fetch data directly in a screen — use a hook in `src/hooks/` that wraps React Query.
+- Individual Zustand selectors (`useStore(s => s.field)`) — never destructure the whole store.
+- Do not compute EVV compliance status in the mobile app — the BFF forwards it from Core API.
+- Do not include PHI in push notification payloads — use `shiftId` / event type codes only.
+
+### Test Mock Data
+`mobile/src/mocks/data.ts` — use these fixed-UUID fixtures in Jest tests instead of inventing values.
+
+---
+
 ## Mobile BFF (Java 25 / Spring Boot 3.4.4)
 
 ```bash
@@ -181,6 +224,7 @@ mvn test -Dtest=ClassName       # run a single test class
 |---|---|---|
 | Frontend unit | Vitest + Testing Library | 80% coverage |
 | Frontend e2e | Playwright | Critical user flows |
+| Mobile unit | Jest (jest-expo) + Testing Library | 80% coverage |
 | Backend unit | JUnit 5 + Mockito | 80% coverage |
 
 - Write tests before or alongside new code — not after.
@@ -218,6 +262,10 @@ HCARE_SCORING_WEEKLY_RESET_CRON=<cron expression, default "0 0 0 * * MON" (Monda
 # Frontend
 VITE_API_BASE_URL=http://localhost:8080/api/v1
 VITE_FEATURE_FLAGS_URL=...
+
+# Mobile
+EXPO_PUBLIC_USE_MOCKS=true|false      # true = axios-mock-adapter; false = real BFF
+EXPO_PUBLIC_BFF_URL=http://localhost:8081
 ```
 
 Dev profile uses H2 in-memory DB. Test profile uses Testcontainers PostgreSQL 16. Prod requires external Postgres and a real `JWT_SECRET`.
