@@ -75,7 +75,7 @@ export const usePortalAuthStore = create<PortalAuthState>()(
 )
 ```
 
-`usePortalAuthStore.getState().logout()` clears state AND removes `portal-auth` from `localStorage` automatically (Zustand `persist` handles this).
+Note on `logout()`: the `persist` middleware writes `null` values back — the key `portal-auth` remains in `localStorage` but `token` is `null`, which is all `PortalGuard` checks. The key is not truly removed from `localStorage` after logout.
 
 - [ ] **Step 2: Create `frontend/public/locales/en/portal.json`**
 
@@ -123,7 +123,11 @@ export const usePortalAuthStore = create<PortalAuthState>()(
   "sendNewLink": "Send New Link",
   "addInvite": "+ Invite",
   "portalAccessHeading": "Family Portal Access",
-  "noPortalUsers": "No family members have portal access yet."
+  "noPortalUsers": "No family members have portal access yet.",
+  "cancel": "Cancel",
+  "done": "Done",
+  "remove": "Remove",
+  "loading": "Loading…"
 }
 ```
 
@@ -213,6 +217,10 @@ portal: {
   addInvite: '+ Invite',
   portalAccessHeading: 'Family Portal Access',
   noPortalUsers: 'No family members have portal access yet.',
+  cancel: 'Cancel',
+  done: 'Done',
+  remove: 'Remove',
+  loading: 'Loading…',
 },
 ```
 
@@ -264,6 +272,19 @@ portalClient.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
+
+// Redirect to session_expired when the FAMILY_PORTAL JWT is rejected.
+// usePortalAuthStore.getState() is safe to call outside React (Zustand pattern).
+portalClient.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    if (error.response?.status === 401) {
+      usePortalAuthStore.getState().logout()
+      window.location.href = '/portal/verify?reason=session_expired'
+    }
+    return Promise.reject(error)
+  },
+)
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -353,33 +374,22 @@ export async function getPortalDashboard(): Promise<PortalDashboardResponse> {
 
 ```ts
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { getPortalDashboard } from '../api/portal'
 import { usePortalAuthStore } from '../store/portalAuthStore'
 
 export function usePortalDashboard() {
-  const navigate = useNavigate()
-  const logout = usePortalAuthStore((s) => s.logout)
+  const clientId = usePortalAuthStore((s) => s.clientId)
 
   return useQuery({
-    queryKey: ['portal-dashboard'],
+    queryKey: ['portal-dashboard', clientId],
     queryFn: getPortalDashboard,
     retry: 2,
     // Do not show stale data silently — if cache is stale and network fails, show error state.
     staleTime: 60_000,        // 1 minute — fresh window
     gcTime: 60_000,           // purge cache after 1 minute to avoid stale display
     throwOnError: false,
-    meta: {
-      onError: (error: unknown) => {
-        const status = (error as { response?: { status?: number } })?.response?.status
-        if (status === 403) {
-          // PORTAL_ACCESS_REVOKED: admin deleted the FamilyPortalUser.
-          logout()
-          navigate('/portal/verify?reason=access_revoked', { replace: true })
-        }
-        // 410 CLIENT_DISCHARGED is handled in the component by inspecting the error.
-      },
-    },
+    // Note: meta.onError was removed in React Query v5. 403 (access_revoked) and 410
+    // (client_discharged) are handled in the component via useEffect watching isError/error.
   })
 }
 ```
@@ -645,7 +655,7 @@ Expected: Multiple failures — page is a placeholder.
 - [ ] **Step 3: Implement `PortalVerifyPage.tsx`**
 
 ```tsx
-import { useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { verifyPortalToken } from '../api/portal'
@@ -671,7 +681,6 @@ export default function PortalVerifyPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const login = usePortalAuthStore((s) => s.login)
-  const stateRef = useRef<VerifyState | null>(null)
 
   const token = searchParams.get('token')
   const reason = searchParams.get('reason')
@@ -684,10 +693,7 @@ export default function PortalVerifyPage() {
     initialState = 'no_session'
   }
 
-  const [verifyState, setVerifyState] = [
-    stateRef.current ?? initialState,
-    (s: VerifyState) => { stateRef.current = s },
-  ]
+  const [displayState, setDisplayState] = useState<VerifyState>(initialState)
 
   // Strip ?reason= or any query param from URL bar after reading
   useEffect(() => {
@@ -705,18 +711,9 @@ export default function PortalVerifyPage() {
         navigate('/portal/dashboard', { replace: true })
       })
       .catch(() => {
-        setVerifyState('token_invalid')
+        setDisplayState('token_invalid')
       })
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [displayState, setDisplayState] = useReactState(initialState)
-
-  // Re-render when verify fails
-  useEffect(() => {
-    if (stateRef.current && stateRef.current !== displayState) {
-      setDisplayState(stateRef.current)
-    }
-  })
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center p-4">
@@ -763,9 +760,6 @@ function VerifyErrorCard({
     </div>
   )
 }
-
-// Inline useState import for use inside component
-import { useState as useReactState } from 'react'
 ```
 
 - [ ] **Step 4: Run the tests — expect pass**
@@ -930,9 +924,12 @@ describe('PortalDashboardPage', () => {
         { scheduledStart: '2026-04-09T09:00:00', scheduledEnd: '2026-04-09T11:00:00', caregiverName: 'Maria' },
         { scheduledStart: '2026-04-10T09:00:00', scheduledEnd: '2026-04-10T11:00:00', caregiverName: 'Maria' },
         { scheduledStart: '2026-04-11T09:00:00', scheduledEnd: '2026-04-11T11:00:00', caregiverName: 'Maria' },
+        { scheduledStart: '2026-04-12T09:00:00', scheduledEnd: '2026-04-12T11:00:00', caregiverName: 'Maria' },
+        { scheduledStart: '2026-04-13T09:00:00', scheduledEnd: '2026-04-13T11:00:00', caregiverName: 'Maria' },
       ],
     })
     renderDashboard()
+    // Backend returned 5 items but component caps display at 3
     await waitFor(() => expect(screen.getAllByText(/Maria/).length).toBe(3))
   })
 
@@ -1008,6 +1005,13 @@ describe('PortalDashboardPage', () => {
     // Session not cleared on 410
     expect(usePortalAuthStore.getState().token).not.toBeNull()
   })
+
+  it('clears session and redirects to access_revoked on 403 response', async () => {
+    mockGetDashboard.mockRejectedValue({ response: { status: 403 } })
+    renderDashboard()
+    await waitFor(() => expect(screen.getByText('verify page')).toBeInTheDocument())
+    expect(usePortalAuthStore.getState().token).toBeNull()
+  })
 })
 ```
 
@@ -1020,6 +1024,7 @@ cd frontend && npm run test -- --run PortalDashboardPage.test 2>&1 | tail -10
 - [ ] **Step 3: Implement `PortalDashboardPage.tsx`**
 
 ```tsx
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { usePortalAuthStore } from '../store/portalAuthStore'
@@ -1055,7 +1060,7 @@ function formatDuration(minutes: number): string {
 
 function isLate(visit: TodayVisitDto): boolean {
   if (visit.status !== 'GREY' || visit.clockedInAt) return false
-  const scheduled = new Date(visit.scheduledStart + 'Z')
+  const scheduled = new Date(visit.scheduledStart + (visit.scheduledStart.includes('Z') ? '' : 'Z'))
   return Date.now() > scheduled.getTime() + 15 * 60 * 1000
 }
 
@@ -1065,11 +1070,24 @@ export default function PortalDashboardPage() {
   const logout = usePortalAuthStore((s) => s.logout)
   const { data, isLoading, isError, error, refetch } = usePortalDashboard()
 
+  // Handle 403 PORTAL_ACCESS_REVOKED — React Query v5 removed meta.onError, so we handle
+  // side-effects from errors here in the component via useEffect.
+  useEffect(() => {
+    if (!isError || !error) return
+    const status = (error as { response?: { status?: number } })?.response?.status
+    if (status === 403) {
+      logout()
+      navigate('/portal/verify?reason=access_revoked', { replace: true })
+    }
+  }, [isError, error, logout, navigate])
+
   const status410 = (error as { response?: { status?: number } })?.response?.status === 410
 
   if (isLoading) {
     return (
-      <div className="p-6 text-center text-[13px] text-text-secondary">Loading…</div>
+      <div role="status" aria-live="polite" className="p-6 text-center text-[13px] text-text-secondary">
+        {t('loading')}
+      </div>
     )
   }
 
@@ -1138,7 +1156,7 @@ export default function PortalDashboardPage() {
             <p className="text-[13px] text-text-secondary">{t('noUpcomingVisits')}</p>
           ) : (
             <div className="flex flex-col gap-px">
-              {upcomingVisits.map((v, i) => (
+              {upcomingVisits.slice(0, 3).map((v, i) => (
                 <UpcomingRow key={i} visit={v} tz={tz} />
               ))}
             </div>
@@ -1172,7 +1190,7 @@ function TodayVisitCard({
 
   return (
     <div>
-      <StatusPill visit={visit} scheduledTime={scheduledTime} late={late} t={t} />
+      <StatusPill visit={visit} scheduledTime={scheduledTime} late={late} t={t} tz={tz} />
       {/* Caregiver card — hidden for CANCELLED */}
       {visit.caregiver && visit.status !== 'CANCELLED' && (
         <div className="flex items-center gap-3 mt-3">
@@ -1211,11 +1229,13 @@ function StatusPill({
   scheduledTime,
   late,
   t,
+  tz,
 }: {
   visit: TodayVisitDto
   scheduledTime: string
   late: boolean
   t: (k: string, opts?: Record<string, string>) => string
+  tz: string
 }) {
   const caregiverName = visit.caregiver?.name ?? ''
 
@@ -1253,7 +1273,7 @@ function StatusPill({
   }
 
   if (visit.status === 'COMPLETED') {
-    const completedTime = visit.clockedOutAt ? formatTime(visit.clockedOutAt, 'America/New_York') : scheduledTime
+    const completedTime = visit.clockedOutAt ? formatTime(visit.clockedOutAt, tz) : scheduledTime
     return (
       <div className="inline-flex items-center gap-1.5 bg-surface border border-border px-2.5 py-1.5 mb-3">
         <span data-testid="checkmark-icon" className="text-[12px]">✓</span>
@@ -1329,7 +1349,7 @@ function LastVisitCard({
 ```bash
 cd frontend && npm run test -- --run PortalDashboardPage.test 2>&1 | tail -10
 ```
-Expected: All 13 tests pass.
+Expected: All 14 tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1597,7 +1617,7 @@ export default function FamilyPortalTab({ clientId }: Props) {
         </span>
         <button
           onClick={() => openInviteForm()}
-          className="bg-dark text-white text-[11px] font-bold px-3 py-1.5"
+          className="bg-dark text-white text-[11px] font-bold px-3 py-1.5 min-h-[44px] flex items-center justify-center"
         >
           {t('addInvite')}
         </button>
@@ -1626,15 +1646,15 @@ export default function FamilyPortalTab({ clientId }: Props) {
               <button
                 onClick={handleGenerate}
                 disabled={!email || inviteMutation.isPending}
-                className="bg-dark text-white text-[11px] font-bold px-3 py-1.5"
+                className="bg-dark text-white text-[11px] font-bold px-3 py-1.5 min-h-[44px] flex items-center justify-center"
               >
                 {t('generateLink')}
               </button>
               <button
                 onClick={() => { setFormOpen(false); setPrefilledEmail(null) }}
-                className="border border-border text-text-secondary text-[11px] px-3 py-1.5 bg-transparent"
+                className="border border-border text-text-secondary text-[11px] px-3 py-1.5 bg-transparent min-h-[44px] flex items-center justify-center"
               >
-                Cancel
+                {t('cancel')}
               </button>
             </div>
           ) : (
@@ -1651,9 +1671,9 @@ export default function FamilyPortalTab({ clientId }: Props) {
                 </button>
                 <button
                   onClick={() => { setFormOpen(false); setPrefilledEmail(null) }}
-                  className="border border-border text-text-secondary text-[11px] px-3 py-1.5"
+                  className="border border-border text-text-secondary text-[11px] px-3 py-1.5 min-h-[44px] flex items-center justify-center"
                 >
-                  Done
+                  {t('done')}
                 </button>
               </div>
               {expiresAt && (() => {
@@ -1689,15 +1709,15 @@ export default function FamilyPortalTab({ clientId }: Props) {
               <div className="flex gap-2 flex-shrink-0">
                 <button
                   onClick={() => openInviteForm(fpu.email)}
-                  className="text-[11px] text-text-secondary border border-border px-2 py-1"
+                  className="text-[11px] text-text-secondary border border-border px-2 py-1 min-h-[44px] flex items-center justify-center"
                 >
                   {t('sendNewLink')}
                 </button>
                 <button
                   onClick={() => setConfirmRemove(fpu)}
-                  className="text-[11px] text-text-secondary border border-border px-2 py-1"
+                  className="text-[11px] text-text-secondary border border-border px-2 py-1 min-h-[44px] flex items-center justify-center"
                 >
-                  Remove
+                  {t('remove')}
                 </button>
               </div>
             </div>
@@ -1717,9 +1737,9 @@ export default function FamilyPortalTab({ clientId }: Props) {
                   </button>
                   <button
                     onClick={() => setConfirmRemove(null)}
-                    className="border border-border text-text-secondary text-[11px] px-3 py-1.5"
+                    className="border border-border text-text-secondary text-[11px] px-3 py-1.5 min-h-[44px] flex items-center justify-center"
                   >
-                    Cancel
+                    {t('cancel')}
                   </button>
                 </div>
               </div>
