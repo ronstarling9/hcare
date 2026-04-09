@@ -3,3 +3,4 @@ handoffs/
 .superpowers/
 target/
 frontend/coverage/
+**/.DS_Store
