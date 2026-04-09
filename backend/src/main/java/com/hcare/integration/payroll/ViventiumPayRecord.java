@@ -22,15 +22,4 @@ public record ViventiumPayRecord(
     BigDecimal grossPay,
     String costCenter,
     String payGroupCode
-) implements PayrollRecord {
-
-    @Override
-    public UUID caregiverId() {
-        return caregiverId;
-    }
-
-    @Override
-    public BigDecimal grossPay() {
-        return grossPay;
-    }
-}
+) implements PayrollRecord {}

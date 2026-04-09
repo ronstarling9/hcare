@@ -12,29 +12,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Payroll export strategy that produces a CSV file.
  *
- * <p>FLSA overtime uses the 8-hour daily rule: regular hours = min(hoursWorked, 8.0),
- * overtime hours = max(0, hoursWorked - 8.0). When a shift is not overtime-eligible
- * (FLSA exempt), all hours are classified as regular.
+ * <p>FLSA overtime uses the §207(j) 8/80 rule: shifts are grouped by caregiverId and
+ * {@link #computeFlsa8_80(List)} is applied per caregiver, producing one
+ * {@link GenericPayrollRecord} per caregiver rather than per shift.
  *
- * <p>Column configuration is read from {@link AgencyPayrollCredentials#companyCode()} as a JSON
+ * <p>Column configuration is read from {@link AgencyPayrollCredentials#configJson()} as a JSON
  * string if it matches the expected format; otherwise, the default column set is used.
  */
 @Component
 public class CsvExportStrategy extends AbstractPayrollExportStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(CsvExportStrategy.class);
-
-    private static final BigDecimal EIGHT_HOURS = new BigDecimal("8.00");
-    private static final BigDecimal ZERO = BigDecimal.ZERO;
-    private static final int SCALE = 4;
 
     private static final List<String> DEFAULT_COLUMNS = List.of(
             "caregiverId",
@@ -75,8 +71,13 @@ public class CsvExportStrategy extends AbstractPayrollExportStrategy {
 
     @Override
     protected List<GenericPayrollRecord> buildRecords(PayrollBatch batch) {
-        return batch.shifts().stream()
-                .map(shift -> toGenericPayrollRecord(shift, batch.payPeriodCode()))
+        // Group shifts by caregiverId, then compute FLSA 8/80 per caregiver
+        Map<UUID, List<PayrollableShift>> byCaregiverId = batch.shifts().stream()
+                .collect(Collectors.groupingBy(PayrollableShift::caregiverId));
+
+        return byCaregiverId.entrySet().stream()
+                .map(entry -> toGenericPayrollRecord(
+                        entry.getKey(), entry.getValue(), batch.payPeriodCode()))
                 .toList();
     }
 
@@ -86,7 +87,7 @@ public class CsvExportStrategy extends AbstractPayrollExportStrategy {
         CsvFieldMapping mapping = resolveFieldMapping(creds);
 
         log.debug("Exporting {} payroll records as CSV for pay period config: {}",
-                records.size(), creds != null ? creds.companyCode() : "default");
+                records.size(), creds != null ? creds.configJson() : "default");
 
         byte[] csvBytes = csvSerializer.serialize(records, mapping);
         String exportId = UUID.randomUUID().toString();
@@ -96,49 +97,31 @@ public class CsvExportStrategy extends AbstractPayrollExportStrategy {
     }
 
     private GenericPayrollRecord toGenericPayrollRecord(
-            PayrollableShift shift, String payPeriodCode) {
-        BigDecimal hoursWorked = shift.hoursWorked() != null ? shift.hoursWorked() : ZERO;
+            UUID caregiverId, List<PayrollableShift> caregiverShifts, String payPeriodCode) {
+        FlsaResult flsa = computeFlsa8_80(caregiverShifts);
 
-        BigDecimal regularHours;
-        BigDecimal overtimeHours;
-
-        if (shift.isOvertimeEligible()) {
-            regularHours = hoursWorked.min(EIGHT_HOURS).setScale(SCALE, RoundingMode.HALF_UP);
-            overtimeHours = hoursWorked.subtract(EIGHT_HOURS).max(ZERO)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
-        } else {
-            regularHours = hoursWorked.setScale(SCALE, RoundingMode.HALF_UP);
-            overtimeHours = ZERO.setScale(SCALE, RoundingMode.HALF_UP);
-        }
-
-        BigDecimal regularRate = shift.regularRate() != null ? shift.regularRate() : ZERO;
-        BigDecimal overtimeRate = shift.overtimeRate() != null ? shift.overtimeRate() : ZERO;
-
-        BigDecimal regularPay = regularHours.multiply(regularRate)
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal overtimePay = overtimeHours.multiply(overtimeRate)
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grossPay = regularPay.add(overtimePay);
+        // Cost center from the first shift — assumed consistent within a caregiver/period group
+        String costCenter = caregiverShifts.get(0).costCenter();
 
         return new GenericPayrollRecord(
-                shift.caregiverId(),
-                null,                                  // caregiverName: not available in shift projection
-                regularHours,
-                overtimeHours,
-                regularPay,
-                overtimePay,
-                grossPay,
+                caregiverId,
+                null,                // caregiverName: not available in shift projection
+                flsa.regularHours(),
+                flsa.overtimeHours(),
+                flsa.regularPay(),
+                flsa.overtimePay(),
+                flsa.grossPay(),
                 payPeriodCode,
-                shift.costCenter());
+                costCenter);
     }
 
     private CsvFieldMapping resolveFieldMapping(AgencyPayrollCredentials creds) {
-        if (creds != null && creds.companyCode() != null
-                && creds.companyCode().trim().startsWith("{")) {
+        if (creds != null && creds.configJson() != null
+                && creds.configJson().trim().startsWith("{")) {
             try {
-                return CsvFieldMapping.fromJson(creds.companyCode(), objectMapper);
+                return CsvFieldMapping.fromJson(creds.configJson(), objectMapper);
             } catch (Exception e) {
-                log.warn("Failed to parse CsvFieldMapping from companyCode — using defaults: {}",
+                log.warn("Failed to parse CsvFieldMapping from configJson — using defaults: {}",
                         e.getMessage());
             }
         }

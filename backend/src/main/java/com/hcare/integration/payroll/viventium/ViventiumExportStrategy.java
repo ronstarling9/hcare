@@ -20,16 +20,21 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Payroll export strategy that sends records to the Viventium payroll API.
  *
- * <p>FLSA overtime is computed using the simpler 8-hour daily rule:
+ * <p>FLSA overtime is computed using the §207(j) 8/80 rule (homecare-specific):
  * <ul>
- *   <li>Regular hours = min(hoursWorked, 8.0)</li>
- *   <li>Overtime hours = max(0, hoursWorked - 8.0)</li>
+ *   <li>Daily OT = sum of max(0, dailyHours - 8) across all worked days in the period.</li>
+ *   <li>Period OT = max(0, totalPeriodHours - 80).</li>
+ *   <li>Final OT = max(dailyOT, periodOT) — whichever is greater.</li>
  * </ul>
- * The {@code doubleTimeHours} field is set to zero in this implementation; it is reserved for
+ * Shifts are grouped by caregiverId so that one {@link ViventiumPayRecord} is produced per
+ * caregiver, not per shift.
+ *
+ * <p>The {@code doubleTimeHours} field is set to zero in this implementation; it is reserved for
  * states with double-time rules (e.g., California) and can be extended later.
  *
  * <p>When {@code viventiumRestClient} is not configured (no base-url property set), all export
@@ -40,7 +45,6 @@ public class ViventiumExportStrategy extends AbstractPayrollExportStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(ViventiumExportStrategy.class);
 
-    private static final BigDecimal EIGHT_HOURS = new BigDecimal("8.00");
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final int SCALE = 4;
 
@@ -69,17 +73,43 @@ public class ViventiumExportStrategy extends AbstractPayrollExportStrategy {
 
     @Override
     protected List<ViventiumPayRecord> buildRecords(PayrollBatch batch) {
-        return batch.shifts().stream()
-                .map(this::toViventiumPayRecord)
+        // Group shifts by caregiverId, then compute FLSA 8/80 per caregiver
+        Map<UUID, List<PayrollableShift>> byCaregiverId = batch.shifts().stream()
+                .collect(Collectors.groupingBy(PayrollableShift::caregiverId));
+
+        return byCaregiverId.entrySet().stream()
+                .map(entry -> toViventiumPayRecord(entry.getKey(), entry.getValue()))
                 .toList();
     }
 
     @Override
     protected PayrollExportResult doExport(
             List<? extends PayrollRecord> records, AgencyPayrollCredentials creds) {
+        // Fix 2: guard against null credentials
+        if (creds == null) {
+            return PayrollExportResult.failure(
+                    "MISSING_CREDENTIALS", "Viventium credentials are required");
+        }
+
         if (viventiumRestClient == null) {
             log.warn("Viventium REST client not configured — cannot export payroll");
             return PayrollExportResult.failure("CONNECTOR_UNAVAILABLE", "Viventium not configured");
+        }
+
+        // Fix 3: block submission when employeeId values are still internal UUIDs
+        boolean hasUnmappedIds = records.stream()
+                .filter(r -> r instanceof ViventiumPayRecord)
+                .map(r -> (ViventiumPayRecord) r)
+                .anyMatch(r -> r.employeeId().matches("[0-9a-f]{8}-[0-9a-f]{4}-.*"));
+        if (hasUnmappedIds) {
+            log.error(
+                    "Viventium export blocked — employeeId values are internal UUIDs, not HR"
+                            + " employee numbers. Configure HR ID mapping before using Viventium"
+                            + " export.");
+            return PayrollExportResult.failure(
+                    "EMPLOYEE_ID_UNMAPPED",
+                    "Viventium export requires HR employee IDs. Internal UUIDs cannot be"
+                            + " submitted to Viventium.");
         }
 
         log.debug("Exporting {} payroll records to Viventium for company {}",
@@ -110,40 +140,28 @@ public class ViventiumExportStrategy extends AbstractPayrollExportStrategy {
         }
     }
 
-    private ViventiumPayRecord toViventiumPayRecord(PayrollableShift shift) {
-        BigDecimal hoursWorked = shift.hoursWorked() != null ? shift.hoursWorked() : ZERO;
+    private ViventiumPayRecord toViventiumPayRecord(
+            UUID caregiverId, List<PayrollableShift> caregiverShifts) {
+        FlsaResult flsa = computeFlsa8_80(caregiverShifts);
 
-        BigDecimal regularHours;
-        BigDecimal overtimeHours;
+        // TODO: employeeId must be Viventium HR employee number, not internal UUID.
+        // Until HR mapping is implemented, the UUID is used as a placeholder. The doExport()
+        // guard above will block submission until real HR IDs are configured.
+        String employeeId = caregiverId.toString();
 
-        if (shift.isOvertimeEligible()) {
-            regularHours = hoursWorked.min(EIGHT_HOURS).setScale(SCALE, RoundingMode.HALF_UP);
-            overtimeHours = hoursWorked.subtract(EIGHT_HOURS).max(ZERO)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
-        } else {
-            regularHours = hoursWorked.setScale(SCALE, RoundingMode.HALF_UP);
-            overtimeHours = ZERO.setScale(SCALE, RoundingMode.HALF_UP);
-        }
-
-        BigDecimal regularRate = shift.regularRate() != null ? shift.regularRate() : ZERO;
-        BigDecimal overtimeRate = shift.overtimeRate() != null ? shift.overtimeRate() : ZERO;
-
-        BigDecimal regularPay = regularHours.multiply(regularRate)
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal overtimePay = overtimeHours.multiply(overtimeRate)
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grossPay = regularPay.add(overtimePay);
+        // Cost center from the first shift — assumed consistent within a caregiver/period group
+        String costCenter = caregiverShifts.get(0).costCenter();
 
         return new ViventiumPayRecord(
-                shift.caregiverId(),
-                shift.caregiverId().toString(),   // employeeId: caregiver UUID until HR mapping is available
-                regularHours,
-                overtimeHours,
+                caregiverId,
+                employeeId,
+                flsa.regularHours().setScale(SCALE, RoundingMode.HALF_UP),
+                flsa.overtimeHours().setScale(SCALE, RoundingMode.HALF_UP),
                 ZERO.setScale(SCALE, RoundingMode.HALF_UP), // doubleTimeHours reserved
-                regularPay,
-                overtimePay,
-                grossPay,
-                shift.costCenter(),
+                flsa.regularPay(),
+                flsa.overtimePay(),
+                flsa.grossPay(),
+                costCenter,
                 null  // payGroupCode sourced from credentials at export time
         );
     }
