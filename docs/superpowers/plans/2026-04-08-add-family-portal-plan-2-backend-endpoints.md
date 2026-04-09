@@ -153,17 +153,42 @@ git commit -m "feat: family portal DTOs — InviteRequest/Response, PortalVerify
 
 The service handles all three operations. It sits in the `com.hcare.api.v1.family` package.
 
-- [ ] **Step 1: Add `findFirstByClientIdAndStatusOrderByScheduledStartDesc` to `ShiftRepository`**
+- [ ] **Step 1: Add derived queries to `ShiftRepository`**
 
-This query finds the most recent COMPLETED shift for a client (used for `lastVisit`):
+Add all three methods below to `ShiftRepository`. The first finds the most recent COMPLETED shift for a client (used for `lastVisit`). The second replaces the in-memory 90-day stream for upcoming visits with a DB-side `TOP 3` query. The third adds an explicit `agencyId` predicate for the today-window query so the family portal path is safe if `TenantFilterAspect` does not activate for the FAMILY_PORTAL role.
 
 ```java
+import java.util.Collection;
 import java.util.Optional;
 
 // Add to ShiftRepository interface:
+
+// Last visit — most recent COMPLETED shift for a client.
 Optional<Shift> findFirstByClientIdAndStatusOrderByScheduledStartDesc(
     UUID clientId, ShiftStatus status);
+
+// Upcoming visits — DB-side TOP 3 to avoid loading 90 days of shifts into memory.
+// Excludes CANCELLED and MISSED shifts via the excludedStatuses collection.
+List<Shift> findTop3ByClientIdAndStatusNotInAndScheduledStartAfterOrderByScheduledStartAsc(
+    UUID clientId, Collection<ShiftStatus> excludedStatuses, LocalDateTime after);
+
+// Today's visit window — explicit agencyId predicate guards against edge cases where
+// the Hibernate agencyFilter may not activate for FAMILY_PORTAL-role requests.
+List<Shift> findByClientIdAndAgencyIdAndScheduledStartBetween(
+    UUID clientId, UUID agencyId, LocalDateTime start, LocalDateTime end);
 ```
+
+- [ ] **Step 1b: Add `findByClientIdAndAgencyIdAndEmail` to `FamilyPortalUserRepository`**
+
+`FamilyPortalService.generateInvite` calls `fpuRepo.findByClientIdAndAgencyIdAndEmail(clientId, agencyId, req.email())` but this method is not currently declared in the repository. Without it Spring Data JPA will throw at startup. Add it explicitly:
+
+```java
+// Add to FamilyPortalUserRepository interface (in com.hcare.domain):
+Optional<FamilyPortalUser> findByClientIdAndAgencyIdAndEmail(
+    UUID clientId, UUID agencyId, String email);
+```
+
+This method aligns with the `uq_fpu_client_agency_email` unique constraint added in the Plan 1 migration (V12). Also add a test assertion in `FamilyPortalUserRepositoryTest` (or create the test class) verifying this method returns the correct row given the `(client_id, agency_id, email)` tuple — and returns `Optional.empty()` when no matching row exists.
 
 - [ ] **Step 2: Create `FamilyPortalService.java`**
 
@@ -344,9 +369,11 @@ public class FamilyPortalService {
         LocalDateTime startOfToday = todayInAgencyTz.atStartOfDay(zoneId).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
         LocalDateTime startOfTomorrow = todayInAgencyTz.plusDays(1).atStartOfDay(zoneId).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
 
-        // Today's visit: first non-CANCELLED shift with scheduledStart within today.
-        List<Shift> todayShifts = shiftRepo.findByClientIdAndScheduledStartBetween(
-            clientId, startOfToday, startOfTomorrow);
+        // Today's visit: first non-CANCELLED/MISSED shift with scheduledStart within today.
+        // Uses the explicit agencyId predicate to guard against any edge case where
+        // TenantFilterAspect does not activate for FAMILY_PORTAL-role requests.
+        List<Shift> todayShifts = shiftRepo.findByClientIdAndAgencyIdAndScheduledStartBetween(
+            clientId, agencyId, startOfToday, startOfTomorrow);
         Shift todayShift = todayShifts.stream()
             .filter(s -> s.getStatus() != ShiftStatus.CANCELLED
                       && s.getStatus() != ShiftStatus.MISSED)
@@ -358,17 +385,26 @@ public class FamilyPortalService {
             todayVisitDto = buildTodayVisitDto(todayShift);
         }
 
-        // Upcoming: next 3 OPEN or ASSIGNED shifts after end of today, ordered ascending.
-        LocalDateTime startOfTomorrowForUpcoming = startOfTomorrow;
-        List<Shift> futureShifts = shiftRepo.findByClientIdAndScheduledStartBetween(
-            clientId, startOfTomorrowForUpcoming,
-            startOfTomorrowForUpcoming.plusDays(90));  // 90-day lookahead window
-        List<PortalDashboardResponse.UpcomingVisitDto> upcoming = futureShifts.stream()
-            .filter(s -> s.getStatus() == ShiftStatus.OPEN
-                      || s.getStatus() == ShiftStatus.ASSIGNED)
-            .sorted(java.util.Comparator.comparing(Shift::getScheduledStart))
-            .limit(3)
-            .map(this::buildUpcomingDto)
+        // Upcoming: next 3 non-CANCELLED/MISSED shifts after end of today, ordered ascending.
+        // Uses a DB-side TOP 3 derived query to avoid loading a 90-day window into memory.
+        List<Shift> upcomingShifts = shiftRepo
+            .findTop3ByClientIdAndStatusNotInAndScheduledStartAfterOrderByScheduledStartAsc(
+                clientId,
+                java.util.List.of(ShiftStatus.CANCELLED, ShiftStatus.MISSED),
+                startOfTomorrow);
+
+        // Bulk-fetch caregivers to avoid N+1 queries inside the mapping loop.
+        java.util.Set<UUID> caregiverIds = upcomingShifts.stream()
+            .map(Shift::getCaregiverId)
+            .filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<UUID, Caregiver> caregiverMap = caregiverRepo.findAllById(caregiverIds)
+            .stream()
+            .collect(java.util.stream.Collectors.toMap(Caregiver::getId,
+                java.util.function.Function.identity()));
+
+        List<PortalDashboardResponse.UpcomingVisitDto> upcoming = upcomingShifts.stream()
+            .map(s -> buildUpcomingDto(s, caregiverMap))
             .toList();
 
         // Last visit: most recent COMPLETED shift.
@@ -415,12 +451,15 @@ public class FamilyPortalService {
         );
     }
 
-    private PortalDashboardResponse.UpcomingVisitDto buildUpcomingDto(Shift shift) {
+    // caregiverMap is pre-fetched in bulk by the caller — no per-shift DB lookup.
+    private PortalDashboardResponse.UpcomingVisitDto buildUpcomingDto(
+            Shift shift, java.util.Map<UUID, Caregiver> caregiverMap) {
         String caregiverName = null;
         if (shift.getCaregiverId() != null) {
-            caregiverName = caregiverRepo.findById(shift.getCaregiverId())
-                .map(c -> c.getFirstName() + " " + c.getLastName())
-                .orElse(null);
+            Caregiver cg = caregiverMap.get(shift.getCaregiverId());
+            if (cg != null) {
+                caregiverName = cg.getFirstName() + " " + cg.getLastName();
+            }
         }
         return new PortalDashboardResponse.UpcomingVisitDto(
             shift.getScheduledStart().toString(),
@@ -483,6 +522,14 @@ public class FamilyPortalService {
 }
 ```
 
+- [ ] **Step 2b: Verify TenantFilterAspect activates for FAMILY_PORTAL-role requests**
+
+`TenantFilterInterceptor` reads `UserPrincipal.getAgencyId()` and sets `TenantContext`. For FAMILY_PORTAL-role requests, `UserPrincipal` carries a non-null `agencyId` from the JWT claim (set in `JwtTokenProvider.generateFamilyPortalToken`), so the filter **will** activate correctly — no special-casing is needed.
+
+However, as an additional safety net, the `getDashboard` service method uses `findByClientIdAndAgencyIdAndScheduledStartBetween` (rather than the agencyFilter-only `findByClientIdAndScheduledStartBetween`) so that the query carries an explicit `agencyId` predicate even in the unlikely case where `TenantContext` is not populated.
+
+Add an integration test assertion in `FamilyPortalDashboardControllerIT`: when a valid portal JWT for agency A calls `/family/portal/dashboard`, data from agency B's client is never returned. (A concrete test: seed a shift for a client in agency B; assert it does not appear in agency A's dashboard response.)
+
 - [ ] **Step 3: Compile**
 
 ```bash
@@ -497,8 +544,9 @@ find backend/src/main/java -name "ServiceTypeRepository.java" | head -1
 
 ```bash
 git add backend/src/main/java/com/hcare/api/v1/family/ \
-        backend/src/main/java/com/hcare/domain/ShiftRepository.java
-git commit -m "feat: FamilyPortalService — generateInvite, verifyToken, getDashboard"
+        backend/src/main/java/com/hcare/domain/ShiftRepository.java \
+        backend/src/main/java/com/hcare/domain/FamilyPortalUserRepository.java
+git commit -m "feat: FamilyPortalService — generateInvite, verifyToken, getDashboard; add findByClientIdAndAgencyIdAndEmail to FamilyPortalUserRepository"
 ```
 
 ---
@@ -543,6 +591,19 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
     // one minute and are evicted lazily when the map exceeds 10,000 entries.
     private final ConcurrentHashMap<String, AtomicInteger> counters = new ConcurrentHashMap<>();
 
+    // When true, trust the X-Real-IP header set by the reverse proxy.
+    // ONLY enable this when the backend is not directly reachable by clients (i.e., all
+    // traffic flows through a trusted proxy that sets X-Real-IP from the actual client IP).
+    // X-Forwarded-For is intentionally NOT used: it is trivially spoofable by clients
+    // who can include it in their own requests, defeating the rate limiter entirely.
+    private final boolean trustedProxy;
+
+    public VerifyRateLimiter(
+            @org.springframework.beans.factory.annotation.Value(
+                "${hcare.portal.trusted-proxy:false}") boolean trustedProxy) {
+        this.trustedProxy = trustedProxy;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -575,26 +636,47 @@ public class VerifyRateLimiter extends OncePerRequestFilter {
     }
 
     private String getClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+        // Use the TCP peer address — cannot be spoofed by clients.
+        // If deployed behind a trusted reverse proxy that sets X-Real-IP,
+        // configure hcare.portal.trusted-proxy: true and ensure the proxy
+        // is the only entry point (never expose the backend directly).
+        // X-Forwarded-For is intentionally NOT used: clients can inject arbitrary
+        // values into that header, making per-IP rate limiting trivially bypassable.
+        if (trustedProxy) {
+            String realIp = request.getHeader("X-Real-IP");
+            if (realIp != null && !realIp.isBlank()) return realIp.trim();
         }
         return request.getRemoteAddr();
     }
 }
 ```
 
-- [ ] **Step 2: Compile**
+- [ ] **Step 2: Add `trusted-proxy` property to `application.yml`**
+
+Add the following under the `hcare.portal` block in `backend/src/main/resources/application.yml` (create the block if it does not exist yet):
+
+```yaml
+hcare:
+  portal:
+    base-url: ${PORTAL_BASE_URL:http://localhost:5173}
+    trusted-proxy: ${PORTAL_TRUSTED_PROXY:false}   # set true only when behind a reverse proxy that sets X-Real-IP
+    cleanup-cron: ${PORTAL_CLEANUP_CRON:0 0 3 * * *}
+```
+
+The default is `false` (safe). Operators running behind NGINX/ALB that sets `X-Real-IP` may set `PORTAL_TRUSTED_PROXY=true` in their environment. Do NOT set `trusted-proxy: true` if the backend is directly internet-accessible.
+
+- [ ] **Step 3: Compile**
 
 ```bash
 cd backend && mvn compile -q
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add backend/src/main/java/com/hcare/api/v1/family/VerifyRateLimiter.java
-git commit -m "feat: VerifyRateLimiter — max 10 requests/IP/minute on POST /family/auth/verify"
+git add backend/src/main/java/com/hcare/api/v1/family/VerifyRateLimiter.java \
+        backend/src/main/resources/application.yml
+git commit -m "feat: VerifyRateLimiter — max 10 requests/IP/minute on POST /family/auth/verify, RemoteAddr by default (X-Forwarded-For intentionally not trusted)"
 ```
 
 ---
@@ -606,7 +688,24 @@ git commit -m "feat: VerifyRateLimiter — max 10 requests/IP/minute on POST /fa
 - Create: `backend/src/main/java/com/hcare/api/v1/family/FamilyPortalDashboardController.java`
 - Modify: `backend/src/main/java/com/hcare/api/v1/clients/ClientController.java`
 
-- [ ] **Step 1: Create `FamilyPortalAuthController`**
+- [ ] **Step 1: Add `permitAll` rule for verify endpoint to `SecurityConfig`**
+
+`POST /api/v1/family/auth/verify` is a public endpoint — family members hit it with a raw token, not a JWT. The project uses `requestMatchers(...).permitAll()` in `SecurityConfig` (not a `@Public` annotation). Add the new rule **before** the `.anyRequest().authenticated()` line:
+
+```java
+// In SecurityConfig.filterChain, inside authorizeHttpRequests:
+.requestMatchers("/api/v1/auth/**").permitAll()
+.requestMatchers("/api/v1/agencies/register").permitAll()
+.requestMatchers("/h2-console/**").permitAll()
+.requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/family/auth/verify").permitAll()  // public — raw token exchange
+.anyRequest().authenticated()
+```
+
+Without this rule, Spring Security will reject requests to `/api/v1/family/auth/verify` with 401 before the controller is reached, and the `VerifyRateLimiter` filter will never be invoked for rate-limit enforcement.
+
+Also add `backend/src/main/java/com/hcare/config/SecurityConfig.java` to the `git add` in Step 5 of this task.
+
+- [ ] **Step 2: Create `FamilyPortalAuthController`**
 
 ```java
 package com.hcare.api.v1.family;
@@ -627,6 +726,8 @@ public class FamilyPortalAuthController {
         this.familyPortalService = familyPortalService;
     }
 
+    // NOTE: This endpoint is intentionally public. The permitAll() rule for
+    // POST /api/v1/family/auth/verify was added to SecurityConfig in Step 1 of this task.
     @PostMapping("/verify")
     public ResponseEntity<PortalVerifyResponse> verify(
             @Valid @RequestBody PortalVerifyRequest request) {
@@ -726,8 +827,9 @@ Expected: BUILD SUCCESS.
 git add backend/src/main/java/com/hcare/api/v1/family/FamilyPortalAuthController.java \
         backend/src/main/java/com/hcare/api/v1/family/FamilyPortalDashboardController.java \
         backend/src/main/java/com/hcare/api/v1/clients/ClientController.java \
-        backend/src/main/java/com/hcare/api/v1/clients/ClientService.java
-git commit -m "feat: FamilyPortalAuthController, FamilyPortalDashboardController, /invite endpoint on ClientController"
+        backend/src/main/java/com/hcare/api/v1/clients/ClientService.java \
+        backend/src/main/java/com/hcare/config/SecurityConfig.java
+git commit -m "feat: FamilyPortalAuthController, FamilyPortalDashboardController, /invite endpoint on ClientController, permitAll for verify endpoint"
 ```
 
 ---
@@ -821,8 +923,8 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.jdbc.Sql;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -875,9 +977,13 @@ class FamilyPortalAuthControllerIT extends AbstractIntegrationTest {
         assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(inviteResp.getBody().inviteUrl()).contains("/portal/verify?token=");
 
-        // Extract raw token from URL
-        String rawToken = URI.create(inviteResp.getBody().inviteUrl())
-            .getQuery().replace("token=", "");
+        // Extract raw token from URL — use UriComponentsBuilder to correctly handle
+        // multi-param query strings; String.replace would corrupt the token in that case.
+        String rawToken = UriComponentsBuilder
+            .fromUriString(inviteResp.getBody().inviteUrl())
+            .build()
+            .getQueryParams()
+            .getFirst("token");
 
         // Verify token
         ResponseEntity<PortalVerifyResponse> verifyResp = restTemplate.postForEntity(
@@ -906,8 +1012,11 @@ class FamilyPortalAuthControllerIT extends AbstractIntegrationTest {
             HttpMethod.POST,
             new HttpEntity<>("{\"email\":\"family2@example.com\"}", adminAuth()),
             InviteResponse.class);
-        String rawToken = URI.create(inviteResp.getBody().inviteUrl())
-            .getQuery().replace("token=", "");
+        String rawToken = UriComponentsBuilder
+            .fromUriString(inviteResp.getBody().inviteUrl())
+            .build()
+            .getQueryParams()
+            .getFirst("token");
 
         // First verify succeeds
         ResponseEntity<PortalVerifyResponse> first = restTemplate.postForEntity(
@@ -930,8 +1039,11 @@ class FamilyPortalAuthControllerIT extends AbstractIntegrationTest {
             HttpMethod.POST,
             new HttpEntity<>("{\"email\":\"hash-check@example.com\"}", adminAuth()),
             InviteResponse.class);
-        String rawToken = URI.create(inviteResp.getBody().inviteUrl())
-            .getQuery().replace("token=", "");
+        String rawToken = UriComponentsBuilder
+            .fromUriString(inviteResp.getBody().inviteUrl())
+            .build()
+            .getQueryParams()
+            .getFirst("token");
         // Raw token is 128 hex chars (64 bytes). Verify returns 200, meaning hash lookup works.
         assertThat(rawToken).hasSize(128);
     }
@@ -958,8 +1070,8 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.jdbc.Sql;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -1019,8 +1131,11 @@ class FamilyPortalDashboardControllerIT extends AbstractIntegrationTest {
             HttpMethod.POST,
             new HttpEntity<>("{\"email\":\"family@test.com\"}", h),
             InviteResponse.class);
-        String rawToken = URI.create(inviteResp.getBody().inviteUrl())
-            .getQuery().replace("token=", "");
+        String rawToken = UriComponentsBuilder
+            .fromUriString(inviteResp.getBody().inviteUrl())
+            .build()
+            .getQueryParams()
+            .getFirst("token");
         PortalVerifyResponse verifyResp = restTemplate.postForEntity(
             "/api/v1/family/auth/verify",
             new PortalVerifyRequest(rawToken),
