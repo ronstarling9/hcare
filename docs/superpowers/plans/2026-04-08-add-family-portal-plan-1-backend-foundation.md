@@ -228,7 +228,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface FamilyPortalUserRepository extends JpaRepository<FamilyPortalUser, UUID> {
-    Optional<FamilyPortalUser> findByAgencyIdAndEmail(UUID agencyId, String email);
+    // findByAgencyIdAndEmail deliberately omitted: V12 migration allows the same email
+    // at the same agency across multiple clients. Use findByClientIdAndAgencyIdAndEmail instead.
     Optional<FamilyPortalUser> findByClientIdAndAgencyIdAndEmail(UUID clientId, UUID agencyId, String email);
     List<FamilyPortalUser> findByClientId(UUID clientId);
     Page<FamilyPortalUser> findByClientId(UUID clientId, Pageable pageable);
