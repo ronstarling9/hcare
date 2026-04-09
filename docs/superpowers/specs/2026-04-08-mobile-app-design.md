@@ -47,11 +47,15 @@ Inherits the project's Tailwind tokens:
 
 System font stack: `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`.
 
-- Screen titles: 13px, weight 700, letter-spacing -0.02em
-- Section labels: 8px, weight 700, letter-spacing 0.1em, uppercase, `color-text-secondary`
-- Card titles: 11px, weight 700
-- Body / metadata: 9–10px, weight 400–600
-- Timestamps: 8–9px, `color-text-secondary`
+All sizes are density-independent points (pt), not CSS pixels. React Native StyleSheet values are specified in pt.
+
+- Screen titles: 17pt, weight 700
+- Section labels: 11pt, weight 700, letter-spacing 0.1em, uppercase, `color-text-secondary`
+- Card titles: 15pt, weight 700
+- Body / metadata: 14pt, weight 400–600
+- Timestamps: 13pt, `color-text-secondary`
+
+**Dynamic Type / font scaling:** The app must respect iOS Dynamic Type and Android font scaling. Defined bounds: floor 0.8x (content remains legible), ceiling 1.5x (layout remains usable). Do not hard-code sizes in ways that ignore the OS text scale setting.
 
 ### Components
 
@@ -78,9 +82,11 @@ System font stack: `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`.
 
 The center FAB is raised (46×46px circle, `box-shadow: 0 3px 12px rgba(26,154,250,0.45)`, margin-top: -20px from tab bar).
 
-**During an active visit:** FAB turns red (`#dc2626`), icon changes to a stop square, label changes to "Visit Active". Tapping navigates to the active visit screen.
+**During an active visit:** FAB turns red (`#dc2626`), icon changes to a stop square, label changes to "Visit Active". Tapping navigates to the active visit screen. When a visit is active, tapping the FAB does not open the clock-in sheet — it navigates to the active visit screen.
 
 **Unread badge:** Red dot on the Messages tab icon when there are unread messages.
+
+**Implementation note:** The raised center FAB with negative margin overlap requires a custom `tabBar` render prop in React Navigation. Standard `@react-navigation/bottom-tabs` does not support this layout natively.
 
 ---
 
@@ -89,6 +95,10 @@ The center FAB is raised (46×46px circle, `box-shadow: 0 3px 12px rgba(26,154,2
 ### Auth model
 
 Caregivers authenticate via admin-generated tokenized sign-in links (same mechanism as the family portal). The Core API JWT claim for a caregiver session: `{"role": "CAREGIVER", "caregiverId": "<uuid>", "agencyId": "<uuid>"}`.
+
+**Token lifetimes:** Access token 7 days. Refresh token 90 days. These are mobile-specific token lifetimes and must not be conflated with the web admin token model.
+
+**JWT expiry mid-visit behavior:** If the access token expires during an active visit, the app silently attempts a background token refresh using the refresh token. If the refresh succeeds, the visit continues uninterrupted. If the refresh fails, the app does NOT redirect to the login screen — instead a non-blocking banner appears: "Session expiring soon — tap to re-authenticate." Tapping this banner opens the re-auth flow without clearing the active visit or local SQLite event log.
 
 ### Auth flows
 
@@ -101,10 +111,13 @@ Caregivers authenticate via admin-generated tokenized sign-in links (same mechan
 **Re-auth — session expired:**
 1. App opens cold with no valid session → shows login screen
 2. Login screen primary message: "Check your email for a sign-in link from your agency"
-3. Fallback: email input + "Send New Sign-In Link" button → Core API sends a fresh tokenized link → same deep link flow
+3. Fallback: email input + "Send New Sign-In Link" button → Core API sends a fresh tokenized link only if the email matches an active caregiver in the system. No confirmation of match is shown — the app always displays "If that email matches your account, a link has been sent." (prevents user enumeration) → same deep link flow
 
 **Invalid / expired link:**
-App detects expired token during exchange → shows error screen: "Link expired. Enter your email for a new one." with email input.
+App detects expired or invalid token during deep link exchange → shows error screen: "Link expired. Enter your email for a new one." with email input.
+
+**Auth token exchange failure (deep link):**
+If the token exchange API call fails for any reason other than an expired token (network error, server error), show the "Link expired" error screen with email input as the fallback recovery path.
 
 **Returning user (valid session):**
 App opens directly to the Today screen — no auth screen shown.
@@ -138,7 +151,7 @@ The primary screen and navigation hub.
 **Shift list sections:**
 - `UPCOMING` — today's remaining shifts (shown when no visit is active)
 - `LATER TODAY` — today's remaining shifts not yet started (shown when a visit is currently active, replacing `UPCOMING`)
-- `THIS WEEK` — future shifts beyond today (dimmed opacity; always shown below today's shifts)
+- `THIS WEEK` — future shifts beyond today (dimmed opacity). `THIS WEEK` is collapsed by default. A disclosure row "Show this week ([N] shifts)" expands it. State is not persisted — it collapses again each time the Today screen is loaded.
 
 ### Shift cards
 
@@ -160,7 +173,7 @@ Triggered by tapping the center FAB.
 **Bottom sheet slides up** over a dimmed Today screen:
 - Drag handle at top
 - Section label: "CLOCK IN TO"
-- Shows the **next 2 upcoming shifts for today only**
+- Shows **all remaining upcoming shifts for today** (minimum 1, no cap). Shifts are sorted by scheduled start time ascending.
 - The first/soonest shift is highlighted with a blue left border and "SELECT" label
 - Tapping a shift row selects it and populates the confirm button
 - Primary CTA: "Clock In — [Client Name]" (full-width blue button)
@@ -171,6 +184,8 @@ On confirm:
 2. `EVVRecord` created with `capturedOffline = false` (or `true` if offline)
 3. Sheet dismisses, navigates to the Visit screen for that shift
 4. FAB turns red
+
+**Wrong-shift recovery:** If the caregiver navigates to the visit screen and realizes they clocked into the wrong shift, they can tap "⚠ Wrong shift?" in the visit screen nav bar overflow menu to void the clock-in and return to the clock-in sheet. Voiding a clock-in deletes the EVVRecord if it was created less than 5 minutes ago.
 
 **Offline behavior:** Clock-in still works offline. GPS captured from device. Event logged to local SQLite store. Synced to BFF on reconnect.
 
@@ -194,16 +209,16 @@ Always visible while scrolled: client name (left), live elapsed timer (right, `c
 
 **2. GPS status bar**
 - Green bar: "GPS captured · [distance] from client address" when within tolerance
-- Amber bar: "GPS outside expected range" when distance anomaly
+- Amber bar: "GPS outside expected range — your agency will review this visit." when distance anomaly
 - Offline bar: "Offline — GPS captured on device, will sync on reconnect"
 
 **3. Care plan summary (reference)**
 - Diagnoses, allergies, caregiver notes from the active care plan
-- Collapsed by default on first visit, expanded subsequently (persisted preference)
+- Collapsed by default on first visit, expanded subsequently (persisted preference). If the care plan was updated since the caregiver's last visit with this client, the section is forced open regardless of the saved preference, and a pill reads "Updated since your last visit".
 
 **4. ADL Tasks**
 - Section label: "ADL TASKS [X / Y]" — count updates live as tasks are checked
-- Single grouped list: completed tasks (strikethrough, green checkmark) above pending tasks
+- Single grouped list: pending tasks above, completed tasks (strikethrough, green checkmark) below. As caregivers check off tasks, completed items sink to the bottom of the list. Tapping a completed task reverts it to pending.
 - Pending tasks show a circular checkbox; tasks with instructions show subtext below the task name
 - Tapping a pending task marks it complete immediately (optimistic update, queued for sync)
 
@@ -282,11 +297,11 @@ Broadcast-only inbox. Caregivers receive messages from the agency and can reply.
   - Red: "Expired" (past expiry)
 
 **This Month**
-- Stats tile: Shifts completed, Hours worked, On-time rate — displayed as three equal columns
+- Stats tile: Shifts completed, Hours worked — displayed as two equal columns. Note: On-time rate is a P2 metric pending scoring module support and is not included at MVP.
 
 **Navigation rows**
 - "Settings" → navigates to Settings screen
-- "Sign Out" (red text) — taps require no confirmation (session clear is low-risk; re-auth is self-serve)
+- "Sign Out" (red text) — Tapping Sign Out shows a confirmation dialog: "Sign out of hcare? You'll need a sign-in link to log back in." with "Sign Out" (red) and "Cancel" options.
 
 ---
 
@@ -295,8 +310,8 @@ Broadcast-only inbox. Caregivers receive messages from the agency and can reply.
 Read-only screen — no user-editable fields at MVP.
 
 Displayed values:
-- **Notifications:** On / Off (reflects current OS permission state — not a toggle)
-- **Location access:** Always / When In Use / Denied (reflects OS permission state)
+- **Notifications:** On / Off (reflects current OS permission state — not a toggle). Includes a "Change →" link that opens the app's page in the OS Settings app via `Linking.openSettings()`.
+- **Location access:** Always / When In Use / Denied (reflects OS permission state). Includes a "Change →" link that opens the app's page in the OS Settings app via `Linking.openSettings()`.
 - **Agency:** Agency name + support contact email
 - **App version:** Semver string
 - **Terms of Service / Privacy Policy:** Links only
@@ -311,13 +326,22 @@ The app is fully offline-capable during a visit. All visit events (clock-in, tas
 
 **Sync:** On reconnect, the local event queue is batched and POSTed to the BFF `/sync/visits` endpoint. The BFF deduplicates by `(deviceId, visitId, eventType, occurredAt)`.
 
-**Conflict resolution:** Follows the rules defined in the MVP spec — CONFLICT_REASSIGNED, idempotent retries, time anomaly YELLOW status for > 4h clock-in drift.
+**Conflict resolution:** The app batches local events and POSTs them to the BFF `/sync/visits` endpoint. The BFF forwards the batch to Core API, which is the sole authority for computing EVV compliance status. The mobile app never sets or infers compliance status — it receives the computed status from Core API as part of the sync response. Core API evaluates time anomaly thresholds (including offline clock-in drift) and returns the resulting status.
+
+**Conflict: shift reassigned while offline.** When the BFF returns CONFLICT_REASSIGNED during sync, the app:
+1. Sends a push notification: "Your [Date] visit for [Client Name] could not be recorded — the shift was reassigned while you were offline. Contact your agency."
+2. Displays a persistent banner on the Today screen: "Visit not recorded — [Client Name] shift was reassigned. Tap for details."
+3. Shows a detail screen with the conflict explanation, the time the caregiver clocked in and out, and a "Contact Agency" button that opens a pre-filled message thread.
+
+**Sync success confirmation:** On successful sync, a transient toast appears for 3 seconds: "Visit data synced ✓". No action required.
 
 ---
 
 ## 13. Notifications
 
-Push notifications via Expo Notifications (FCM + APNs). Payloads contain **no PHI** — only `shiftId` or event type codes. The app fetches details after receipt.
+Push notifications via Expo Notifications (FCM + APNs). Payloads contain **no PHI** — only `shiftId`, `threadId`, or event type codes. The app fetches details after receipt.
+
+**Device registration:** On first launch after auth, the app must register the device push token with the BFF via `POST /mobile/devices/push-token`. The token must be re-registered on each app launch in case it has rotated.
 
 | Trigger | Notification text |
 |---|---|
@@ -327,6 +351,30 @@ Push notifications via Expo Notifications (FCM + APNs). Payloads contain **no PH
 | Credential expiring (30 days out) | "Your [Credential] expires soon — contact your agency" |
 
 Tapping a notification deep-links to the relevant screen (Open Shifts tab, visit, Messages thread, or Profile credentials).
+
+---
+
+## 15. Error States
+
+Error states for all core user flows. Every error must give the caregiver a clear recovery path — no silent failures.
+
+**(a) GPS capture failure at clock-in**
+If GPS is unavailable (permission denied post-onboarding or device GPS fix fails) when the caregiver confirms clock-in, show an amber bar below the confirm button: "Location unavailable — your agency will verify this visit manually." Clock-in proceeds with a null GPS coordinate. The `EVVRecord` is created with `gpsCoordinate = null`. The caregiver is not blocked.
+
+**(b) GPS capture failure at clock-out**
+If GPS is unavailable at clock-out, show the same amber bar: "Location unavailable — your agency will verify this visit manually." Clock-out proceeds with a null GPS coordinate for the clock-out event. The caregiver is not blocked.
+
+**(c) Sync failure after reconnect**
+If the BFF `/sync/visits` POST returns an error (network error or server error) after reconnect, show a persistent banner at the top of the screen: "Sync failed — tap to retry" with a retry button. The local SQLite event log is preserved. Data is not lost. The banner persists until sync succeeds.
+
+**(d) Shift acceptance failure (network error)**
+If the accept shift request fails due to a network error or server error (500 or 409), show an inline error below the Accept button: "Couldn't accept shift — tap to retry." The card remains in the list. No state is changed on the card.
+
+**(e) Message send failure**
+If posting a reply to a message thread fails, show an inline error below the reply bar with a retry option: "Message not sent — tap to retry." The typed message is retained in the input field.
+
+**(f) Auth token exchange failure (deep link)**
+If the token exchange API call fails for reasons other than an expired token (network error, server error), show the "Link expired" error screen with email input. This provides a recovery path via email regardless of the failure cause.
 
 ---
 
