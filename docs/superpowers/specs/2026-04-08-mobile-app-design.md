@@ -159,10 +159,13 @@ Each shift card shows: client name, time range, service type, duration. Cards ha
 - Blue (`color-blue`) — next upcoming shift; also shows a "NEXT" badge pill
 - Grey (`color-text-muted`) — future shifts
 - Green (`#16a34a`) — completed shifts
+- Muted grey (`color-text-muted`), client name in strikethrough — cancelled shifts; also shows a "CANCELLED" badge pill
+
+**Cancelled shifts** remain visible on the Today screen for the remainder of the day — they do not disappear silently. Tapping a cancelled shift card shows a read-only inline alert: "This shift was cancelled by your agency." No navigation occurs. This prevents a caregiver from driving to a client's home because the card vanished without explanation.
 
 The **next upcoming** shift card is expanded with two secondary action buttons: "Maps" (opens native maps to client address) and "Care Plan" (navigates to the read-only care plan summary screen for that client — accessible before clocking in).
 
-All other shift cards are compact (name + time + service type only).
+All other non-cancelled shift cards are compact (name + time + service type only).
 
 ---
 
@@ -347,10 +350,11 @@ Push notifications via Expo Notifications (FCM + APNs). Payloads contain **no PH
 |---|---|
 | Open shift broadcast | "New shift available — tap to view" |
 | Clock-in reminder (15 min before shift) | "Your shift starts soon — tap to clock in" |
+| Shift cancelled by scheduler | "Your [Time] shift with [Client First Name] has been cancelled" |
 | Agency message received | "New message from [Agency Name]" |
 | Credential expiring (30 days out) | "Your [Credential] expires soon — contact your agency" |
 
-Tapping a notification deep-links to the relevant screen (Open Shifts tab, visit, Messages thread, or Profile credentials).
+Tapping a notification deep-links to the relevant screen (Open Shifts tab, visit, Messages thread, or Profile credentials). Tapping a shift cancellation notification navigates to the Today screen, where the cancelled shift card is visible with the CANCELLED badge.
 
 ---
 
