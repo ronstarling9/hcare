@@ -11,6 +11,7 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -35,6 +36,7 @@ public class CredentialEncryptionService {
   private final ObjectMapper objectMapper;
 
   private SecretKey secretKey;
+  private SecureRandom secureRandom;
 
   public CredentialEncryptionService(
       @Value("${integration.encryption-key:}") String encodedKey,
@@ -56,6 +58,7 @@ public class CredentialEncryptionService {
               + "got " + keyBytes.length + " bytes");
     }
     secretKey = new SecretKeySpec(keyBytes, "AES");
+    secureRandom = new SecureRandom();
     log.info("CredentialEncryptionService initialized with AES-256-GCM key");
   }
 
@@ -68,12 +71,12 @@ public class CredentialEncryptionService {
   public String encrypt(String plaintext) {
     try {
       byte[] iv = new byte[GCM_IV_LENGTH_BYTES];
-      new SecureRandom().nextBytes(iv);
+      secureRandom.nextBytes(iv);
 
       Cipher cipher = Cipher.getInstance(ALGORITHM);
       cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
 
-      byte[] ciphertext = cipher.doFinal(plaintext.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
 
       return Base64.getEncoder().encodeToString(iv)
           + ":"
@@ -81,6 +84,18 @@ public class CredentialEncryptionService {
     } catch (Exception e) {
       throw new IllegalStateException("Encryption failed", e);
     }
+  }
+
+  /**
+   * Encrypts a typed credential object by serializing it to JSON and applying AES-256-GCM.
+   *
+   * @param credential the credential object to encrypt
+   * @param <T>        the credential type
+   * @return {@code base64(iv) + ":" + base64(ciphertext)}
+   */
+  public <T> String encrypt(T credential) throws Exception {
+    String json = objectMapper.writeValueAsString(credential);
+    return encrypt(json);
   }
 
   /**

@@ -27,14 +27,15 @@ public class JschSftpGateway implements SftpGateway {
 
   @Override
   public void upload(
-      String host, String user, String privateKeyRef, String remotePath, byte[] content)
+      String host, int port, String user, String privateKeyRef, String remotePath, byte[] content)
       throws Exception {
 
     JSch jsch = new JSch();
     jsch.addIdentity(privateKeyRef);
 
-    Session session = jsch.getSession(user, host);
+    Session session = jsch.getSession(user, host, port);
     session.setConfig("StrictHostKeyChecking", "no");
+    // TODO: upgrade to fingerprint pinning before first production deployment — MITM risk
 
     ChannelSftp channel = null;
     try {

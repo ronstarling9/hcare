@@ -15,3 +15,6 @@ hcare:
     documents-dir: /tmp/hcare-test-docs
     signing-key: test-doc-signing-key-for-tests-only-32b
     base-url: http://localhost:${local.server.port}
+
+integration:
+  encryption-key: dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXQ=
