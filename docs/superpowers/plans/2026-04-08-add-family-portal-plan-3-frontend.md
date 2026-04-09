@@ -1691,6 +1691,7 @@ export default function FamilyPortalTab({ clientId }: Props) {
     setInviteUrl(null)
     setExpiresAt(null)
     setCopied(false)
+    setInviteError(null)
     setFormOpen(true)
   }
 
@@ -1743,36 +1744,38 @@ export default function FamilyPortalTab({ clientId }: Props) {
             <p className="text-[12px] text-text-secondary mb-2">{t('reInviteNote')}</p>
           )}
           {!inviteUrl ? (
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <label className="text-[9px] font-bold tracking-[.08em] uppercase text-text-secondary block mb-1">
-                  {t('inviteEmail')}
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="email@example.com"
-                  className="border border-border px-2.5 py-1.5 text-[12px] text-text-primary w-full"
-                />
+            <>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="text-[9px] font-bold tracking-[.08em] uppercase text-text-secondary block mb-1">
+                    {t('inviteEmail')}
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@example.com"
+                    className="border border-border px-2.5 py-1.5 text-[12px] text-text-primary w-full"
+                  />
+                </div>
+                <button
+                  onClick={handleGenerate}
+                  disabled={!email || inviteMutation.isPending}
+                  className="bg-dark text-white text-[11px] font-bold px-3 py-1.5 min-h-[44px] flex items-center justify-center"
+                >
+                  {t('generateLink')}
+                </button>
+                <button
+                  onClick={() => { setFormOpen(false); setPrefilledEmail(null); setInviteError(null) }}
+                  className="border border-border text-text-secondary text-[11px] px-3 py-1.5 bg-transparent min-h-[44px] flex items-center justify-center"
+                >
+                  {t('cancel')}
+                </button>
               </div>
-              <button
-                onClick={handleGenerate}
-                disabled={!email || inviteMutation.isPending}
-                className="bg-dark text-white text-[11px] font-bold px-3 py-1.5 min-h-[44px] flex items-center justify-center"
-              >
-                {t('generateLink')}
-              </button>
-              <button
-                onClick={() => { setFormOpen(false); setPrefilledEmail(null) }}
-                className="border border-border text-text-secondary text-[11px] px-3 py-1.5 bg-transparent min-h-[44px] flex items-center justify-center"
-              >
-                {t('cancel')}
-              </button>
-            </div>
-            {inviteError && (
-              <p className="text-[12px] text-red-600 mt-1">{inviteError}</p>
-            )}
+              {inviteError && (
+                <p className="text-[12px] text-red-600 mt-1">{inviteError}</p>
+              )}
+            </>
           ) : (
             <div>
               <div className="bg-surface border border-border p-2 font-mono text-[11px] text-text-primary break-all mb-2">
