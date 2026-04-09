@@ -56,6 +56,9 @@ public class Caregiver {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String languages = "[]";
 
+    @Column(name = "npi", length = 10)
+    private String npi;
+
     @Column(name = "fcm_token", columnDefinition = "TEXT")
     private String fcmToken;
 
@@ -82,6 +85,7 @@ public class Caregiver {
     public void setHomeLat(BigDecimal homeLat) { this.homeLat = homeLat; }
     public void setHomeLng(BigDecimal homeLng) { this.homeLng = homeLng; }
     public void setLanguages(String languages) { this.languages = languages; }
+    public void setNpi(String npi) { this.npi = npi; }
     public void setFcmToken(String fcmToken) { this.fcmToken = fcmToken; }
 
     public UUID getId() { return id; }
@@ -97,6 +101,7 @@ public class Caregiver {
     public CaregiverStatus getStatus() { return status; }
     public boolean hasPet() { return hasPet; }
     public String getLanguages() { return languages; }
+    public String getNpi() { return npi; }
     public String getFcmToken() { return fcmToken; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

@@ -22,6 +22,12 @@ public class Agency {
     @Column(nullable = false, length = 50)
     private String timezone = "America/New_York";
 
+    @Column(name = "npi", length = 10)
+    private String npi;
+
+    @Column(name = "tax_id", length = 9)
+    private String taxId;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -41,4 +47,9 @@ public class Agency {
     public void setName(String name) { this.name = name; }
     public void setState(String state) { this.state = state; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
+    public void setNpi(String npi) { this.npi = npi; }
+    public void setTaxId(String taxId) { this.taxId = taxId; }
+
+    public String getNpi() { return npi; }
+    public String getTaxId() { return taxId; }
 }

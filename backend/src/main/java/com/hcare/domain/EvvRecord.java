@@ -71,6 +71,9 @@ public class EvvRecord {
     @Column(name = "device_captured_at")
     private LocalDateTime deviceCapturedAt;
 
+    @Column(name = "aggregator_visit_id", length = 100)
+    private String aggregatorVisitId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -91,6 +94,7 @@ public class EvvRecord {
     public void setStateFields(String stateFields) { this.stateFields = stateFields; }
     public void setCapturedOffline(boolean capturedOffline) { this.capturedOffline = capturedOffline; }
     public void setDeviceCapturedAt(LocalDateTime deviceCapturedAt) { this.deviceCapturedAt = deviceCapturedAt; }
+    public void setAggregatorVisitId(String aggregatorVisitId) { this.aggregatorVisitId = aggregatorVisitId; }
 
     public UUID getId() { return id; }
     public UUID getShiftId() { return shiftId; }
@@ -106,4 +110,5 @@ public class EvvRecord {
     public boolean isCapturedOffline() { return capturedOffline; }
     public LocalDateTime getDeviceCapturedAt() { return deviceCapturedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public String getAggregatorVisitId() { return aggregatorVisitId; }
 }
