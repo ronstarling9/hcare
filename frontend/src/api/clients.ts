@@ -29,3 +29,21 @@ export async function createClient(req: CreateClientRequest): Promise<ClientResp
   const response = await apiClient.post<ClientResponse>('/clients', req)
   return response.data
 }
+
+export interface FamilyPortalUserResponse {
+  id: string
+  email: string
+  name: string | null
+  lastLoginAt: string | null
+  clientId: string
+  createdAt: string
+}
+
+export async function listFamilyPortalUsers(
+  clientId: string,
+): Promise<PageResponse<FamilyPortalUserResponse>> {
+  const res = await apiClient.get<PageResponse<FamilyPortalUserResponse>>(
+    `/clients/${clientId}/family-portal-users`,
+  )
+  return res.data
+}

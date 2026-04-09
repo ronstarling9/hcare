@@ -23,6 +23,7 @@ i18n
       'payers',
       'evvStatus',
       'auth',
+      'portal',
     ],
     backend: {
       loadPath: '/locales/{{lng}}/{{ns}}.json',

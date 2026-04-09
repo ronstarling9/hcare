@@ -31,6 +31,20 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
                                                         LocalDateTime start,
                                                         LocalDateTime end);
 
+    // Last visit — most recent COMPLETED shift for a client.
+    Optional<Shift> findFirstByClientIdAndStatusOrderByScheduledStartDesc(
+        UUID clientId, ShiftStatus status);
+
+    // Upcoming visits — DB-side TOP 3 to avoid loading 90 days of shifts into memory.
+    // Excludes CANCELLED and MISSED shifts via the excludedStatuses collection.
+    List<Shift> findTop3ByClientIdAndStatusNotInAndScheduledStartAfterOrderByScheduledStartAsc(
+        UUID clientId, Collection<ShiftStatus> excludedStatuses, LocalDateTime after);
+
+    // Today's visit window — explicit agencyId predicate guards against edge cases where
+    // the Hibernate agencyFilter may not activate for FAMILY_PORTAL-role requests.
+    List<Shift> findByClientIdAndAgencyIdAndScheduledStartBetween(
+        UUID clientId, UUID agencyId, LocalDateTime start, LocalDateTime end);
+
     List<Shift> findByCaregiverIdAndScheduledStartBetween(UUID caregiverId,
                                                            LocalDateTime start,
                                                            LocalDateTime end);

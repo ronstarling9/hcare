@@ -19,6 +19,9 @@ public class Agency {
     @Column(nullable = false, columnDefinition = "CHAR(2)")
     private String state;
 
+    @Column(nullable = false, length = 50)
+    private String timezone = "America/New_York";
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -32,8 +35,10 @@ public class Agency {
     public UUID getId() { return id; }
     public String getName() { return name; }
     public String getState() { return state; }
+    public String getTimezone() { return timezone; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 
     public void setName(String name) { this.name = name; }
     public void setState(String state) { this.state = state; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
 }

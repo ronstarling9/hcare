@@ -4,6 +4,7 @@ import { usePanelStore } from '../../store/panelStore'
 import { formatLocalDate } from '../../utils/dateFormat'
 import { useClientDetail, useClientAuthorizations } from '../../hooks/useClients'
 import { CarePlanTab } from './CarePlanTab'
+import FamilyPortalTab from './FamilyPortalTab'
 
 type Tab = 'overview' | 'carePlan' | 'authorizations' | 'documents' | 'familyPortal'
 
@@ -171,7 +172,7 @@ export function ClientDetailPanel({ clientId, backLabel, initialTab }: ClientDet
           <p className="text-text-secondary text-[13px]">{t('documentsPhaseNote')}</p>
         )}
         {activeTab === 'familyPortal' && (
-          <p className="text-text-secondary text-[13px]">{t('familyPortalPhaseNote')}</p>
+          <FamilyPortalTab clientId={clientId} />
         )}
       </div>
     </div>

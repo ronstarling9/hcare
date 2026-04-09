@@ -10,6 +10,10 @@ import { PayersPage } from './components/payers/PayersPage'
 import { EvvStatusPage } from './components/evv/EvvStatusPage'
 import { LoginPage } from './pages/LoginPage'
 import { useAuthStore } from './store/authStore'
+import PortalGuard from './components/portal/PortalGuard'
+import PortalLayout from './components/portal/PortalLayout'
+import PortalVerifyPage from './pages/PortalVerifyPage'
+import PortalDashboardPage from './pages/PortalDashboardPage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -46,6 +50,17 @@ export default function App() {
         <Route path="/evv" element={<EvvStatusPage />} />
         <Route path="/settings" element={<SettingsPlaceholder />} />
       </Route>
+      <Route path="/portal/verify" element={<PortalVerifyPage />} />
+      <Route
+        path="/portal/dashboard"
+        element={
+          <PortalGuard>
+            <PortalLayout>
+              <PortalDashboardPage />
+            </PortalLayout>
+          </PortalGuard>
+        }
+      />
     </Routes>
   )
 }

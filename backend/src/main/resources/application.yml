@@ -20,6 +20,12 @@ hcare:
   jwt:
     secret: ${JWT_SECRET:dev-insecure-default-secret-not-for-production-use-must-be-at-least-256-bits}
     expiration-ms: 86400000
+  portal:
+    base-url: ${APP_BASE_URL:http://localhost:5173}
+    trusted-proxy: ${PORTAL_TRUSTED_PROXY:false}
+    cleanup-cron: ${PORTAL_CLEANUP_CRON:0 0 3 * * *}
+    jwt:
+      expiration-days: ${PORTAL_JWT_EXPIRATION_DAYS:30}
   storage:
     provider: ${HCARE_STORAGE_PROVIDER:local}
     documents-dir: ${HCARE_DOCUMENTS_DIR:/var/hcare/documents}

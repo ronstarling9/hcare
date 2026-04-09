@@ -148,9 +148,9 @@ class ClientDomainIT extends AbstractIntegrationTest {
         familyPortalUserRepo.save(
             new FamilyPortalUser(clientB.getId(), agencyB.getId(), "son@lookup.com"));
 
-        // Lookup scoped by agency — returns the correct record, not the other agency's
-        assertThat(familyPortalUserRepo.findByAgencyIdAndEmail(agencyA.getId(), "son@lookup.com")).isPresent();
-        assertThat(familyPortalUserRepo.findByAgencyIdAndEmail(agencyB.getId(), "son@lookup.com")).isPresent();
-        assertThat(familyPortalUserRepo.findByAgencyIdAndEmail(agencyA.getId(), "notexists@lookup.com")).isEmpty();
+        // Lookup scoped by (client, agency) — returns the correct record, not the other agency's
+        assertThat(familyPortalUserRepo.findByClientIdAndAgencyIdAndEmail(clientA.getId(), agencyA.getId(), "son@lookup.com")).isPresent();
+        assertThat(familyPortalUserRepo.findByClientIdAndAgencyIdAndEmail(clientB.getId(), agencyB.getId(), "son@lookup.com")).isPresent();
+        assertThat(familyPortalUserRepo.findByClientIdAndAgencyIdAndEmail(clientA.getId(), agencyA.getId(), "notexists@lookup.com")).isEmpty();
     }
 }

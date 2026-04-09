@@ -30,5 +30,8 @@ public abstract class AbstractIntegrationTest {
         registry.add("hcare.jwt.secret",
             () -> "test-secret-key-must-be-at-least-256-bits-for-hmac-sha256-algorithm-ok");
         registry.add("hcare.jwt.expiration-ms", () -> "86400000");
+        registry.add("hcare.portal.jwt.expiration-days", () -> "30");
+        registry.add("hcare.portal.base-url", () -> "http://localhost:5173");
+        registry.add("hcare.portal.cleanup-cron", () -> "-");
     }
 }

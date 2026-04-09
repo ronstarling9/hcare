@@ -23,6 +23,7 @@
   "carePlanPhaseNote": "Care plan coming soon.",
   "documentsPhaseNote": "Documents coming soon.",
   "familyPortalPhaseNote": "Family portal coming soon.",
+  "familyPortalTabAccess": "Family Portal Access",
   "loadError": "Failed to load client. Check your connection.",
   "authHeader": "Auth #{{authNumber}}",
   "authUnitsUsed": "{{used}}/{{authorized}} {{unitType}}s used",

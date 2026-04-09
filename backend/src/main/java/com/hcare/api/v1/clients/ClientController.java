@@ -1,5 +1,8 @@
 package com.hcare.api.v1.clients;
 
+import com.hcare.api.v1.family.FamilyPortalService;
+import com.hcare.security.UserPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.hcare.api.v1.clients.dto.AddAdlTaskRequest;
 import com.hcare.api.v1.clients.dto.AddDiagnosisRequest;
 import com.hcare.api.v1.clients.dto.AddFamilyPortalUserRequest;
@@ -35,9 +38,11 @@ import java.util.UUID;
 public class ClientController {
 
     private final ClientService clientService;
+    private final FamilyPortalService familyPortalService;
 
-    public ClientController(ClientService clientService) {
+    public ClientController(ClientService clientService, FamilyPortalService familyPortalService) {
         this.clientService = clientService;
+        this.familyPortalService = familyPortalService;
     }
 
     @GetMapping
@@ -287,5 +292,15 @@ public class ClientController {
             @PathVariable UUID fpuId) {
         clientService.removeFamilyPortalUser(id, fpuId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/family-portal-users/invite")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
+    public ResponseEntity<com.hcare.api.v1.family.dto.InviteResponse> inviteFamilyPortalUser(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.hcare.api.v1.family.dto.InviteRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        clientService.requireClientForInvite(id);
+        return ResponseEntity.ok(familyPortalService.generateInvite(id, principal.getAgencyId(), request));
     }
 }
