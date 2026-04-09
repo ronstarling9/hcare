@@ -18,15 +18,23 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class FamilyPortalService {
@@ -182,55 +190,67 @@ public class FamilyPortalService {
         Shift todayShift = todayShifts.stream()
             .filter(s -> s.getStatus() != ShiftStatus.CANCELLED
                       && s.getStatus() != ShiftStatus.MISSED)
-            .min(java.util.Comparator.comparing(Shift::getScheduledStart))
+            .min(Comparator.comparing(Shift::getScheduledStart))
             .orElse(null);
 
         // Upcoming: next 3 non-CANCELLED/MISSED shifts after end of today, ordered ascending.
-        // Uses a DB-side TOP 3 derived query to avoid loading a 90-day window into memory.
+        // Uses explicit agencyId predicate and a DB-side TOP 3 derived query to avoid loading
+        // a 90-day window into memory.
+        Collection<ShiftStatus> excludedStatuses = List.of(ShiftStatus.CANCELLED, ShiftStatus.MISSED);
         List<Shift> upcomingShifts = shiftRepo
-            .findTop3ByClientIdAndStatusNotInAndScheduledStartAfterOrderByScheduledStartAsc(
-                clientId,
-                java.util.List.of(ShiftStatus.CANCELLED, ShiftStatus.MISSED),
-                startOfTomorrow);
+            .findTop3ByClientIdAndAgencyIdAndStatusNotInAndScheduledStartAfterOrderByScheduledStartAsc(
+                clientId, agencyId, excludedStatuses, startOfTomorrow);
 
         // Collect all caregiver IDs needed (today's shift + upcoming shifts) for a single bulk fetch.
         // This eliminates the N+1 that would otherwise occur in buildTodayVisitDto / buildCaregiverDto.
-        java.util.Set<UUID> allCaregiverIds = new java.util.HashSet<>();
+        Set<UUID> allCaregiverIds = new HashSet<>();
         if (todayShift != null && todayShift.getCaregiverId() != null) {
             allCaregiverIds.add(todayShift.getCaregiverId());
         }
         upcomingShifts.forEach(s -> { if (s.getCaregiverId() != null) allCaregiverIds.add(s.getCaregiverId()); });
 
-        java.util.Map<UUID, Caregiver> caregiverMap = caregiverRepo.findAllById(allCaregiverIds)
+        Map<UUID, Caregiver> caregiverMap = caregiverRepo.findAllById(allCaregiverIds)
             .stream()
-            .collect(java.util.stream.Collectors.toMap(Caregiver::getId,
-                java.util.function.Function.identity()));
+            .collect(Collectors.toMap(Caregiver::getId, Function.identity()));
 
         // Similarly collect all service type IDs (today + upcoming) for a single bulk fetch.
-        java.util.Set<UUID> allServiceTypeIds = new java.util.HashSet<>();
+        Set<UUID> allServiceTypeIds = new HashSet<>();
         if (todayShift != null && todayShift.getServiceTypeId() != null) {
             allServiceTypeIds.add(todayShift.getServiceTypeId());
         }
         upcomingShifts.forEach(s -> { if (s.getServiceTypeId() != null) allServiceTypeIds.add(s.getServiceTypeId()); });
 
-        java.util.Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepo.findAllById(allServiceTypeIds)
+        Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepo.findAllById(allServiceTypeIds)
             .stream()
-            .collect(java.util.stream.Collectors.toMap(ServiceType::getId,
-                java.util.function.Function.identity()));
+            .collect(Collectors.toMap(ServiceType::getId, Function.identity()));
+
+        // Fetch last-visit shift before DTO building so we can batch EVV records for both
+        // todayShift and lastVisitShift in a single bulk lookup.
+        Optional<Shift> lastVisitShift = shiftRepo
+            .findFirstByClientIdAndAgencyIdAndStatusOrderByScheduledStartDesc(
+                clientId, agencyId, ShiftStatus.COMPLETED);
+
+        // Batch-fetch EVV records for all shifts that need them (today + last visit).
+        Set<UUID> evvShiftIds = new HashSet<>();
+        if (todayShift != null) evvShiftIds.add(todayShift.getId());
+        lastVisitShift.ifPresent(s -> evvShiftIds.add(s.getId()));
+        Map<UUID, EvvRecord> evvMap = evvRepo.findByShiftIdIn(evvShiftIds)
+            .stream()
+            .collect(Collectors.toMap(EvvRecord::getShiftId, Function.identity()));
 
         PortalDashboardResponse.TodayVisitDto todayVisitDto = null;
         if (todayShift != null) {
-            todayVisitDto = buildTodayVisitDto(todayShift, caregiverMap, serviceTypeMap);
+            todayVisitDto = buildTodayVisitDto(todayShift, caregiverMap, serviceTypeMap,
+                Optional.ofNullable(evvMap.get(todayShift.getId())));
         }
 
         List<PortalDashboardResponse.UpcomingVisitDto> upcoming = upcomingShifts.stream()
             .map(s -> buildUpcomingDto(s, caregiverMap))
             .toList();
 
-        // Last visit: most recent COMPLETED shift.
-        PortalDashboardResponse.LastVisitDto lastVisitDto = shiftRepo
-            .findFirstByClientIdAndStatusOrderByScheduledStartDesc(clientId, ShiftStatus.COMPLETED)
-            .map(this::buildLastVisitDto)
+        // Last visit: most recent COMPLETED shift (already fetched above).
+        PortalDashboardResponse.LastVisitDto lastVisitDto = lastVisitShift
+            .map(s -> buildLastVisitDto(s, Optional.ofNullable(evvMap.get(s.getId()))))
             .orElse(null);
 
         return new PortalDashboardResponse(
@@ -239,16 +259,16 @@ public class FamilyPortalService {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    // caregiverMap and serviceTypeMap are pre-fetched in bulk by getDashboard — no per-shift DB lookup.
+    // caregiverMap, serviceTypeMap, and evv are pre-fetched in bulk by getDashboard — no per-shift DB lookup.
     private PortalDashboardResponse.TodayVisitDto buildTodayVisitDto(
             Shift shift,
-            java.util.Map<UUID, Caregiver> caregiverMap,
-            java.util.Map<UUID, ServiceType> serviceTypeMap) {
+            Map<UUID, Caregiver> caregiverMap,
+            Map<UUID, ServiceType> serviceTypeMap,
+            Optional<EvvRecord> evv) {
         String statusStr = mapShiftStatus(shift.getStatus());
         String clockedInAt = null;
         String clockedOutAt = null;
 
-        Optional<EvvRecord> evv = evvRepo.findByShiftId(shift.getId());
         if (evv.isPresent()) {
             if (evv.get().getTimeIn() != null) {
                 clockedInAt = evv.get().getTimeIn().toString();
@@ -278,7 +298,7 @@ public class FamilyPortalService {
 
     // caregiverMap is pre-fetched in bulk by the caller — no per-shift DB lookup.
     private PortalDashboardResponse.UpcomingVisitDto buildUpcomingDto(
-            Shift shift, java.util.Map<UUID, Caregiver> caregiverMap) {
+            Shift shift, Map<UUID, Caregiver> caregiverMap) {
         String caregiverName = null;
         if (shift.getCaregiverId() != null) {
             Caregiver cg = caregiverMap.get(shift.getCaregiverId());
@@ -293,15 +313,15 @@ public class FamilyPortalService {
         );
     }
 
-    private PortalDashboardResponse.LastVisitDto buildLastVisitDto(Shift shift) {
+    // evv is pre-fetched in bulk by getDashboard — no per-shift DB lookup.
+    private PortalDashboardResponse.LastVisitDto buildLastVisitDto(Shift shift, Optional<EvvRecord> evv) {
         String clockedOutAt = null;
         int durationMinutes = 0;
 
-        Optional<EvvRecord> evv = evvRepo.findByShiftId(shift.getId());
         if (evv.isPresent() && evv.get().getTimeOut() != null) {
             clockedOutAt = evv.get().getTimeOut().toString();
             if (evv.get().getTimeIn() != null) {
-                durationMinutes = (int) java.time.Duration.between(
+                durationMinutes = (int) Duration.between(
                     evv.get().getTimeIn(), evv.get().getTimeOut()).toMinutes();
             }
         }
@@ -319,8 +339,8 @@ public class FamilyPortalService {
     private PortalDashboardResponse.CaregiverDto buildCaregiverDto(
             UUID caregiverId,
             UUID serviceTypeId,
-            java.util.Map<UUID, Caregiver> caregiverMap,
-            java.util.Map<UUID, ServiceType> serviceTypeMap) {
+            Map<UUID, Caregiver> caregiverMap,
+            Map<UUID, ServiceType> serviceTypeMap) {
         Caregiver cg = caregiverMap.get(caregiverId);
         String name = (cg != null) ? cg.getFirstName() + " " + cg.getLastName() : "Unknown";
         ServiceType st = (serviceTypeId != null) ? serviceTypeMap.get(serviceTypeId) : null;
