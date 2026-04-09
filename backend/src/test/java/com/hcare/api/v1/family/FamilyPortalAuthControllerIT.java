@@ -16,7 +16,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.util.HexFormat;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +35,7 @@ class FamilyPortalAuthControllerIT extends AbstractIntegrationTest {
     @Autowired private AgencyUserRepository userRepo;
     @Autowired private ClientRepository clientRepo;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private FamilyPortalTokenRepository tokenRepo;
 
     private UUID clientId;
     private String adminToken;
@@ -120,20 +125,43 @@ class FamilyPortalAuthControllerIT extends AbstractIntegrationTest {
 
     @Test
     void invite_storesSha256Hash_notRawToken() {
-        // This is verified implicitly: verify works by hash lookup. If raw token were stored
-        // and hash lookup failed, the verify test above would fail. Additionally, confirm
-        // the URL token != anything in the DB by checking invite response contains no DB row.
+        // Generate invite
         ResponseEntity<InviteResponse> inviteResp = restTemplate.exchange(
             "/api/v1/clients/" + clientId + "/family-portal-users/invite",
             HttpMethod.POST,
             new HttpEntity<>("{\"email\":\"hash-check@example.com\"}", adminAuth()),
             InviteResponse.class);
+        assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Extract raw token from invite URL (128 hex chars = 64 bytes)
         String rawToken = UriComponentsBuilder
             .fromUriString(inviteResp.getBody().inviteUrl())
             .build()
             .getQueryParams()
             .getFirst("token");
-        // Raw token is 128 hex chars (64 bytes). Verify returns 200, meaning hash lookup works.
         assertThat(rawToken).hasSize(128);
+
+        // Compute SHA-256(rawToken) in the test — matches FamilyPortalService.sha256Hex()
+        String expectedHash = sha256Hex(rawToken);
+
+        // Assert the hash (not the raw token) is stored in the database
+        assertThat(tokenRepo.findByTokenHash(expectedHash))
+            .as("SHA-256 hash should be stored in database")
+            .isPresent();
+
+        // Assert the raw token is NOT stored in the database
+        assertThat(tokenRepo.findByTokenHash(rawToken))
+            .as("Raw token should NOT be stored in database")
+            .isEmpty();
+    }
+
+    private static String sha256Hex(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 }
