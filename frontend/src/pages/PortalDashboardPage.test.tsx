@@ -130,19 +130,17 @@ describe('PortalDashboardPage', () => {
     expect(document.querySelector('[data-testid="clock-icon"]')).toBeInTheDocument()
   })
 
-  it('shows upcoming visits capped at 3', async () => {
+  it('shows upcoming visits (backend caps at 3)', async () => {
     mockGetDashboard.mockResolvedValue({
       ...BASE,
       upcomingVisits: [
         { scheduledStart: '2026-04-09T09:00:00', scheduledEnd: '2026-04-09T11:00:00', caregiverName: 'Maria' },
         { scheduledStart: '2026-04-10T09:00:00', scheduledEnd: '2026-04-10T11:00:00', caregiverName: 'Maria' },
         { scheduledStart: '2026-04-11T09:00:00', scheduledEnd: '2026-04-11T11:00:00', caregiverName: 'Maria' },
-        { scheduledStart: '2026-04-12T09:00:00', scheduledEnd: '2026-04-12T11:00:00', caregiverName: 'Maria' },
-        { scheduledStart: '2026-04-13T09:00:00', scheduledEnd: '2026-04-13T11:00:00', caregiverName: 'Maria' },
       ],
     })
     renderDashboard()
-    // Backend returned 5 items but component caps display at 3
+    // Backend (findTop3…) already caps the array at 3; component renders all items
     await waitFor(() => expect(screen.getAllByText(/Maria/).length).toBe(3))
   })
 
