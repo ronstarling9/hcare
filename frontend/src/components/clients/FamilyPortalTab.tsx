@@ -163,14 +163,11 @@ export default function FamilyPortalTab({ clientId }: Props) {
                   {t('done')}
                 </button>
               </div>
-              {expiresAt && (() => {
-                const { date, time } = formatExpiry(expiresAt)
-                return (
-                  <p className="text-[12px] text-text-secondary">
-                    {t('inviteExpiry', { date, time })}
-                  </p>
-                )
-              })()}
+              {expiresAt && (
+                <p className="text-[12px] text-text-secondary">
+                  {t('inviteExpiry', formatExpiry(expiresAt))}
+                </p>
+              )}
             </div>
           )}
         </div>
