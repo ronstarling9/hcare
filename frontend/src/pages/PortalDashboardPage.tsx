@@ -57,8 +57,6 @@ export default function PortalDashboardPage() {
     }
   }, [isError, error, logout, navigate])
 
-  const status410 = (error as { response?: { status?: number } })?.response?.status === 410
-
   if (isLoading) {
     return (
       <div role="status" aria-live="polite" className="p-6 text-center text-[13px] text-text-secondary">
@@ -66,6 +64,8 @@ export default function PortalDashboardPage() {
       </div>
     )
   }
+
+  const status410 = (error as { response?: { status?: number } })?.response?.status === 410
 
   if (status410) {
     return (

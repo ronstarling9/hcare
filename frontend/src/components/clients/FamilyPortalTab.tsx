@@ -157,7 +157,7 @@ export default function FamilyPortalTab({ clientId }: Props) {
                   {copied ? t('linkCopied') : t('copyLink')}
                 </button>
                 <button
-                  onClick={() => { setFormOpen(false); setPrefilledEmail(null) }}
+                  onClick={() => { setFormOpen(false); setPrefilledEmail(null); setInviteError(null) }}
                   className="border border-border text-text-secondary text-[11px] px-3 py-1.5 min-h-[44px] flex items-center justify-center"
                 >
                   {t('done')}
