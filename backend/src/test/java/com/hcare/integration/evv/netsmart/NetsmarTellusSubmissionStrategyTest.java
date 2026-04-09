@@ -35,8 +35,10 @@ class NetsmarTellusSubmissionStrategyTest {
         EvvSubmissionResult result = strategy.submit(ctx(), creds());
 
         assertThat(result.success()).isTrue();
-        assertThat(result.aggregatorVisitId()).startsWith("evv_");
-        assertThat(result.aggregatorVisitId()).endsWith(".dat");
+        String visitId = result.aggregatorVisitId();
+        assertThat(visitId).startsWith("evv_");
+        assertThat(visitId).endsWith(".dat");
+        assertThat(visitId).contains(ctx().agencyId().toString());
     }
 
     @Test

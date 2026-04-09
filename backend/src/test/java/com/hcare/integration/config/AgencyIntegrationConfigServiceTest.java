@@ -72,6 +72,19 @@ class AgencyIntegrationConfigServiceTest {
     }
 
     @Test
+    void save_nullPayerType_treatedAsDistinctKey() {
+        AgencyIntegrationConfig config = buildConfig(STATE_CODE, null);
+        when(repo.findForUpdate(AGENCY_ID, INTEGRATION_TYPE, STATE_CODE, null))
+                .thenReturn(Optional.empty());
+        when(repo.save(config)).thenReturn(config);
+
+        AgencyIntegrationConfig saved = service.save(config);
+
+        assertThat(saved).isSameAs(config);
+        verify(repo).findForUpdate(AGENCY_ID, INTEGRATION_TYPE, STATE_CODE, null);
+    }
+
+    @Test
     void findActive_delegatesCorrectly() {
         AgencyIntegrationConfig config = buildConfig(STATE_CODE, PAYER_TYPE);
         when(repo.findByAgencyIdAndIntegrationTypeAndActiveTrue(AGENCY_ID, INTEGRATION_TYPE))

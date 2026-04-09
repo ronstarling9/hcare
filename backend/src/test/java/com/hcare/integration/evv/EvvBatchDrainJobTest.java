@@ -3,10 +3,13 @@ package com.hcare.integration.evv;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import org.mockito.InOrder;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -135,6 +138,42 @@ class EvvBatchDrainJobTest {
                 eq("SUBMITTED"),
                 eq("AGG-V1"),
                 eq(ctx.evvRecordId()));
+    }
+
+    @Test
+    void drain_successfulSubmit_txOrderIsClaimThenSubmitThenFinalize() throws Exception {
+        UUID agencyId = UUID.randomUUID();
+        EvvSubmissionContext ctx = buildContext(agencyId);
+        String contextJson = objectMapper.writeValueAsString(ctx);
+
+        EvvSubmissionRecord record = pendingRecord(agencyId, contextJson);
+        record.setAggregatorType(AggregatorType.SANDATA.name());
+
+        AgencyEvvCredentials agencyCreds = new AgencyEvvCredentials(
+                agencyId, "SANDATA", "encrypted-blob", null, true);
+        SandataCredentials typedCreds = new SandataCredentials("u", "p", "pid");
+
+        EvvSubmissionStrategy mockStrategy = mock(EvvSubmissionStrategy.class);
+        when(mockStrategy.submit(any(), any())).thenReturn(EvvSubmissionResult.ok("AGG-V2"));
+        when(mockStrategy.credentialClass()).thenReturn((Class) SandataCredentials.class);
+
+        when(systemRepo.findDistinctAgenciesWithPendingBatch()).thenReturn(List.of(agencyId));
+        when(systemRepo.findNextBatchPending(eq(agencyId), any(Pageable.class)))
+                .thenReturn(List.of(record))
+                .thenReturn(List.of());
+        when(batchRecordManager.claimRecord(record.getId())).thenReturn(1);
+        when(credentialsRepository.findByAgencyIdAndAggregatorTypeAndActiveTrue(
+                eq(agencyId), eq("SANDATA")))
+                .thenReturn(Optional.of(agencyCreds));
+        when(encryptionService.decrypt(eq("encrypted-blob"), any())).thenReturn(typedCreds);
+        when(strategyFactory.strategyFor(AggregatorType.SANDATA)).thenReturn(mockStrategy);
+
+        job.drain();
+
+        InOrder order = inOrder(batchRecordManager, mockStrategy);
+        order.verify(batchRecordManager).claimRecord(any());
+        order.verify(mockStrategy).submit(any(), any());
+        order.verify(batchRecordManager).finalizeRecord(any(), eq("SUBMITTED"), any(), any());
     }
 
     @Test

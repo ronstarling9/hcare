@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.hcare.evv.AggregatorType;
 import com.hcare.integration.audit.IntegrationAuditWriter;
 import com.hcare.integration.evv.exceptions.UnsupportedAggregatorException;
+import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -52,6 +53,22 @@ class EvvStrategyFactoryTest {
         verify(auditWriter).record(any(), any(), any(), any(), any(boolean.class), any(long.class), any());
         // The delegate (inner-most) is also called
         verify(mockStrategy).submit(any(), any());
+    }
+
+    @Test
+    void decoratorOrder_auditingWrapsRetrying() throws Exception {
+        EvvSubmissionStrategy delegate = mockStrategy(AggregatorType.SANDATA);
+        IntegrationAuditWriter auditWriter = mock(IntegrationAuditWriter.class);
+        EvvStrategyFactory factory = new EvvStrategyFactory(List.of(delegate), auditWriter);
+
+        EvvSubmissionStrategy wrapped = factory.strategyFor(AggregatorType.SANDATA);
+
+        assertThat(wrapped).isInstanceOf(AuditingEvvSubmissionStrategy.class);
+
+        Field delegateField = AuditingEvvSubmissionStrategy.class.getDeclaredField("delegate");
+        delegateField.setAccessible(true);
+        Object inner = delegateField.get(wrapped);
+        assertThat(inner).isInstanceOf(RetryingEvvSubmissionStrategy.class);
     }
 
     @SuppressWarnings("unchecked")
