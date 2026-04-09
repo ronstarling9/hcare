@@ -1,7 +1,7 @@
 # Family Portal — Design Spec
 
 **Date:** 2026-04-08
-**Status:** v2 — revised after UX review and critical design review
+**Status:** v3 — revised after second UX review and critical design review
 
 ---
 
@@ -29,7 +29,7 @@ This spec covers two related surfaces:
 - Family member commenting or messaging
 - Plan version history or clinical details visible to family
 - Family portal on mobile app (React Native)
-- Multiple-visits-per-day layout (P2 — API returns the first non-cancelled shift for today)
+- Multiple-visits-per-day layout (P2 — API returns the shift with the earliest `scheduledStart` that is not CANCELLED for today)
 
 ---
 
@@ -53,11 +53,15 @@ A new `portalAuthStore.ts` (Zustand) is created alongside the existing `authStor
 The existing `authStore` and all admin guards are untouched.
 
 `PortalGuard` wraps protected portal routes. On mount it checks `portalAuthStore.token`:
-- If absent → redirects to `/portal/verify` with query param `?reason=no_session` — verify page shows "No active session. Ask your care coordinator for a new link."
+- If absent → redirects to `/portal/verify?reason=no_session` — verify page shows "No active session. Ask your care coordinator for a new link."
 - If present but the JWT is expired (detected by parsing the `exp` claim client-side before any API call) → redirects to `/portal/verify?reason=session_expired` — verify page shows "Your session has expired. Ask your care coordinator for a new link."
 - If present and valid → renders the dashboard.
 
-These two verify-page error states are visually distinct from the invalid/expired invite-token error (which arrives via `?reason=token_invalid`).
+Additionally, `usePortalDashboard` (the React Query hook) must handle API-level errors from `GET /family/portal/dashboard`:
+- `403 PORTAL_ACCESS_REVOKED` (admin deleted the `FamilyPortalUser` while JWT was still live) → clears `portalAuthStore` + `localStorage`, redirects to `/portal/verify?reason=access_revoked`
+- `410 CLIENT_DISCHARGED` (client record deactivated/discharged) → renders a dedicated "Care services concluded" screen without clearing the session
+
+All verify-page reason states are visually distinct from one another and from the invalid/expired invite-token error (`?reason=token_invalid`).
 
 ### Token flow
 
@@ -116,8 +120,10 @@ UserPrincipal principal = new UserPrincipal(userId, agencyId, role, clientId);
 
 - `POST /api/v1/clients/*/family-portal-users/invite` — requires `ADMIN` or `SCHEDULER`
 - `DELETE /api/v1/clients/*/family-portal-users/*` — requires `ADMIN` or `SCHEDULER`
-- `POST /api/v1/family/auth/verify` — public (no auth)
-- `GET /api/v1/family/portal/dashboard` — requires `FAMILY_PORTAL` role; `clientId` from `UserPrincipal` is the hard scope boundary (populated by filter — see above)
+- `POST /api/v1/family/auth/verify` — public (no auth); must be **rate-limited** (e.g., Spring's `@RateLimiter` or a servlet filter) to max 10 requests per IP per minute to prevent brute-force hash enumeration
+- `GET /api/v1/family/portal/dashboard` — requires `FAMILY_PORTAL` role; annotated `@PreAuthorize("hasRole('FAMILY_PORTAL')")` on the controller method — this annotation is mandatory; without it an admin JWT passes the filter and reaches the endpoint. `clientId` from `UserPrincipal` is the hard scope boundary.
+
+**CORS:** `SecurityConfig` must add the `app.base-url` origin to `allowedOrigins` for `/api/v1/family/**` endpoints. Without this, family portal requests from production domains will be blocked.
 
 ### Multi-tenancy note
 
@@ -133,7 +139,7 @@ UserPrincipal principal = new UserPrincipal(userId, agencyId, role, clientId);
 FamilyPortalToken
   ├── id            UUID PK
   ├── tokenHash     VARCHAR(64) UNIQUE NOT NULL  ← hex-encoded SHA-256 of the raw token
-  ├── fpUserId      UUID NOT NULL FK → family_portal_users.id
+  ├── fpUserId      UUID NOT NULL FK → family_portal_users.id ON DELETE CASCADE
   ├── clientId      UUID NOT NULL
   ├── agencyId      UUID NOT NULL
   ├── expiresAt     LocalDateTime NOT NULL  ← createdAt + 72 hours
@@ -185,7 +191,11 @@ Behaviour:
 
 ### `GET /api/v1/family/portal/dashboard`
 
-Auth: `FAMILY_PORTAL` JWT required. `clientId` from `UserPrincipal` (populated by `JwtAuthenticationFilter`).
+Auth: `FAMILY_PORTAL` JWT required. Annotated `@PreAuthorize("hasRole('FAMILY_PORTAL')")`.
+
+On each request, the handler must:
+1. Load `FamilyPortalUser` by `fpUserId` (JWT `sub` claim) — if not found (user was removed), return `403` with error code `PORTAL_ACCESS_REVOKED`. Frontend treats this as revocation: clears store + localStorage, redirects to `/portal/verify?reason=access_revoked`.
+2. Load `Client` by `clientId` — if `client.status == DISCHARGED` or `INACTIVE`, return `410` with error code `CLIENT_DISCHARGED`. Frontend shows a dedicated "Care services have concluded" screen (does not clear session).
 
 Returns:
 ```json
@@ -233,7 +243,7 @@ Returns:
 
 | Path | Purpose |
 |------|---------|
-| `frontend/src/store/portalAuthStore.ts` | Zustand store with `persist` to `localStorage` key `portal-auth`: `{ token, clientId, agencyId }` |
+| `frontend/src/store/portalAuthStore.ts` | Zustand store with `persist` to `localStorage` key `portal-auth`: `{ token, clientId, agencyId }` — see sketch below |
 | `frontend/src/components/portal/PortalGuard.tsx` | Checks portal JWT validity; redirects with `?reason=` on failure |
 | `frontend/src/components/portal/PortalLayout.tsx` | Minimal layout — no sidebar; includes logout button (clears `portalAuthStore` + `localStorage`) |
 | `frontend/src/pages/PortalVerifyPage.tsx` | Magic link landing; reads `?token=` and `?reason=`; auto-submits or shows reason error |
@@ -245,6 +255,36 @@ Returns:
 | `frontend/src/pages/PortalVerifyPage.test.tsx` | Unit tests |
 | `frontend/src/pages/PortalDashboardPage.test.tsx` | Unit tests |
 | `frontend/public/locales/en/portal.json` | All portal i18n keys |
+
+### `portalAuthStore.ts` sketch
+
+```ts
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+interface PortalAuthState {
+  token: string | null
+  clientId: string | null
+  agencyId: string | null
+  login: (token: string, clientId: string, agencyId: string) => void
+  logout: () => void
+}
+
+export const usePortalAuthStore = create<PortalAuthState>()(
+  persist(
+    (set) => ({
+      token: null,
+      clientId: null,
+      agencyId: null,
+      login: (token, clientId, agencyId) => set({ token, clientId, agencyId }),
+      logout: () => set({ token: null, clientId: null, agencyId: null }),
+    }),
+    { name: 'portal-auth' }  // localStorage key
+  )
+)
+```
+
+`usePortalAuthStore.getState().logout()` is the single logout call used by both `PortalLayout` sign-out and the `403`/revocation handler. It clears the store and, because `persist` is wired to `localStorage`, also removes the `portal-auth` key automatically.
 
 ### Modified files
 
@@ -285,13 +325,13 @@ Matches the Care Plan tab style exactly:
 - "+ Invite" button: `bg-dark text-white text-[11px] font-bold`
 - **User rows:** white card with name, email, "Last login" meta ("Never logged in" when `lastLoginAt` is null — never blank), a **"Send New Link"** ghost button, and a "Remove" ghost button
   - "Send New Link" re-opens the invite form with the email pre-filled
-  - "Remove" shows an inline confirmation: "Remove [name]? They will lose access immediately." with Cancel / Confirm buttons before calling the DELETE endpoint
+  - "Remove" shows an inline confirmation: "Remove [name]? Their access will be revoked on next page load. Any active session ends when they next visit the portal." with Cancel / Confirm buttons before calling the DELETE endpoint. Do not say "immediately" — the 30-day JWT stored in the family member's browser remains valid until the next API call triggers a `403 PORTAL_ACCESS_REVOKED` response.
 - Invite form opens inline below the list with `border border-blue bg-white p-3` treatment (same as `AddGoalForm`)
   - Email input (pre-filled when opened from "Send New Link")
   - "Generate Link" button (`bg-dark`)
   - After generation: monospace invite URL in `bg-surface border-border` container with a "Copy" button (`border border-blue text-blue`)
-  - Expiry note: `text-[12px] text-text-secondary` — "Generated at 2:34 PM, expires at 2:34 PM + 72 hrs (Apr 11)"
-  - If re-inviting an existing user: inline note `text-[12px] text-text-secondary` — "A new link will be sent to this existing user"
+  - Expiry note: `text-[12px] text-text-secondary` — "Link expires Apr 11 at 2:34 PM — valid for 72 hours"
+  - **When form is opened from "Send New Link"** (re-invite context already known): the inline note "A new link will be sent to this existing user" must appear immediately — before the admin clicks Generate, not only after the server responds. The form knows it is in re-invite mode from the moment it opens with a pre-filled email. Do not wait for a server 200 to surface this note.
 
 ### Portal Dashboard (`/portal/dashboard`)
 
@@ -301,9 +341,9 @@ Matches the Care Plan tab style exactly:
 - **Today's Visit card** — status pill styles (minimum `text-[12px]` throughout):
   - `IN_PROGRESS`: `bg-green-50 border border-green-200`, green dot, `text-green-700` "Maria is here now"
   - `GREY` (on time): `bg-surface border border-border`, gray dot, `text-text-secondary` "Maria is scheduled for 9:00 AM"
-  - `GREY` (late — current time > scheduledStart + 15 min): `bg-amber-50 border border-amber-200`, amber dot, `text-amber-700` "Scheduled for 9:00 AM — not yet started"
-  - `COMPLETED`: `bg-surface border border-border`, ✓ checkmark icon (not just color), `text-text-secondary` "Visit completed at 11:03 AM"
-  - `CANCELLED`: `bg-red-50 border border-red-200`, `text-red-700` "Today's visit was cancelled. Contact your care coordinator."
+  - `GREY` (late — current time > scheduledStart + 15 min): `bg-amber-50 border border-amber-200`, **clock icon** (not just an amber dot — do not rely on color alone), `text-amber-700` "Scheduled for 9:00 AM — not yet started. Contact your care coordinator."
+  - `COMPLETED`: `bg-surface border border-border`, ✓ checkmark icon (not just color), `text-text-primary` "Visit completed at 11:03 AM" — use `text-text-primary`, not `text-text-secondary`; completion is the most reassuring state on the screen
+  - `CANCELLED`: `bg-red-50 border border-red-200`, `text-red-700` "Today's visit was cancelled. Contact your care coordinator." **Caregiver card is hidden in CANCELLED state** — do not render the caregiver avatar/name when status is CANCELLED; showing it would imply a specific person cancelled, which may not be accurate
   - No visit today (`todayVisit: null`): `text-[13px] text-text-secondary text-center` "No visit scheduled for today"
   - Caregiver avatar: `bg-blue` circle with initials, name `text-[15px] font-bold`, service type `text-[13px] text-text-secondary`
   - Clock-in / scheduled-until times: `text-[14px] font-semibold text-text-primary` with timezone label (e.g., "9:04 AM EDT")
@@ -317,20 +357,24 @@ Matches the Care Plan tab style exactly:
 
 ### PortalVerifyPage
 
-Centered card on **`bg-surface`** background (not dark — establishes portal's own visual identity, avoids confusion with admin login). Four states:
+Centered card on **`bg-surface`** background (not dark — establishes portal's own visual identity, avoids confusion with admin login). Six states:
 
 1. **Auto-verifying** (token in query param, no `reason`): spinner + `role="status"` `aria-live="polite"` region announcing "Signing you in…"
-2. **Token invalid or expired** (`?reason=token_invalid` or `400 TOKEN_INVALID` / `TOKEN_EXPIRED`): "This link has expired or is invalid. Ask your care coordinator for a new one." — `text-text-primary` with a warning icon
-3. **Session expired** (`?reason=session_expired`): "Your session has expired. Ask your care coordinator for a new link." — visually distinct from state 2 (different icon or label)
-4. **No session** (`?reason=no_session`): "No active session found. Ask your care coordinator for an access link."
+2. **Token invalid or expired** (`?reason=token_invalid` or `400 TOKEN_INVALID` / `TOKEN_EXPIRED`): heading "Link expired", body "This link has expired or is invalid. Ask your care coordinator for a new one." — `text-text-primary` with a warning icon
+3. **Session expired** (`?reason=session_expired`): heading "Session expired", body "Your session has expired. Ask your care coordinator for a new link." — visually distinct from state 2 (different icon)
+4. **No session** (`?reason=no_session`): heading "No active session", body "No active session found. Ask your care coordinator for an access link." — reserved for unauthenticated arrivals with no JWT
+5. **Signed out** (`?reason=signed_out`): heading "You've been signed out", body "You've been signed out. Use your original link or ask your care coordinator to send a new one." — this is the state reached after intentional sign-out; must NOT reuse `no_session` copy
+6. **Access revoked** (`?reason=access_revoked`): heading "Access removed", body "Your portal access has been removed. Contact your care coordinator for more information." — reached after `403 PORTAL_ACCESS_REVOKED` from the API
 
-No form. All three error states use `text-[14px] text-text-primary` with a visible icon — not muted gray.
+No form. All error states use `text-[14px] text-text-primary` with a visible icon and a semantic heading (`<h1>` or `<h2>`) for screen reader landmark announcement — not muted gray, not icon-only.
+
+**URL cleanup:** After `?reason=` is read on mount, call `history.replaceState(null, '', '/portal/verify')` to strip the parameter from the URL bar. This prevents a family member from copying and sharing a URL that propagates an error reason unnecessarily.
 
 ### PortalLayout
 
 Minimal wrapper. Contains:
 - The portal header (shared with dashboard)
-- A **"Sign out"** link/button in the header, right-aligned: `text-[12px] text-text-secondary`. On click: clears `portalAuthStore`, removes `portal-auth` from `localStorage`, navigates to `/portal/verify?reason=no_session`.
+- A **"Sign out"** link/button in the header, right-aligned: minimum 44px touch target height (use padding to achieve this). On click: clears `portalAuthStore`, removes `portal-auth` from `localStorage`, navigates to `/portal/verify?reason=signed_out`. Do NOT navigate to `?reason=no_session` — that state is reserved for unauthenticated arrivals; `signed_out` has different and more accurate copy.
 - No sidebar, no admin navigation
 
 ---
@@ -347,9 +391,12 @@ Minimal wrapper. Contains:
 | No visit today | `todayVisit: null` → dashboard today card shows "No visit scheduled for today" |
 | `upcomingVisits` empty array | Upcoming section shows "No upcoming visits scheduled…" empty state |
 | `lastVisit: null` | Last visit section is omitted entirely |
-| `getPortalDashboard` network error | React Query retry × 2; on failure show a visible retry button with `text-[13px] text-text-primary` "Unable to load. Tap to retry." — no "Pull to refresh" (not a native gesture on desktop) |
+| `getPortalDashboard` network error | React Query retry × 2; on failure show a visible retry button with `text-[13px] text-text-primary` "Unable to load. Tap to retry." — no "Pull to refresh" (not a native gesture on desktop). React Query must be configured with `staleTime` such that stale cached data is not displayed without a visible "Last updated [time]" indicator — showing 2-day-old data silently is worse than showing the error state. |
+| `GET /family/portal/dashboard` returns `403 PORTAL_ACCESS_REVOKED` | Family member's `FamilyPortalUser` was deleted by admin. Frontend clears `portalAuthStore` + removes `portal-auth` from `localStorage`, navigates to `/portal/verify?reason=access_revoked` (verify page state 6). |
+| `GET /family/portal/dashboard` returns `410 CLIENT_DISCHARGED` | Client record is DISCHARGED or INACTIVE. Frontend renders a dedicated "Care services for [first name] have concluded. Please contact the agency for more information." screen without clearing the session. |
+| Voluntary sign-out | "Sign out" in PortalLayout clears store + localStorage, navigates to `/portal/verify?reason=signed_out` (verify page state 5). |
 | Admin generates link for existing email | `findOrCreate` — no error; admin sees "A new link will be sent to this existing user" inline note |
-| Concurrent invite requests for same email | `UNIQUE` constraint on `FamilyPortalUser(clientId, agencyId, email)` → one succeeds, one gets a 409; frontend retries once |
+| Concurrent invite requests for same email | `UNIQUE` constraint on `FamilyPortalUser(clientId, agencyId, email)` → one succeeds, one gets a `409`; frontend retries once. If the retry also fails, the invite form shows an inline error: "Unable to send invite. Please try again." — do not leave the error state undefined. |
 
 ---
 
@@ -358,10 +405,10 @@ Minimal wrapper. Contains:
 ### Backend
 - `FamilyPortalTokenIT`: token creation, SHA-256 hash stored (not raw), expiry (72 hrs), one-time-use (second verify call returns 400), nightly cleanup job deletes expired rows
 - `FamilyPortalAuthControllerIT`: happy path verify, expired token (400), missing/invalid token (400), verify with a raw token whose hash doesn't match (400)
-- `FamilyPortalDashboardControllerIT`: returns correct client data for `clientId` in JWT, rejects JWT with wrong `clientId` (403), rejects admin JWT on `/family/portal/*` (403), `todayVisit` null when no shift, CANCELLED status returned correctly, `lastVisit` present without noteText when notes null
+- `FamilyPortalDashboardControllerIT`: returns correct client data for `clientId` in JWT, rejects JWT with wrong `clientId` (403), rejects admin JWT on `/family/portal/*` (403), `todayVisit` null when no shift, CANCELLED status returned correctly, `lastVisit` present without noteText when notes null, returns `403 PORTAL_ACCESS_REVOKED` when `FamilyPortalUser` has been deleted, returns `410 CLIENT_DISCHARGED` when client status is DISCHARGED or INACTIVE
 - `JwtAuthenticationFilterTest`: `FAMILY_PORTAL` JWT correctly populates `UserPrincipal.clientId`; admin JWT leaves `clientId` null
 
 ### Frontend
 - `FamilyPortalTab.test.tsx`: renders user list with "Never logged in" for null lastLogin, invite form open/close, email pre-fill on "Send New Link", re-invite inline note for existing email, copy button, remove inline confirmation (Cancel + Confirm), DELETE called on confirm
-- `PortalVerifyPage.test.tsx`: auto-submits token on mount with aria-live announcement, redirects to dashboard on success, shows state 2 on 400, shows state 3 on `?reason=session_expired`, shows state 4 on `?reason=no_session`
-- `PortalDashboardPage.test.tsx`: renders IN_PROGRESS, GREY on-time, GREY late, COMPLETED (with checkmark), CANCELLED, and null todayVisit states; upcoming list capped at 3; upcoming empty state; lastVisit with note; lastVisit without note (completion fact shown, note section absent); lastVisit null (section omitted); timezone label present on times; Sign out clears store and navigates
+- `PortalVerifyPage.test.tsx`: auto-submits token on mount with aria-live announcement, redirects to dashboard on success, shows state 2 on 400, shows state 3 on `?reason=session_expired`, shows state 4 on `?reason=no_session`, shows state 5 on `?reason=signed_out` (heading "You've been signed out"), shows state 6 on `?reason=access_revoked` (heading "Access removed"), `?reason=` is stripped from URL bar after reading via `history.replaceState`
+- `PortalDashboardPage.test.tsx`: renders IN_PROGRESS, GREY on-time, GREY late (clock icon present, not just amber color), COMPLETED (checkmark, `text-text-primary`), CANCELLED (caregiver card hidden), and null todayVisit states; upcoming list capped at 3; upcoming empty state; lastVisit with note; lastVisit without note (completion fact shown, note section absent); lastVisit null (section omitted); timezone label present on times; Sign out clears store and navigates to `?reason=signed_out`; `403 PORTAL_ACCESS_REVOKED` clears store + redirects to `?reason=access_revoked`; `410 CLIENT_DISCHARGED` renders "Care services concluded" screen without clearing session
