@@ -16,6 +16,9 @@ spring:
       hibernate:
         format_sql: true
 
+integration:
+  encryption-key: ZGV2LWludGVnLWtleS1jaGFuZ2UtaW4tcHJvZCEhISE=  # dev-only 32-byte AES key; MUST be replaced in prod
+
 hcare:
   jwt:
     secret: dev-secret-key-change-in-prod-must-be-256-bits-minimum-length
