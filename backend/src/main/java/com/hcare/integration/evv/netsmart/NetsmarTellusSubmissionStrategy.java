@@ -105,17 +105,22 @@ public class NetsmarTellusSubmissionStrategy extends AbstractEvvSubmissionStrate
 
     @Override
     protected EvvSubmissionResult doUpdate(EvvSubmissionContext ctx, Object typedCreds) {
-        // Netsmart batch: re-submit the full record; the aggregator handles idempotency via visitId
-        Object payload = buildPayload(ctx, typedCreds);
-        return doSubmit(ctx, payload);
+        // TODO(P1-before-netsmart-live): update must send a corrected row with a distinct record
+        // identifier so the aggregator can replace the original. The correct format has not been
+        // defined yet. Returning NOT_IMPLEMENTED to prevent silently re-submitting the original row.
+        return EvvSubmissionResult.failure(
+                "NOT_IMPLEMENTED",
+                "Netsmart update requires a correction-row format not yet implemented");
     }
 
     @Override
     protected EvvSubmissionResult doVoid_(EvvSubmissionContext ctx, Object typedCreds) {
-        // TODO(P1-before-netsmart-live): void_ must send a void-indicator row, not a duplicate submit row.
-        // Currently re-uses buildPayload + doSubmit which produces an identical file.
-        Object payload = buildPayload(ctx, typedCreds);
-        return doSubmit(ctx, payload);
+        // TODO(P1-before-netsmart-live): void_ must send a void-indicator row, not a duplicate
+        // submit row. The void-indicator format has not been defined yet. Returning NOT_IMPLEMENTED
+        // to prevent silently sending wrong data to Netsmart.
+        return EvvSubmissionResult.failure(
+                "NOT_IMPLEMENTED",
+                "Netsmart void requires a void-indicator row format not yet implemented");
     }
 
     private byte[] buildPipeDelimitedRow(EvvSubmissionContext ctx, String sourceId) {

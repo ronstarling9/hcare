@@ -176,14 +176,9 @@ public class EvvBatchDrainJob {
                 continue;
             }
 
-            // Submit outside any transaction (network I/O)
-            long startMs = System.currentTimeMillis();
+            // Submit outside any transaction (network I/O).
+            // Audit is written by AuditingEvvSubmissionStrategy — do NOT write a second row here.
             EvvSubmissionResult result = strategy.submit(ctx, typedCreds);
-            long durationMs = System.currentTimeMillis() - startMs;
-
-            auditWriter.record(agencyId, ctx.evvRecordId(), aggregatorType.name(),
-                    "BATCH_SUBMIT", result.success(), durationMs,
-                    result.success() ? null : result.errorCode());
 
             // Tx 2: finalize — write outcome and C11 dual-write to EvvRecord in the SAME transaction
             String finalStatus = result.success()

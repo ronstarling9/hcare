@@ -14,5 +14,10 @@ public interface EvvSubmissionRecordRepository extends JpaRepository<EvvSubmissi
 
     List<EvvSubmissionRecord> findByAgencyIdAndStatus(UUID agencyId, String status);
 
+    /**
+     * WARNING: This method returns records across ALL agencies — {@link EvvSubmissionRecord} has no
+     * Hibernate agencyFilter. Always pass an agencyId predicate when calling this from tenant-aware
+     * contexts, or use {@link EvvSubmissionRecordSystemRepository} for system-level operations.
+     */
     List<EvvSubmissionRecord> findBySubmissionModeAndStatus(String submissionMode, String status);
 }

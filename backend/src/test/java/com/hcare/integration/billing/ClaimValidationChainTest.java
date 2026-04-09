@@ -84,6 +84,20 @@ class ClaimValidationChainTest {
     }
 
     @Test
+    void evvLinkageHandler_submittedRecord_passes() {
+        EvvSubmissionRecordRepository repo = mock(EvvSubmissionRecordRepository.class);
+        UUID evvRecordId = UUID.randomUUID();
+        EvvSubmissionRecord record = mock(EvvSubmissionRecord.class);
+        when(record.getStatus()).thenReturn("SUBMITTED");
+        when(repo.findByEvvRecordId(evvRecordId)).thenReturn(Optional.of(record));
+
+        EvvLinkageHandler handler = new EvvLinkageHandler(repo, evvRecordId);
+        Claim claim = buildClaim(VALID_NPI, LocalDate.now());
+
+        assertThatCode(() -> handler.validate(claim)).doesNotThrowAnyException();
+    }
+
+    @Test
     void evvLinkageHandler_noRecord_throwsClaimValidationException() {
         EvvSubmissionRecordRepository repo = mock(EvvSubmissionRecordRepository.class);
         UUID evvRecordId = UUID.randomUUID();

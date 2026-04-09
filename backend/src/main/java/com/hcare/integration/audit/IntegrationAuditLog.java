@@ -8,8 +8,11 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
- * Append-only audit record for external integration calls.
- * No agencyFilter is applied — this table is queried system-wide by audit tooling.
+ * Append-only audit record for integration operations (EVV submissions, billing, payroll).
+ *
+ * <p>No Hibernate agencyFilter is applied — this table is intentionally cross-tenant.
+ * All write paths use {@link IntegrationAuditWriter} which applies {@code REQUIRES_NEW}
+ * transaction isolation. Query by {@code agencyId} to restrict to a single tenant.
  */
 @Entity
 @Table(name = "integration_audit_log")

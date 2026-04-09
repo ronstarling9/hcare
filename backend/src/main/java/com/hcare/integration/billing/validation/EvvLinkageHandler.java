@@ -9,7 +9,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Validates that there is an ACCEPTED {@link EvvSubmissionRecord} for the claim's EVV record.
+ * Validates that there is a SUBMITTED or ACCEPTED {@link EvvSubmissionRecord} for the claim's
+ * EVV record.
+ *
+ * <p>Both statuses are accepted: the real-time submission path writes {@code SUBMITTED} and there
+ * is no reconciliation job that transitions {@code SUBMITTED → ACCEPTED}. Requiring only
+ * {@code ACCEPTED} would permanently block all real-time-path claims.
  *
  * <p>The {@code evvRecordId} is supplied at construction time because {@link Claim} carries no
  * direct EVV linkage — it is the caller's responsibility to resolve the EVV record for the shift
@@ -30,9 +35,12 @@ public class EvvLinkageHandler extends ClaimValidationHandler {
     public void validate(Claim claim) {
         Optional<EvvSubmissionRecord> record =
                 evvSubmissionRecordRepository.findByEvvRecordId(evvRecordId);
-        if (record.isEmpty() || !EvvSubmissionStatus.ACCEPTED.name().equals(record.get().getStatus())) {
+        String status = record.isEmpty() ? null : record.get().getStatus();
+        boolean valid = EvvSubmissionStatus.SUBMITTED.name().equals(status)
+                || EvvSubmissionStatus.ACCEPTED.name().equals(status);
+        if (!valid) {
             throw new ClaimValidationException(
-                    "No ACCEPTED EVV record found for this claim");
+                    "No SUBMITTED or ACCEPTED EVV record found for this claim");
         }
         passToNext(claim);
     }
