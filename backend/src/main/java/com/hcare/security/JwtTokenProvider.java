@@ -75,7 +75,7 @@ public class JwtTokenProvider {
 
     public boolean validateToken(String token) {
         try {
-            parseClaims(token);
+            parseAdminClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             return false;
@@ -83,46 +83,53 @@ public class JwtTokenProvider {
     }
 
     public UUID getUserId(String token) {
-        return UUID.fromString(parseClaims(token).getSubject());
+        return UUID.fromString(parseAdminClaims(token).getSubject());
     }
 
     public UUID getAgencyId(String token) {
-        return UUID.fromString(parseClaims(token).get("agencyId", String.class));
+        return UUID.fromString(parseAdminClaims(token).get("agencyId", String.class));
     }
 
     public String getRole(String token) {
-        return parseClaims(token).get("role", String.class);
+        return parseAdminClaims(token).get("role", String.class);
     }
 
     public Claims parseAndValidate(String token) {
         try {
-            return parseClaims(token);
+            return parseAdminClaims(token);
+        } catch (io.jsonwebtoken.security.SignatureException e) {
+            // Admin key signature mismatch — try portal key.
+            try {
+                return parsePortalClaims(token);
+            } catch (JwtException | IllegalArgumentException ex) {
+                return null;
+            }
         } catch (JwtException | IllegalArgumentException e) {
             return null;
         }
     }
 
     /**
-     * Parses and verifies a JWT. Tries the admin signing key first; if that fails, falls
-     * back to the portal signing key. This handles both FAMILY_PORTAL tokens (signed with
-     * portalSigningKey) and admin/scheduler tokens (signed with signingKey) without needing
-     * to peek at unverified claims before signature validation.
+     * Parses and verifies a JWT using the admin signing key only.
+     * Throws JwtException if the token is invalid or signed with any other key.
      */
-    private Claims parseClaims(String token) {
-        try {
-            return Jwts.parser()
-                .verifyWith(signingKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-        } catch (io.jsonwebtoken.security.SignatureException e) {
-            // Admin key signature mismatch — try portal key. Only signature failures fall
-            // back; expired or malformed tokens propagate immediately so callers fail fast.
-            return Jwts.parser()
-                .verifyWith(portalSigningKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-        }
+    public Claims parseAdminClaims(String token) {
+        return Jwts.parser()
+            .verifyWith(signingKey)
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
+    }
+
+    /**
+     * Parses and verifies a JWT using the portal signing key only.
+     * Throws JwtException if the token is invalid or signed with any other key.
+     */
+    public Claims parsePortalClaims(String token) {
+        return Jwts.parser()
+            .verifyWith(portalSigningKey)
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
     }
 }
