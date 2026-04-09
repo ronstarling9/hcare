@@ -143,7 +143,7 @@ export default function PortalDashboardPage() {
             <p className="text-[13px] text-text-secondary">{t('noUpcomingVisits')}</p>
           ) : (
             <div className="flex flex-col gap-px">
-              {upcomingVisits.slice(0, 3).map((v, i) => (
+              {upcomingVisits.map((v, i) => (
                 <UpcomingRow key={i} visit={v} tz={tz} />
               ))}
             </div>
