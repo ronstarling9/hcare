@@ -432,7 +432,11 @@ interface Props {
 
 function isJwtExpired(token: string): boolean {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
+    const base64Url = token.split('.')[1]
+    // JWT uses base64url (RFC 4648 §5): replace URL-safe chars and restore padding
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64 + '='.repeat((4 - base64.length % 4) % 4)
+    const payload = JSON.parse(atob(padded))
     return payload.exp * 1000 < Date.now()
   } catch {
     return true
@@ -536,13 +540,97 @@ export default function PortalVerifyPage() { return <div>verify</div> }
 export default function PortalDashboardPage() { return <div>dashboard</div> }
 ```
 
-- [ ] **Step 5: Compile TypeScript**
+- [ ] **Step 5: Write failing tests for `PortalGuard`**
+
+```tsx
+// frontend/src/components/portal/PortalGuard.test.tsx
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { describe, it, expect, beforeEach } from 'vitest'
+import PortalGuard from './PortalGuard'
+import { usePortalAuthStore } from '../../store/portalAuthStore'
+
+function makeJwt(payload: object): string {
+  // Build a real base64url-encoded JWT (header.payload.sig).
+  // btoa produces standard base64; convert to base64url by swapping chars and stripping padding.
+  const encode = (obj: object) =>
+    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(payload)}.sig`
+}
+
+function renderGuard() {
+  return render(
+    <MemoryRouter initialEntries={['/portal/dashboard']}>
+      <Routes>
+        <Route
+          path="/portal/dashboard"
+          element={
+            <PortalGuard>
+              <div>protected content</div>
+            </PortalGuard>
+          }
+        />
+        <Route path="/portal/verify" element={<div>verify page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+beforeEach(() => {
+  usePortalAuthStore.getState().logout()
+})
+
+describe('PortalGuard', () => {
+  it('redirects to no_session when no token is present', () => {
+    renderGuard()
+    expect(screen.getByText('verify page')).toBeInTheDocument()
+  })
+
+  it('renders children when token is valid and not expired', () => {
+    // Use a real base64url-encoded JWT with a UUID clientId (contains '-' chars) to verify
+    // the base64url normalization in isJwtExpired works correctly. A naive atob() call
+    // would throw a DOMException on the '-' characters, causing isJwtExpired to return true
+    // (expired) and redirect — this test proves the fix is effective.
+    const futureExp = Math.floor(Date.now() / 1000) + 3600
+    const token = makeJwt({
+      exp: futureExp,
+      clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', // UUID with '-' chars
+      agencyId: 'f0e1d2c3-b4a5-6789-fedc-ba9876543210',
+    })
+    usePortalAuthStore.getState().login(token, 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'f0e1d2c3-b4a5-6789-fedc-ba9876543210')
+    renderGuard()
+    expect(screen.getByText('protected content')).toBeInTheDocument()
+  })
+
+  it('redirects to session_expired when token exp is in the past', () => {
+    const pastExp = Math.floor(Date.now() / 1000) - 60
+    const token = makeJwt({
+      exp: pastExp,
+      clientId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      agencyId: 'f0e1d2c3-b4a5-6789-fedc-ba9876543210',
+    })
+    usePortalAuthStore.getState().login(token, 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'f0e1d2c3-b4a5-6789-fedc-ba9876543210')
+    renderGuard()
+    expect(screen.getByText('verify page')).toBeInTheDocument()
+  })
+})
+```
+
+- [ ] **Step 6: Compile TypeScript**
 
 ```bash
 cd frontend && npx tsc --noEmit 2>&1 | head -20
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Run tests**
+
+```bash
+cd frontend && npm run test -- PortalGuard
+```
+
+Expect 3 passing tests. The "renders children when token is valid" test confirms that `isJwtExpired` correctly handles base64url-encoded tokens with `-` characters (UUIDs in claims) — if the `atob` call were not normalized it would throw and return `true`, causing this test to fail.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add frontend/src/components/portal/ \
