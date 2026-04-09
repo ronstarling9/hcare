@@ -380,11 +380,6 @@ public class FamilyPortalService {
             .min(java.util.Comparator.comparing(Shift::getScheduledStart))
             .orElse(null);
 
-        PortalDashboardResponse.TodayVisitDto todayVisitDto = null;
-        if (todayShift != null) {
-            todayVisitDto = buildTodayVisitDto(todayShift);
-        }
-
         // Upcoming: next 3 non-CANCELLED/MISSED shifts after end of today, ordered ascending.
         // Uses a DB-side TOP 3 derived query to avoid loading a 90-day window into memory.
         List<Shift> upcomingShifts = shiftRepo
@@ -393,15 +388,35 @@ public class FamilyPortalService {
                 java.util.List.of(ShiftStatus.CANCELLED, ShiftStatus.MISSED),
                 startOfTomorrow);
 
-        // Bulk-fetch caregivers to avoid N+1 queries inside the mapping loop.
-        java.util.Set<UUID> caregiverIds = upcomingShifts.stream()
-            .map(Shift::getCaregiverId)
-            .filter(java.util.Objects::nonNull)
-            .collect(java.util.stream.Collectors.toSet());
-        java.util.Map<UUID, Caregiver> caregiverMap = caregiverRepo.findAllById(caregiverIds)
+        // Collect all caregiver IDs needed (today's shift + upcoming shifts) for a single bulk fetch.
+        // This eliminates the N+1 that would otherwise occur in buildTodayVisitDto / buildCaregiverDto.
+        java.util.Set<UUID> allCaregiverIds = new java.util.HashSet<>();
+        if (todayShift != null && todayShift.getCaregiverId() != null) {
+            allCaregiverIds.add(todayShift.getCaregiverId());
+        }
+        upcomingShifts.forEach(s -> { if (s.getCaregiverId() != null) allCaregiverIds.add(s.getCaregiverId()); });
+
+        java.util.Map<UUID, Caregiver> caregiverMap = caregiverRepo.findAllById(allCaregiverIds)
             .stream()
             .collect(java.util.stream.Collectors.toMap(Caregiver::getId,
                 java.util.function.Function.identity()));
+
+        // Similarly collect all service type IDs (today + upcoming) for a single bulk fetch.
+        java.util.Set<UUID> allServiceTypeIds = new java.util.HashSet<>();
+        if (todayShift != null && todayShift.getServiceTypeId() != null) {
+            allServiceTypeIds.add(todayShift.getServiceTypeId());
+        }
+        upcomingShifts.forEach(s -> { if (s.getServiceTypeId() != null) allServiceTypeIds.add(s.getServiceTypeId()); });
+
+        java.util.Map<UUID, ServiceType> serviceTypeMap = serviceTypeRepo.findAllById(allServiceTypeIds)
+            .stream()
+            .collect(java.util.stream.Collectors.toMap(ServiceType::getId,
+                java.util.function.Function.identity()));
+
+        PortalDashboardResponse.TodayVisitDto todayVisitDto = null;
+        if (todayShift != null) {
+            todayVisitDto = buildTodayVisitDto(todayShift, caregiverMap, serviceTypeMap);
+        }
 
         List<PortalDashboardResponse.UpcomingVisitDto> upcoming = upcomingShifts.stream()
             .map(s -> buildUpcomingDto(s, caregiverMap))
@@ -419,7 +434,11 @@ public class FamilyPortalService {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private PortalDashboardResponse.TodayVisitDto buildTodayVisitDto(Shift shift) {
+    // caregiverMap and serviceTypeMap are pre-fetched in bulk by getDashboard — no per-shift DB lookup.
+    private PortalDashboardResponse.TodayVisitDto buildTodayVisitDto(
+            Shift shift,
+            java.util.Map<UUID, Caregiver> caregiverMap,
+            java.util.Map<UUID, ServiceType> serviceTypeMap) {
         String statusStr = mapShiftStatus(shift.getStatus());
         String clockedInAt = null;
         String clockedOutAt = null;
@@ -437,7 +456,8 @@ public class FamilyPortalService {
         // Caregiver card is hidden for CANCELLED shifts.
         PortalDashboardResponse.CaregiverDto caregiverDto = null;
         if (shift.getStatus() != ShiftStatus.CANCELLED && shift.getCaregiverId() != null) {
-            caregiverDto = buildCaregiverDto(shift.getCaregiverId(), shift.getServiceTypeId());
+            caregiverDto = buildCaregiverDto(shift.getCaregiverId(), shift.getServiceTypeId(),
+                caregiverMap, serviceTypeMap);
         }
 
         return new PortalDashboardResponse.TodayVisitDto(
@@ -489,14 +509,17 @@ public class FamilyPortalService {
         );
     }
 
-    private PortalDashboardResponse.CaregiverDto buildCaregiverDto(UUID caregiverId,
-                                                                     UUID serviceTypeId) {
-        String name = caregiverRepo.findById(caregiverId)
-            .map(c -> c.getFirstName() + " " + c.getLastName())
-            .orElse("Unknown");
-        String serviceTypeName = serviceTypeRepo.findById(serviceTypeId)
-            .map(ServiceType::getName)
-            .orElse("");
+    // Pure formatting helper — caregiverMap and serviceTypeMap are pre-fetched in bulk by getDashboard.
+    // No repository calls are made here; this method is free of any DB interaction.
+    private PortalDashboardResponse.CaregiverDto buildCaregiverDto(
+            UUID caregiverId,
+            UUID serviceTypeId,
+            java.util.Map<UUID, Caregiver> caregiverMap,
+            java.util.Map<UUID, ServiceType> serviceTypeMap) {
+        Caregiver cg = caregiverMap.get(caregiverId);
+        String name = (cg != null) ? cg.getFirstName() + " " + cg.getLastName() : "Unknown";
+        ServiceType st = (serviceTypeId != null) ? serviceTypeMap.get(serviceTypeId) : null;
+        String serviceTypeName = (st != null) ? st.getName() : "";
         return new PortalDashboardResponse.CaregiverDto(name, serviceTypeName);
     }
 
@@ -506,7 +529,8 @@ public class FamilyPortalService {
             case IN_PROGRESS -> "IN_PROGRESS";
             case COMPLETED -> "COMPLETED";
             case CANCELLED -> "CANCELLED";
-            default -> "GREY";
+            case MISSED -> "GREY";  // Missed shifts are excluded from todayVisit selection earlier in getDashboard, but mapped defensively here
+            // No default: compiler enforces exhaustiveness — add a case here if ShiftStatus gains new values
         };
     }
 
