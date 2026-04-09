@@ -60,3 +60,4 @@ See `docs/dev-seed-reference.md` for full client and caregiver lists.
 | File | Area code | Feature |
 |---|---|---|
 | [family-portal.md](family-portal.md) | FP | Family Portal — invite, verify, dashboard, access control |
+| [mobile-app.md](mobile-app.md) | MOB | Mobile app — login, today, clock-in, visit, open shifts, messages, offline sync |
