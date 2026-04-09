@@ -1,0 +1,283 @@
+package com.hcare.integration.evv;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hcare.domain.EvvRecord;
+import com.hcare.domain.EvvRecordRepository;
+import com.hcare.evv.AggregatorType;
+import com.hcare.integration.CredentialEncryptionService;
+import com.hcare.integration.audit.IntegrationAuditWriter;
+import com.hcare.multitenancy.TenantContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Nightly scheduled job that drains the EVV batch submission queue.
+ *
+ * <p>C9: Uses {@link EvvSubmissionRecordSystemRepository} (unfiltered) to find all agencies with
+ * pending batch records. Processes each agency independently (C17: per-agency exception isolation).
+ *
+ * <p>C5/C13 two-phase per-record processing:
+ * <ol>
+ *   <li>Tx 1: {@code markInFlight()} — optimistic claim; returns 1 if claimed, 0 if already
+ *       claimed by another node (M_new_9: skip if 0).
+ *   <li>Submit outside any transaction (network I/O not inside DB tx).
+ *   <li>Tx 2: {@code markFinal()} — write outcome + aggregatorVisitId + C11 dual-write to
+ *       EvvRecord.
+ * </ol>
+ *
+ * <p>C13: Per-aggregator credential cache ({@code Map<AggregatorType, Object>}) within a single
+ * agency drain to avoid repeated decrypt calls.
+ */
+@Component
+public class EvvBatchDrainJob {
+
+    private static final Logger log = LoggerFactory.getLogger(EvvBatchDrainJob.class);
+
+    private final EvvSubmissionRecordSystemRepository systemRepo;
+    private final EvvRecordRepository evvRecordRepository;
+    private final AgencyEvvCredentialsRepository credentialsRepository;
+    private final CredentialEncryptionService encryptionService;
+    private final EvvStrategyFactory strategyFactory;
+    private final EvvSubmissionContextAssembler contextAssembler;
+    private final IntegrationAuditWriter auditWriter;
+    private final ObjectMapper objectMapper;
+
+    public EvvBatchDrainJob(
+            EvvSubmissionRecordSystemRepository systemRepo,
+            EvvRecordRepository evvRecordRepository,
+            AgencyEvvCredentialsRepository credentialsRepository,
+            CredentialEncryptionService encryptionService,
+            EvvStrategyFactory strategyFactory,
+            EvvSubmissionContextAssembler contextAssembler,
+            IntegrationAuditWriter auditWriter,
+            ObjectMapper objectMapper) {
+        this.systemRepo = systemRepo;
+        this.evvRecordRepository = evvRecordRepository;
+        this.credentialsRepository = credentialsRepository;
+        this.encryptionService = encryptionService;
+        this.strategyFactory = strategyFactory;
+        this.contextAssembler = contextAssembler;
+        this.auditWriter = auditWriter;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Nightly drain at 2 AM UTC.
+     *
+     * <p>C9: Query all distinct agencies with PENDING BATCH records using the unfiltered
+     * system repository. Process each agency in isolation (C17).
+     */
+    @Scheduled(cron = "0 0 2 * * *")
+    public void drain() {
+        log.info("EvvBatchDrainJob starting");
+        List<UUID> agencies = systemRepo.findDistinctAgenciesWithPendingBatch();
+        log.info("EvvBatchDrainJob: {} agencies with pending batch records", agencies.size());
+
+        for (UUID agencyId : agencies) {
+            // C17: one failed agency must not abort others
+            try {
+                TenantContext.set(agencyId);
+                drainForAgency(agencyId);
+            } catch (Exception e) {
+                log.error("EvvBatchDrainJob: unhandled exception for agencyId={} — continuing to next agency",
+                        agencyId, e);
+            } finally {
+                TenantContext.clear();
+            }
+        }
+        log.info("EvvBatchDrainJob completed");
+    }
+
+    /**
+     * Drains all pending batch records for a single agency.
+     *
+     * <p>M_new_13: credential cache per aggregator type — decrypt once per aggregator per drain
+     * cycle, not once per record.
+     *
+     * <p>M_new_9: if {@code markInFlight()} returns 0, the record was already claimed by another
+     * node; skip and continue to the next record.
+     *
+     * <p>M_new_11: null-guard on {@code contextJson} — skip records with missing context and log.
+     */
+    private void drainForAgency(UUID agencyId) {
+        // M_new_13: per-aggregator credential cache for this drain cycle
+        Map<AggregatorType, Object> credentialCache = new HashMap<>();
+
+        // Process records one at a time (two-phase claim + finalize)
+        int processed = 0;
+        while (true) {
+            EvvSubmissionRecord record = systemRepo
+                    .findFirstByAgencyIdAndSubmissionModeBatchAndStatusPending(agencyId);
+            if (record == null) {
+                break;
+            }
+
+            // Tx 1: claim the record (optimistic lock via status transition PENDING → IN_FLIGHT)
+            int claimed = claimRecord(record.getId());
+            if (claimed == 0) {
+                // M_new_9: already claimed by another node — skip
+                log.debug("EvvBatchDrainJob: record id={} already claimed by another node — skipping",
+                        record.getId());
+                continue;
+            }
+
+            // M_new_11: null-guard on contextJson
+            if (record.getContextJson() == null || record.getContextJson().isBlank()) {
+                log.error("EvvBatchDrainJob: null/empty contextJson for record id={} agencyId={} — marking REJECTED",
+                        record.getId(), agencyId);
+                finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(), null);
+                processed++;
+                continue;
+            }
+
+            // Deserialize context
+            EvvSubmissionContext ctx;
+            try {
+                ctx = objectMapper.readValue(record.getContextJson(), EvvSubmissionContext.class);
+            } catch (Exception e) {
+                log.error("EvvBatchDrainJob: failed to deserialize contextJson for record id={} — marking REJECTED",
+                        record.getId(), e);
+                finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(), null);
+                processed++;
+                continue;
+            }
+
+            AggregatorType aggregatorType = AggregatorType.valueOf(record.getAggregatorType());
+
+            // Resolve strategy and credentials (with cache)
+            EvvSubmissionStrategy strategy;
+            Object typedCreds;
+            try {
+                strategy = strategyFactory.strategyFor(aggregatorType);
+                typedCreds = resolveCredentials(agencyId, aggregatorType, strategy, credentialCache);
+            } catch (Exception e) {
+                log.error("EvvBatchDrainJob: failed to resolve strategy/credentials for record id={} aggregator={} — marking REJECTED",
+                        record.getId(), aggregatorType, e);
+                finalizeRecord(record.getId(), EvvSubmissionStatus.REJECTED.name(), null);
+                auditWriter.record(agencyId, ctx.evvRecordId(), aggregatorType.name(),
+                        "BATCH_SUBMIT", false, 0L, "CREDENTIAL_ERROR");
+                processed++;
+                continue;
+            }
+
+            // Submit outside any transaction (network I/O)
+            long startMs = System.currentTimeMillis();
+            EvvSubmissionResult result = strategy.submit(ctx, typedCreds);
+            long durationMs = System.currentTimeMillis() - startMs;
+
+            auditWriter.record(agencyId, ctx.evvRecordId(), aggregatorType.name(),
+                    "BATCH_SUBMIT", result.success(), durationMs,
+                    result.success() ? null : result.errorCode());
+
+            // Tx 2: finalize — write outcome and C11 dual-write to EvvRecord
+            String finalStatus = result.success()
+                    ? EvvSubmissionStatus.SUBMITTED.name()
+                    : EvvSubmissionStatus.REJECTED.name();
+            finalizeRecord(record.getId(), finalStatus, result.aggregatorVisitId());
+
+            // C11: dual-write aggregatorVisitId to EvvRecord in Tx 2
+            if (result.success() && result.aggregatorVisitId() != null) {
+                updateEvvRecordAggregatorVisitId(ctx.evvRecordId(), result.aggregatorVisitId());
+            }
+
+            if (result.success()) {
+                log.info("EvvBatchDrainJob: submitted record id={} aggregatorVisitId={} aggregator={}",
+                        record.getId(), result.aggregatorVisitId(), aggregatorType);
+            } else {
+                log.error("EvvBatchDrainJob: submission failed for record id={} errorCode={} errorMessage={}",
+                        record.getId(), result.errorCode(), result.errorMessage());
+            }
+
+            processed++;
+        }
+
+        log.info("EvvBatchDrainJob: processed {} records for agencyId={}", processed, agencyId);
+    }
+
+    /**
+     * Tx 1: atomically claim a record by transitioning PENDING → IN_FLIGHT.
+     *
+     * @return 1 if claimed, 0 if already claimed by another node
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int claimRecord(UUID recordId) {
+        return systemRepo.markInFlight(recordId);
+    }
+
+    /**
+     * Tx 2: finalize a record after submission.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void finalizeRecord(UUID recordId, String status, String aggregatorVisitId) {
+        systemRepo.markFinal(recordId, status, aggregatorVisitId);
+    }
+
+    /**
+     * C11 dual-write: update EvvRecord.aggregatorVisitId in a REQUIRES_NEW transaction.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateEvvRecordAggregatorVisitId(UUID evvRecordId, String aggregatorVisitId) {
+        evvRecordRepository.findById(evvRecordId).ifPresentOrElse(
+                evvRecord -> {
+                    evvRecord.setAggregatorVisitId(aggregatorVisitId);
+                    evvRecordRepository.save(evvRecord);
+                },
+                () -> log.warn("EvvBatchDrainJob: EvvRecord not found for C11 dual-write: evvRecordId={}",
+                        evvRecordId));
+    }
+
+    /**
+     * M_new_13: resolve and cache credentials per aggregator type within a drain cycle.
+     */
+    @SuppressWarnings("unchecked")
+    private Object resolveCredentials(UUID agencyId, AggregatorType aggregatorType,
+                                       EvvSubmissionStrategy strategy,
+                                       Map<AggregatorType, Object> cache) {
+        if (cache.containsKey(aggregatorType)) {
+            return cache.get(aggregatorType);
+        }
+
+        AgencyEvvCredentials agencyCredentials = credentialsRepository
+                .findByAgencyIdAndAggregatorTypeAndActiveTrue(agencyId, aggregatorType.name())
+                .orElseThrow(() -> new IllegalStateException(
+                        "No active credentials for agencyId=" + agencyId
+                                + " aggregatorType=" + aggregatorType));
+
+        Object typedCreds = encryptionService.decrypt(
+                agencyCredentials.getCredentialsEncrypted(),
+                strategy.credentialClass());
+
+        cache.put(aggregatorType, typedCreds);
+        return typedCreds;
+    }
+
+    /**
+     * On application startup, reset any IN_FLIGHT records older than 10 minutes back to PENDING.
+     * These are records that were claimed by a node that crashed before finalizing.
+     *
+     * <p>Cutoff: {@code LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10)}.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void resetStaleInFlightOnStartup() {
+        LocalDateTime cutoff = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10);
+        int reset = systemRepo.resetStaleInFlight(cutoff);
+        if (reset > 0) {
+            log.info("EvvBatchDrainJob startup: reset {} stale IN_FLIGHT records (older than 10 min) to PENDING",
+                    reset);
+        }
+    }
+}
