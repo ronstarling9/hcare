@@ -81,11 +81,12 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
   const [pendingGoals, setPendingGoals] = useState<PendingGoal[]>([])
   const [activating, setActivating] = useState(false)
   const [activateError, setActivateError] = useState(false)
+  const [mutationError, setMutationError] = useState<string | null>(null)
   const [showLiveMessage, setShowLiveMessage] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [showAddGoal, setShowAddGoal] = useState(false)
 
-  const { data: activePlan, isError, error } = useActivePlan(clientId)
+  const { data: activePlan, isLoading, isError, error } = useActivePlan(clientId)
   const is404 = isError && (error as { response?: { status?: number } })?.response?.status === 404
 
   const { data: tasksPage } = useAdlTasks(clientId, activePlan?.id)
@@ -142,6 +143,9 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
     setActivating(true)
     setActivateError(false)
     try {
+      // v1 trade-off: if any step after createCarePlan fails, the DRAFT plan is left in the
+      // database. Each retry creates a new DRAFT (new version number). This is acceptable for
+      // small-agency usage but should be addressed before supporting larger agencies.
       const plan = await createCarePlan(clientId)
       await Promise.all(
         pendingTasks.map((tk, i) =>
@@ -186,13 +190,18 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
   }
 
   const handleAddActiveTask = async (taskData: TaskInput) => {
-    await addTaskMutation.mutateAsync({
-      name: taskData.name,
-      assistanceLevel: taskData.assistanceLevel,
-      frequency: taskData.frequency || undefined,
-      instructions: taskData.instructions || undefined,
-    })
-    setShowAddTask(false)
+    setMutationError(null)
+    try {
+      await addTaskMutation.mutateAsync({
+        name: taskData.name,
+        assistanceLevel: taskData.assistanceLevel,
+        frequency: taskData.frequency || undefined,
+        instructions: taskData.instructions || undefined,
+      })
+      setShowAddTask(false)
+    } catch {
+      setMutationError(t('carePlanMutationError'))
+    }
   }
 
   const handleAddPendingGoal = (description: string, targetDate: string | null) => {
@@ -204,11 +213,21 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
   }
 
   const handleAddActiveGoal = async (description: string, targetDate: string | null) => {
-    await addGoalMutation.mutateAsync({
-      description,
-      targetDate: targetDate ?? undefined,
-    })
-    setShowAddGoal(false)
+    setMutationError(null)
+    try {
+      await addGoalMutation.mutateAsync({
+        description,
+        targetDate: targetDate ?? undefined,
+      })
+      setShowAddGoal(false)
+    } catch {
+      setMutationError(t('carePlanMutationError'))
+    }
+  }
+
+  // ── Loading guard — prevents CTA flash before useActivePlan resolves ──────
+  if (!setupMode && isLoading) {
+    return <div className="min-h-[280px]" />
   }
 
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -320,7 +339,7 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
         </div>
 
         {pendingGoals.length === 0 && !showAddGoal && (
-          <div className="text-[11px] text-text-secondary mb-4">{t('carePlanNoTasksYet')}</div>
+          <div className="text-[11px] text-text-secondary mb-4">{t('carePlanNoGoalsYet')}</div>
         )}
 
         {pendingGoals.map((g) => (
@@ -384,6 +403,20 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
         </div>
       )}
 
+      {/* Mutation error banner */}
+      {mutationError && (
+        <div className="text-[11px] text-red-600 mb-2 flex items-center justify-between">
+          <span>{mutationError}</span>
+          <button
+            type="button"
+            onClick={() => setMutationError(null)}
+            className="bg-transparent border-none text-red-600 text-[12px] cursor-pointer px-1 ml-3"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Plan header */}
       <div className="flex justify-between items-center mb-4 bg-white border border-border px-3.5 py-2.5">
         <div className="flex items-center gap-2.5">
@@ -442,7 +475,12 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
           </div>
           <button
             type="button"
-            onClick={() => deleteTaskMutation.mutate(tk.id)}
+            onClick={() => {
+              setMutationError(null)
+              deleteTaskMutation.mutateAsync(tk.id).catch(() => {
+                setMutationError(t('carePlanMutationError'))
+              })
+            }}
             className="bg-transparent border-none text-text-secondary text-[12px] cursor-pointer px-1 ml-3"
             title="Remove"
           >
@@ -480,7 +518,12 @@ export function CarePlanTab({ clientId, clientFirstName }: CarePlanTabProps) {
           </div>
           <button
             type="button"
-            onClick={() => deleteGoalMutation.mutate(g.id)}
+            onClick={() => {
+              setMutationError(null)
+              deleteGoalMutation.mutateAsync(g.id).catch(() => {
+                setMutationError(t('carePlanMutationError'))
+              })
+            }}
             className="bg-transparent border-none text-text-secondary text-[12px] cursor-pointer px-1 ml-3"
           >
             ✕

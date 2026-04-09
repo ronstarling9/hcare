@@ -99,6 +99,7 @@
   "adlTaskAssistanceBadgeMinimal": "MINIMAL",
   "adlTaskAssistanceBadgeSupervision": "SUPERVISION",
   "adlTaskAssistanceBadgeIndependent": "INDEPENDENT",
-  "carePlanNoTasksYet": "No goals added yet.",
+  "carePlanNoGoalsYet": "No goals added yet.",
+  "carePlanMutationError": "Failed to save changes. Please try again.",
   "carePlanSaveActivateDisabled": "Add at least one task to activate"
 }
