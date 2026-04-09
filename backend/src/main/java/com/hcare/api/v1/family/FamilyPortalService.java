@@ -24,7 +24,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -196,10 +195,11 @@ public class FamilyPortalService {
         // Upcoming: next 3 non-CANCELLED/MISSED shifts after end of today, ordered ascending.
         // Uses explicit agencyId predicate and a DB-side TOP 3 derived query to avoid loading
         // a 90-day window into memory.
-        Collection<ShiftStatus> excludedStatuses = List.of(ShiftStatus.CANCELLED, ShiftStatus.MISSED);
         List<Shift> upcomingShifts = shiftRepo
             .findTop3ByClientIdAndAgencyIdAndStatusNotInAndScheduledStartAfterOrderByScheduledStartAsc(
-                clientId, agencyId, excludedStatuses, startOfTomorrow);
+                clientId, agencyId,
+                List.of(ShiftStatus.CANCELLED, ShiftStatus.MISSED),
+                startOfTomorrow);
 
         // Collect all caregiver IDs needed (today's shift + upcoming shifts) for a single bulk fetch.
         // This eliminates the N+1 that would otherwise occur in buildTodayVisitDto / buildCaregiverDto.
@@ -234,9 +234,11 @@ public class FamilyPortalService {
         Set<UUID> evvShiftIds = new HashSet<>();
         if (todayShift != null) evvShiftIds.add(todayShift.getId());
         lastVisitShift.ifPresent(s -> evvShiftIds.add(s.getId()));
-        Map<UUID, EvvRecord> evvMap = evvRepo.findByShiftIdIn(evvShiftIds)
-            .stream()
-            .collect(Collectors.toMap(EvvRecord::getShiftId, Function.identity()));
+        Map<UUID, EvvRecord> evvMap = evvShiftIds.isEmpty()
+            ? Map.of()
+            : evvRepo.findByShiftIdIn(evvShiftIds)
+                  .stream()
+                  .collect(Collectors.toMap(EvvRecord::getShiftId, Function.identity()));
 
         PortalDashboardResponse.TodayVisitDto todayVisitDto = null;
         if (todayShift != null) {
