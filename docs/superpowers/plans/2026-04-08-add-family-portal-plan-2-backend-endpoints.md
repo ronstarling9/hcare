@@ -811,10 +811,10 @@ Add this method to `ClientController.java` inside the `// --- Family Portal User
 @PreAuthorize("hasAnyRole('ADMIN', 'SCHEDULER')")
 public ResponseEntity<com.hcare.api.v1.family.dto.InviteResponse> inviteFamilyPortalUser(
         @PathVariable UUID id,
-        @Valid @RequestBody com.hcare.api.v1.family.dto.InviteRequest request) {
+        @Valid @RequestBody com.hcare.api.v1.family.dto.InviteRequest request,
+        @AuthenticationPrincipal com.hcare.security.UserPrincipal principal) {
     clientService.requireClientForInvite(id);
-    UUID agencyId = com.hcare.multitenancy.TenantContext.get();
-    return ResponseEntity.ok(familyPortalService.generateInvite(id, agencyId, request));
+    return ResponseEntity.ok(familyPortalService.generateInvite(id, principal.getAgencyId(), request));
 }
 ```
 
@@ -863,7 +863,26 @@ git commit -m "feat: FamilyPortalAuthController, FamilyPortalDashboardController
 **Files:**
 - Create: `backend/src/main/java/com/hcare/scheduling/FamilyPortalTokenCleanupJob.java`
 
-- [ ] **Step 1: Create the cleanup job**
+- [ ] **Step 1: Add `deleteExpired` to `FamilyPortalTokenRepository`**
+
+Open `backend/src/main/java/com/hcare/domain/FamilyPortalTokenRepository.java` and add the following method. This must be declared explicitly — Spring Data JPA cannot auto-derive a bulk-delete from the method name `deleteExpired`. Without this declaration, Spring will throw `No property 'deleteExpired' found for type FamilyPortalToken` at startup, failing every `@SpringBootTest` context load.
+
+```java
+// Add to FamilyPortalTokenRepository:
+@Modifying
+@Query("DELETE FROM FamilyPortalToken t WHERE t.expiresAt < :now")
+void deleteExpired(@Param("now") LocalDateTime now);
+```
+
+Required imports (if not already present):
+```java
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import java.time.LocalDateTime;
+```
+
+- [ ] **Step 2: Create the cleanup job**
 
 ```java
 package com.hcare.scheduling;
@@ -906,16 +925,17 @@ In `AbstractIntegrationTest.configureDataSource`, add:
 registry.add("hcare.portal.cleanup-cron", () -> "-");
 ```
 
-- [ ] **Step 2: Compile**
+- [ ] **Step 3: Compile**
 
 ```bash
 cd backend && mvn compile -q
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add backend/src/main/java/com/hcare/scheduling/FamilyPortalTokenCleanupJob.java \
+git add backend/src/main/java/com/hcare/domain/FamilyPortalTokenRepository.java \
+        backend/src/main/java/com/hcare/scheduling/FamilyPortalTokenCleanupJob.java \
         backend/src/test/java/com/hcare/AbstractIntegrationTest.java
 git commit -m "feat: FamilyPortalTokenCleanupJob — nightly delete of expired invite tokens at 3 AM UTC"
 ```
