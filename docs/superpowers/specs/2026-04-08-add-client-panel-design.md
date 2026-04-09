@@ -81,7 +81,7 @@ Header
 | dateOfBirth | `date` | Required; `<input type="date">` returns `"YYYY-MM-DD"` — Jackson deserializes this directly to `LocalDate`, no transformation needed |
 | phone | `tel` | Optional |
 | address | `text` | Optional; single line is sufficient for intake |
-| serviceState | `select` | 50 US state abbreviations + empty default |
+| serviceState | `select` | 50 US state abbreviations + empty default. When no state is selected, omit the field (send `undefined`) — do not send `""`. The backend null-guard pattern matches `preferredCaregiverGender`: an empty string would be written to the `service_state` column, breaking EVV state config lookups for that client. |
 | medicaidId | `text` | Optional; `autocomplete="off"` — PHI-adjacent |
 | preferredCaregiverGender | `select` | Canonical values: `"FEMALE"`, `"MALE"`. When "No preference" is selected, omit the field (send `undefined`) — do not send `""`. The backend guard `if (req.preferredCaregiverGender() != null)` means `""` would be written to the column; `null`/omitted means the field is left as stored. |
 | preferredLanguages | `text` | Comma-separated; split on `,` and trimmed before POST |
@@ -96,8 +96,8 @@ Header
 | File | Purpose |
 |---|---|
 | `src/components/clients/NewClientPanel.tsx` | Form component |
-| `src/store/toastStore.ts` | Zustand slice: `{ message, linkLabel, clientId, visible }` |
-| `src/components/common/Toast.tsx` | Dismissible banner; rendered in `Shell.tsx` |
+| `src/store/toastStore.ts` | Zustand slice: `{ visible, showCount, message, linkLabel, targetId, panelType, panelTab, backLabel }` |
+| `src/components/common/Toast.tsx` | Dismissible banner; rendered in `Shell.tsx`, positioned fixed bottom-right (`fixed bottom-4 right-4 z-50`) — above page content, below the `SlidePanel` overlay |
 
 ### Modified files
 
@@ -177,6 +177,8 @@ options?: { prefill?: PanelPrefill; backLabel?: string; initialTab?: string }
 ```
 `closePanel` resets `initialTab` to `undefined` alongside the other fields.
 
+> **Authorizations tab landing state:** A brand-new client has no authorizations. The tab renders its standard empty state (e.g. "No authorizations yet" + "+ Add Authorization" button). No additional prop or auto-open behavior is required — `ClientDetailPanel` is unchanged beyond accepting `initialTab`.
+
 > **React 18 batching note:** `closePanel()` and `openPanel()` are synchronous Zustand updates. React 18 automatic batching will coalesce them into a single render, so the `SlidePanel` never fully closes before reopening — it swaps content while remaining open (no blank-panel flash). This is intentional. If a close animation before reopening is ever desired, wrap `openPanel()` in `setTimeout(..., 300)` to allow the CSS transition to complete.
 
 **Save & Close:**
@@ -195,7 +197,7 @@ closePanel()
 
 The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismisses on click or timeout. Clicking the link calls `openPanel(panelType, targetId, { initialTab: panelTab, backLabel })` — all navigation params come from the store. `Toast.tsx` imports no i18n namespace and references no feature-specific constants.
 
-**Timer lifecycle:** The `setTimeout` (6 000 ms) lives in `Toast.tsx`'s `useEffect`, with `visible` as the dependency. The effect's cleanup function calls `clearTimeout` — this prevents a stale timer from dismissing a subsequent toast when the user manually dismisses the first one early and triggers a second save quickly afterward.
+**Timer lifecycle:** The `setTimeout` (6 000 ms) lives in `Toast.tsx`'s `useEffect`, with `[visible, showCount]` as the dependency array. Including `showCount` ensures the effect re-runs and the timer re-arms when `show()` is called while the toast is already visible (in that case `visible` does not change, so depending on `visible` alone would prevent the new toast from getting its own timer). The effect's cleanup function calls `clearTimeout` — this prevents a stale timer from dismissing a subsequent toast when the user manually dismisses the first one early and triggers a second save quickly afterward.
 
 ---
 
@@ -204,6 +206,7 @@ The `Toast` component reads from `toastStore`, displays for 6 seconds, and dismi
 ```ts
 interface ToastState {
   visible: boolean
+  showCount: number
   message: string
   linkLabel: string
   targetId: string | null   // ID passed to openPanel as selectedId
@@ -222,7 +225,7 @@ interface ToastState {
 }
 ```
 
-Initial state: `{ visible: false, message: '', linkLabel: '', targetId: null, panelType: '', panelTab: '', backLabel: '' }`.
+Initial state: `{ visible: false, showCount: 0, message: '', linkLabel: '', targetId: null, panelType: '', panelTab: '', backLabel: '' }`. The `show()` action sets `visible: true` and increments `showCount: prev.showCount + 1`.
 
 Minimal — no queue, no stacking. One toast at a time is sufficient for this use case. `Toast.tsx` is fully generic: it reads all display and navigation params from the store and has no feature-specific imports.
 
@@ -261,6 +264,7 @@ Minimal — no queue, no stacking. One toast at a time is sufficient for this us
 ```
 
 > `"fieldPhone"` already exists in `clients.json` and is reused — do not add it again.
+> `"backLabel"` also already exists in `clients.json` (`"← Clients"`) and is reused — do not add it again.
 
 ---
 
@@ -289,6 +293,7 @@ All other fields are optional — no client-side validation beyond the required 
 | API error | Error banner appears; panel stays open |
 | Save & Add Authorization path | `openPanel` called with `'client'` + `initialTab: 'authorizations'` |
 | Save & Close path | `toastStore.show` called; `closePanel` called |
+| Empty `serviceState` selection omits field from POST payload | `serviceState` key absent from request body when no state selected |
 
 Add a `useCreateClient` mutation test in `useClients.test.ts` confirming query invalidation on success.
 
@@ -296,7 +301,8 @@ Add a `useCreateClient` mutation test in `useClients.test.ts` confirming query i
 
 | Scenario | Assertion |
 |---|---|
-| `show()` sets `visible: true` | State reflects new message, targetId, panelType, panelTab, backLabel |
+| `show()` sets `visible: true` | State reflects new message, targetId, panelType, panelTab, backLabel, and incremented `showCount` |
+| Calling `show()` twice increments `showCount` each time | `showCount` is `1` after first call, `2` after second |
 | `dismiss()` sets `visible: false` | State resets to initial values |
 
 **`Toast.test.tsx`:**
@@ -307,6 +313,7 @@ Add a `useCreateClient` mutation test in `useClients.test.ts` confirming query i
 | Hidden when `visible: false` | Component not rendered |
 | Link click calls `openPanel` with correct args | `initialTab: 'authorizations'` passed |
 | Manual dismiss before 6 s clears timer | No second `dismiss()` call after timeout |
+| `show()` called while already visible resets the 6-second timer | timer re-arms for full 6 s on second `show()`; first toast does not dismiss early |
 
 ---
 
