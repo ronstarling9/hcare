@@ -22,6 +22,7 @@
 | Modify | `backend/src/main/java/com/hcare/domain/FamilyPortalUserRepository.java` |
 | Create | `backend/src/main/java/com/hcare/domain/FamilyPortalToken.java` |
 | Create | `backend/src/main/java/com/hcare/domain/FamilyPortalTokenRepository.java` |
+| Create | `backend/src/main/java/com/hcare/config/PortalProperties.java` |
 | Modify | `backend/src/main/java/com/hcare/security/JwtProperties.java` |
 | Modify | `backend/src/main/java/com/hcare/security/JwtTokenProvider.java` |
 | Modify | `backend/src/main/java/com/hcare/security/UserPrincipal.java` |
@@ -449,9 +450,10 @@ git commit -m "feat: FamilyPortalToken entity and repository with nightly cleanu
 
 ---
 
-## Task 5: Security — JwtProperties, JwtTokenProvider, UserPrincipal
+## Task 5: Security — PortalProperties, JwtProperties, JwtTokenProvider, UserPrincipal
 
 **Files:**
+- Create: `backend/src/main/java/com/hcare/config/PortalProperties.java`
 - Modify: `backend/src/main/java/com/hcare/security/JwtProperties.java`
 - Modify: `backend/src/main/java/com/hcare/security/JwtTokenProvider.java`
 - Modify: `backend/src/main/java/com/hcare/security/UserPrincipal.java`
@@ -463,6 +465,7 @@ Create `backend/src/test/java/com/hcare/security/JwtTokenProviderTest.java`:
 ```java
 package com.hcare.security;
 
+import com.hcare.config.PortalProperties;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -482,8 +485,12 @@ class JwtTokenProviderTest {
         JwtProperties props = new JwtProperties();
         props.setSecret(secret);
         props.setExpirationMs(86_400_000L);
-        props.setPortalExpirationDays(30);
-        provider = new JwtTokenProvider(props);
+        // C1 fix: inject PortalProperties (bound to hcare.portal) rather than setting
+        // portalExpirationDays on JwtProperties, which is bound to hcare.jwt and would
+        // never receive the hcare.portal.jwt.expiration-days value from application.yml.
+        PortalProperties portalProps = new PortalProperties();
+        portalProps.getJwt().setExpirationDays(30);
+        provider = new JwtTokenProvider(props, portalProps);
     }
 
     @Test
@@ -529,9 +536,41 @@ class JwtTokenProviderTest {
 ```bash
 cd backend && mvn test -Dtest=JwtTokenProviderTest -q 2>&1 | tail -5
 ```
-Expected: COMPILATION ERROR — `setPortalExpirationDays` not found.
+Expected: COMPILATION ERROR — `PortalProperties` not found (class doesn't exist yet).
 
-- [ ] **Step 3: Update `JwtProperties` to add `portalExpirationDays`**
+- [ ] **Step 3: Create `PortalProperties` and update `JwtProperties`**
+
+**C1 fix:** `JwtProperties` is bound to prefix `hcare.jwt`. Adding `portalExpirationDays` there would require a `hcare.jwt.portal-expiration-days` key, but the portal section in `application.yml` lives under `hcare.portal`. These paths do not match — Spring Boot would never bind the value and portal token expiration would silently stay at the Java default of 30 days. The fix is a separate `PortalProperties` class bound to `hcare.portal`.
+
+Create `backend/src/main/java/com/hcare/config/PortalProperties.java`:
+
+```java
+package com.hcare.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConfigurationProperties(prefix = "hcare.portal")
+public class PortalProperties {
+
+    private String baseUrl = "http://localhost:5173";
+    private Jwt jwt = new Jwt();
+
+    public String getBaseUrl() { return baseUrl; }
+    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public Jwt getJwt() { return jwt; }
+    public void setJwt(Jwt jwt) { this.jwt = jwt; }
+
+    public static class Jwt {
+        private int expirationDays = 30;
+        public int getExpirationDays() { return expirationDays; }
+        public void setExpirationDays(int expirationDays) { this.expirationDays = expirationDays; }
+    }
+}
+```
+
+`JwtProperties` stays as-is (no `portalExpirationDays` added — that field lives in `PortalProperties` now):
 
 ```java
 package com.hcare.security;
@@ -545,18 +584,12 @@ public class JwtProperties {
 
     private String secret;
     private long expirationMs;
-    private int portalExpirationDays = 30;
 
     public String getSecret() { return secret; }
     public void setSecret(String secret) { this.secret = secret; }
 
     public long getExpirationMs() { return expirationMs; }
     public void setExpirationMs(long expirationMs) { this.expirationMs = expirationMs; }
-
-    public int getPortalExpirationDays() { return portalExpirationDays; }
-    public void setPortalExpirationDays(int portalExpirationDays) {
-        this.portalExpirationDays = portalExpirationDays;
-    }
 }
 ```
 
@@ -565,6 +598,7 @@ public class JwtProperties {
 ```java
 package com.hcare.security;
 
+import com.hcare.config.PortalProperties;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
@@ -582,11 +616,14 @@ public class JwtTokenProvider {
     private final long expirationMs;
     private final int portalExpirationDays;
 
-    public JwtTokenProvider(JwtProperties props) {
+    // C1 fix: portalExpirationDays is now read from PortalProperties (bound to hcare.portal),
+    // not from JwtProperties (bound to hcare.jwt). The two prefixes are distinct — Spring Boot
+    // would never bind hcare.portal.jwt.expiration-days via hcare.jwt.*.
+    public JwtTokenProvider(JwtProperties props, PortalProperties portalProps) {
         this.signingKey = Keys.hmacShaKeyFor(
             props.getSecret().getBytes(StandardCharsets.UTF_8));
         this.expirationMs = props.getExpirationMs();
-        this.portalExpirationDays = props.getPortalExpirationDays();
+        this.portalExpirationDays = portalProps.getJwt().getExpirationDays();
     }
 
     /** Generates an admin/scheduler JWT (existing method — unchanged). */
@@ -641,7 +678,14 @@ public class JwtTokenProvider {
         return parseClaims(token).get("role", String.class);
     }
 
-    /** Reads the clientId claim. Only present on FAMILY_PORTAL tokens. */
+    /**
+     * Reads the clientId claim. Only present on FAMILY_PORTAL tokens.
+     *
+     * NOTE (C2): JwtAuthenticationFilter no longer calls this method — it reads clientId
+     * directly from the already-parsed Claims object to avoid a redundant second HMAC parse.
+     * If no other caller in this plan invokes getClientId, this method can be removed from
+     * JwtTokenProvider to keep the public API minimal. Retain only if a future task requires it.
+     */
     public String getClientId(String token) {
         return parseClaims(token).get("clientId", String.class);
     }
@@ -734,7 +778,8 @@ Expected: BUILD SUCCESS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/src/main/java/com/hcare/security/JwtProperties.java \
+git add backend/src/main/java/com/hcare/config/PortalProperties.java \
+        backend/src/main/java/com/hcare/security/JwtProperties.java \
         backend/src/main/java/com/hcare/security/JwtTokenProvider.java \
         backend/src/main/java/com/hcare/security/UserPrincipal.java \
         backend/src/test/java/com/hcare/security/JwtTokenProviderTest.java
@@ -755,6 +800,7 @@ git commit -m "feat: JwtTokenProvider.generateFamilyPortalToken + UserPrincipal.
 ```java
 package com.hcare.security;
 
+import com.hcare.config.PortalProperties;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
@@ -788,8 +834,10 @@ class JwtAuthenticationFilterTest {
         JwtProperties props = new JwtProperties();
         props.setSecret(secret);
         props.setExpirationMs(86_400_000L);
-        props.setPortalExpirationDays(30);
-        tokenProvider = new JwtTokenProvider(props);
+        // C1 fix: use PortalProperties (hcare.portal) not JwtProperties (hcare.jwt)
+        PortalProperties portalProps = new PortalProperties();
+        portalProps.getJwt().setExpirationDays(30);
+        tokenProvider = new JwtTokenProvider(props, portalProps);
         filter = new JwtAuthenticationFilter(tokenProvider);
         SecurityContextHolder.clearContext();
     }
@@ -833,6 +881,28 @@ class JwtAuthenticationFilterTest {
         assertThat(principal.getRole()).isEqualTo("ADMIN");
         assertThat(principal.getClientId()).isNull();
     }
+
+    @Test
+    void familyPortalToken_missingClientIdClaim_failsClosed() throws Exception {
+        // C2 fix: a FAMILY_PORTAL token that lacks a clientId claim must be rejected —
+        // the filter must NOT place any authentication in the SecurityContextHolder.
+        // Build a raw FAMILY_PORTAL JWT without a clientId claim to simulate a malformed token.
+        UUID fpuId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        // Use the admin token generator but override role to FAMILY_PORTAL (no clientId claim added).
+        // We manually craft the token via JwtTokenProvider internals exposed for testing,
+        // or — simpler — rely on the fact that generateToken() with role "FAMILY_PORTAL" omits clientId.
+        String malformedJwt = tokenProvider.generateToken(fpuId, agencyId, "FAMILY_PORTAL");
+
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        req.addHeader("Authorization", "Bearer " + malformedJwt);
+        MockHttpServletResponse res = new MockHttpServletResponse();
+
+        filter.doFilterInternal(req, res, chain);
+
+        // Fail closed: no authentication must be present in the SecurityContext
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
 }
 ```
 
@@ -853,6 +923,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
@@ -861,6 +933,8 @@ import java.io.IOException;
 import java.util.UUID;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtTokenProvider tokenProvider;
 
@@ -882,14 +956,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 // For FAMILY_PORTAL tokens, extract clientId and populate it on the principal.
                 // This is the hard scope boundary — dashboard controller reads principal.getClientId()
-                // to restrict data to exactly one client. Without this, clientId is silently null
-                // and any auth check relying on it would pass or silently fail open.
+                // to restrict data to exactly one client.
+                //
+                // C2 fix: read clientId from the already-parsed claims object rather than calling
+                // tokenProvider.getClientId(token), which would trigger a second HMAC parse of the
+                // same token. More critically, the original code was fail-open: if clientId was absent
+                // the token was still authenticated with a null clientId. We now fail closed — a
+                // FAMILY_PORTAL token missing the clientId claim is rejected outright.
                 UUID clientId = null;
                 if ("FAMILY_PORTAL".equals(role)) {
-                    String clientIdStr = tokenProvider.getClientId(token);
-                    if (clientIdStr != null) {
-                        clientId = UUID.fromString(clientIdStr);
+                    String clientIdStr = claims.get("clientId", String.class); // read from already-parsed claims — no second HMAC parse
+                    if (clientIdStr == null) {
+                        // Malformed portal token: clientId claim missing — fail closed, do not authenticate
+                        log.warn("FAMILY_PORTAL token missing clientId claim — rejecting authentication");
+                        chain.doFilter(request, response);
+                        return;
                     }
+                    clientId = UUID.fromString(clientIdStr);
                 }
 
                 UserPrincipal principal = new UserPrincipal(userId, agencyId, role, clientId);
@@ -917,7 +1000,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 ```bash
 cd backend && mvn test -Dtest=JwtAuthenticationFilterTest -q 2>&1 | tail -5
 ```
-Expected: Tests run: 2, Failures: 0.
+Expected: Tests run: 3, Failures: 0. (familyPortalToken_populatesClientIdOnPrincipal, adminToken_leavesClientIdNull, familyPortalToken_missingClientIdClaim_failsClosed)
 
 - [ ] **Step 5: Update `SecurityConfig` to permit the portal verify endpoint**
 
@@ -957,7 +1040,7 @@ public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 ```bash
 cd backend && mvn test -Dtest="JwtTokenProviderTest,JwtAuthenticationFilterTest" -q 2>&1 | tail -5
 ```
-Expected: Tests run: 5, Failures: 0.
+Expected: Tests run: 6, Failures: 0. (3 JwtTokenProviderTest + 3 JwtAuthenticationFilterTest)
 
 - [ ] **Step 7: Commit**
 
