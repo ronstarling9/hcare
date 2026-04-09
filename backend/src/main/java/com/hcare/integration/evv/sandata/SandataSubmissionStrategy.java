@@ -10,10 +10,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -35,9 +35,8 @@ public class SandataSubmissionStrategy extends AbstractEvvSubmissionStrategy {
 
     private final RestClient sandataRestClient;
 
-    @Autowired
     public SandataSubmissionStrategy(
-            @Qualifier("sandataRestClient") @Autowired(required = false) RestClient sandataRestClient) {
+            @Qualifier("sandataRestClient") @Nullable RestClient sandataRestClient) {
         this.sandataRestClient = sandataRestClient;
     }
 
@@ -96,6 +95,10 @@ public class SandataSubmissionStrategy extends AbstractEvvSubmissionStrategy {
                         throw new RuntimeException(resp.getStatusCode().value()
                                 + ": Sandata client error");
                     })
+                    .onStatus(HttpStatusCode::is5xxServerError, (req2, resp) -> {
+                        throw new RuntimeException(resp.getStatusCode().value()
+                                + ": server error — retryable");
+                    })
                     .body(SandataVisitResponse.class);
 
             if (response == null) {
@@ -121,9 +124,13 @@ public class SandataSubmissionStrategy extends AbstractEvvSubmissionStrategy {
             return EvvSubmissionResult.failure("CONNECTOR_UNAVAILABLE", "Sandata connector not configured");
         }
         SandataCredentials creds = (SandataCredentials) typedCreds;
+        if (ctx.aggregatorVisitId() == null) {
+            return EvvSubmissionResult.failure("MISSING_AGGREGATOR_ID",
+                    "Cannot update/void — no aggregatorVisitId recorded for this visit");
+        }
         String authHeader = buildBasicAuth(creds.username(), creds.password());
         SandataVisitRequest req = buildRequest(ctx, creds);
-        String aggregatorVisitId = ctx.evvRecordId().toString();
+        String aggregatorVisitId = ctx.aggregatorVisitId();
 
         try {
             SandataVisitResponse response = sandataRestClient.put()
@@ -134,6 +141,10 @@ public class SandataSubmissionStrategy extends AbstractEvvSubmissionStrategy {
                     .onStatus(HttpStatusCode::is4xxClientError, (request, resp) -> {
                         throw new RuntimeException(resp.getStatusCode().value()
                                 + ": Sandata client error on update");
+                    })
+                    .onStatus(HttpStatusCode::is5xxServerError, (request, resp) -> {
+                        throw new RuntimeException(resp.getStatusCode().value()
+                                + ": server error — retryable");
                     })
                     .body(SandataVisitResponse.class);
 
@@ -160,8 +171,12 @@ public class SandataSubmissionStrategy extends AbstractEvvSubmissionStrategy {
             return EvvSubmissionResult.failure("CONNECTOR_UNAVAILABLE", "Sandata connector not configured");
         }
         SandataCredentials creds = (SandataCredentials) typedCreds;
+        if (ctx.aggregatorVisitId() == null) {
+            return EvvSubmissionResult.failure("MISSING_AGGREGATOR_ID",
+                    "Cannot update/void — no aggregatorVisitId recorded for this visit");
+        }
         String authHeader = buildBasicAuth(creds.username(), creds.password());
-        String aggregatorVisitId = ctx.evvRecordId().toString();
+        String aggregatorVisitId = ctx.aggregatorVisitId();
 
         try {
             sandataRestClient.post()
@@ -171,6 +186,10 @@ public class SandataSubmissionStrategy extends AbstractEvvSubmissionStrategy {
                     .onStatus(HttpStatusCode::is4xxClientError, (request, resp) -> {
                         throw new RuntimeException(resp.getStatusCode().value()
                                 + ": Sandata client error on void");
+                    })
+                    .onStatus(HttpStatusCode::is5xxServerError, (request, resp) -> {
+                        throw new RuntimeException(resp.getStatusCode().value()
+                                + ": server error — retryable");
                     })
                     .toBodilessEntity();
 

@@ -165,7 +165,8 @@ public class EvvSubmissionContextAssembler {
                 shift.getHcpcsCode(),
                 evvRecord.getTimeIn(),
                 evvRecord.getTimeOut(),
-                serviceState
+                serviceState,
+                evvRecord.getAggregatorVisitId()
         );
     }
 

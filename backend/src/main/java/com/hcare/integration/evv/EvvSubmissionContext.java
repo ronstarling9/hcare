@@ -14,6 +14,8 @@ import java.util.UUID;
  * @param stateCode Two-letter state code for aggregator routing and timezone resolution
  * @param serviceState Two-letter state code where the service was delivered (for EVV payload body
  *     — may differ from routing state for interstate clients)
+ * @param aggregatorVisitId Aggregator's visit ID from prior submission — used in update/void
+ *     operations. Null for initial submissions.
  */
 public record EvvSubmissionContext(
         UUID evvRecordId,
@@ -29,5 +31,6 @@ public record EvvSubmissionContext(
         String serviceCode,
         LocalDateTime timeIn,
         LocalDateTime timeOut,
-        String serviceState
+        String serviceState,
+        String aggregatorVisitId
 ) {}

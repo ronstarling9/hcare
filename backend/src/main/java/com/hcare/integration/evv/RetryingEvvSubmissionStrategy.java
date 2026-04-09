@@ -83,6 +83,7 @@ public class RetryingEvvSubmissionStrategy implements EvvSubmissionStrategy {
 
     private boolean isTerminalError(String errorCode) {
         if (errorCode == null) return false;
+        if ("NOT_IMPLEMENTED".equals(errorCode)) return true;
         try {
             int code = Integer.parseInt(errorCode);
             return code >= 400 && code < 500;

@@ -8,9 +8,9 @@ import com.hcare.integration.evv.exceptions.EvvValidationException;
 import java.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -36,9 +36,8 @@ public class HhaExchangeSubmissionStrategy extends AbstractEvvSubmissionStrategy
 
     private final RestClient hhaxRestClient;
 
-    @Autowired
     public HhaExchangeSubmissionStrategy(
-            @Qualifier("hhaxRestClient") @Autowired(required = false) RestClient hhaxRestClient) {
+            @Qualifier("hhaxRestClient") @Nullable RestClient hhaxRestClient) {
         this.hhaxRestClient = hhaxRestClient;
     }
 
@@ -99,6 +98,10 @@ public class HhaExchangeSubmissionStrategy extends AbstractEvvSubmissionStrategy
                         throw new RuntimeException(resp.getStatusCode().value()
                                 + ": HHAx client error");
                     })
+                    .onStatus(HttpStatusCode::is5xxServerError, (req2, resp) -> {
+                        throw new RuntimeException(resp.getStatusCode().value()
+                                + ": server error — retryable");
+                    })
                     .body(HhaxVisitResponse.class);
 
             if (response == null) {
@@ -128,8 +131,12 @@ public class HhaExchangeSubmissionStrategy extends AbstractEvvSubmissionStrategy
             return EvvSubmissionResult.failure("CONNECTOR_UNAVAILABLE", "HHA Exchange connector not configured");
         }
         HhaxCredentials creds = (HhaxCredentials) typedCreds;
+        if (ctx.aggregatorVisitId() == null) {
+            return EvvSubmissionResult.failure("MISSING_AGGREGATOR_ID",
+                    "Cannot update/void — no aggregatorVisitId recorded for this visit");
+        }
         HhaxVisitRequest req = buildRequest(ctx);
-        String aggregatorVisitId = ctx.evvRecordId().toString();
+        String aggregatorVisitId = ctx.aggregatorVisitId();
 
         try {
             HhaxVisitResponse response = hhaxRestClient.put()
@@ -142,6 +149,10 @@ public class HhaExchangeSubmissionStrategy extends AbstractEvvSubmissionStrategy
                     .onStatus(HttpStatusCode::is4xxClientError, (request, resp) -> {
                         throw new RuntimeException(resp.getStatusCode().value()
                                 + ": HHAx client error on update");
+                    })
+                    .onStatus(HttpStatusCode::is5xxServerError, (request, resp) -> {
+                        throw new RuntimeException(resp.getStatusCode().value()
+                                + ": server error — retryable");
                     })
                     .body(HhaxVisitResponse.class);
 
@@ -171,7 +182,11 @@ public class HhaExchangeSubmissionStrategy extends AbstractEvvSubmissionStrategy
             return EvvSubmissionResult.failure("CONNECTOR_UNAVAILABLE", "HHA Exchange connector not configured");
         }
         HhaxCredentials creds = (HhaxCredentials) typedCreds;
-        String aggregatorVisitId = ctx.evvRecordId().toString();
+        if (ctx.aggregatorVisitId() == null) {
+            return EvvSubmissionResult.failure("MISSING_AGGREGATOR_ID",
+                    "Cannot update/void — no aggregatorVisitId recorded for this visit");
+        }
+        String aggregatorVisitId = ctx.aggregatorVisitId();
 
         try {
             hhaxRestClient.post()
@@ -183,6 +198,10 @@ public class HhaExchangeSubmissionStrategy extends AbstractEvvSubmissionStrategy
                     .onStatus(HttpStatusCode::is4xxClientError, (request, resp) -> {
                         throw new RuntimeException(resp.getStatusCode().value()
                                 + ": HHAx client error on void");
+                    })
+                    .onStatus(HttpStatusCode::is5xxServerError, (request, resp) -> {
+                        throw new RuntimeException(resp.getStatusCode().value()
+                                + ": server error — retryable");
                     })
                     .toBodilessEntity();
 

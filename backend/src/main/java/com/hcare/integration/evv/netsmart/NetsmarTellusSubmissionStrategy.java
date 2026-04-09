@@ -112,9 +112,8 @@ public class NetsmarTellusSubmissionStrategy extends AbstractEvvSubmissionStrate
 
     @Override
     protected EvvSubmissionResult doVoid_(EvvSubmissionContext ctx, Object typedCreds) {
-        // Netsmart batch void: upload a void record; same mechanism as submit
-        // A production implementation would prefix the row with a void indicator,
-        // but for now we re-use the same file layout and rely on downstream processing.
+        // TODO(P1-before-netsmart-live): void_ must send a void-indicator row, not a duplicate submit row.
+        // Currently re-uses buildPayload + doSubmit which produces an identical file.
         Object payload = buildPayload(ctx, typedCreds);
         return doSubmit(ctx, payload);
     }
