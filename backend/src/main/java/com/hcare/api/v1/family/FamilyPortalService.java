@@ -6,8 +6,8 @@ import com.hcare.api.v1.family.dto.PortalDashboardResponse;
 import com.hcare.api.v1.family.dto.PortalVerifyRequest;
 import com.hcare.api.v1.family.dto.PortalVerifyResponse;
 import com.hcare.domain.*;
+import com.hcare.config.PortalProperties;
 import com.hcare.security.JwtTokenProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -63,7 +63,7 @@ public class FamilyPortalService {
             CaregiverRepository caregiverRepo,
             ServiceTypeRepository serviceTypeRepo,
             JwtTokenProvider jwtTokenProvider,
-            @Value("${hcare.portal.base-url:http://localhost:5173}") String portalBaseUrl) {
+            PortalProperties portalProps) {
         this.fpuRepo = fpuRepo;
         this.tokenRepo = tokenRepo;
         this.agencyRepo = agencyRepo;
@@ -73,7 +73,7 @@ public class FamilyPortalService {
         this.caregiverRepo = caregiverRepo;
         this.serviceTypeRepo = serviceTypeRepo;
         this.jwtTokenProvider = jwtTokenProvider;
-        this.portalBaseUrl = portalBaseUrl;
+        this.portalBaseUrl = portalProps.getBaseUrl();
     }
 
     // ── Invite ────────────────────────────────────────────────────────────────
@@ -124,11 +124,11 @@ public class FamilyPortalService {
         String hash = sha256Hex(req.token());
         FamilyPortalToken tokenRow = tokenRepo.findByTokenHash(hash)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "TOKEN_INVALID"));
+                "LINK_INVALID"));
 
         if (tokenRow.getExpiresAt().isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
             tokenRepo.delete(tokenRow);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "TOKEN_EXPIRED");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "LINK_INVALID");
         }
 
         UUID fpuId = tokenRow.getFpuId();
