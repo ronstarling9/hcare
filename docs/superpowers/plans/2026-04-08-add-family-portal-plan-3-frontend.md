@@ -107,7 +107,7 @@ Note on `logout()`: the `persist` middleware writes `null` values back — the k
   "scheduledUntil": "Scheduled until",
   "lastVisitCompleted": "Completed at {{time}} · {{duration}}",
   "careServicesConcludedHeading": "Care services concluded",
-  "careServicesConcludedBody": "Care services for {{name}} have concluded. Please contact the agency for more information.",
+  "careServicesConcludedBody": "Care services have concluded. Please contact the agency for more information.",
   "loadError": "Unable to load.",
   "tapToRetry": "Tap to retry",
   "inviteEmail": "EMAIL ADDRESS",
@@ -127,7 +127,10 @@ Note on `logout()`: the `persist` middleware writes `null` values back — the k
   "cancel": "Cancel",
   "done": "Done",
   "remove": "Remove",
-  "loading": "Loading…"
+  "loading": "Loading…",
+  "inviteError": "Failed to generate invite link. Please try again.",
+  "removeError": "Failed to remove access. Please try again.",
+  "removing": "Removing…"
 }
 ```
 
@@ -200,7 +203,7 @@ portal: {
   scheduledUntil: 'Scheduled until',
   lastVisitCompleted: 'Completed at {{time}} · {{duration}}',
   careServicesConcludedHeading: 'Care services concluded',
-  careServicesConcludedBody: 'Care services for {{name}} have concluded. Please contact the agency for more information.',
+  careServicesConcludedBody: 'Care services have concluded. Please contact the agency for more information.',
   loadError: 'Unable to load.',
   tapToRetry: 'Tap to retry',
   inviteEmail: 'EMAIL ADDRESS',
@@ -221,6 +224,9 @@ portal: {
   done: 'Done',
   remove: 'Remove',
   loading: 'Loading…',
+  inviteError: 'Failed to generate invite link. Please try again.',
+  removeError: 'Failed to remove access. Please try again.',
+  removing: 'Removing…',
 },
 ```
 
@@ -383,6 +389,11 @@ export function usePortalDashboard() {
   return useQuery({
     queryKey: ['portal-dashboard', clientId],
     queryFn: getPortalDashboard,
+    // Do not fire the query before PortalGuard has validated the session; without this guard
+    // a null clientId on first render sends a request with no Authorization header, the backend
+    // returns 401, and the portalClient 401 interceptor triggers a full navigation to
+    // /portal/verify?reason=session_expired — a race condition PortalGuard would have handled.
+    enabled: !!clientId,
     retry: 2,
     // Do not show stale data silently — if cache is stale and network fails, show error state.
     staleTime: 60_000,        // 1 minute — fresh window
@@ -1186,7 +1197,7 @@ export default function PortalDashboardPage() {
           {t('careServicesConcludedHeading')}
         </h1>
         <p className="text-[14px] text-text-primary">
-          {t('careServicesConcludedBody', { name: '' })}
+          {t('careServicesConcludedBody')}
         </p>
       </div>
     )
@@ -1639,9 +1650,11 @@ export default function FamilyPortalTab({ clientId }: Props) {
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [copied, setCopied] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
   const isReInvite = prefilledEmail !== null
 
-  const { data } = useQuery({
+  const { data, isLoading: usersLoading, isError: usersError } = useQuery({
     queryKey: ['family-portal-users', clientId],
     queryFn: () => listFamilyPortalUsers(clientId),
   })
@@ -1650,17 +1663,25 @@ export default function FamilyPortalTab({ clientId }: Props) {
     mutationFn: ({ email }: { email: string }) =>
       inviteFamilyPortalUser(clientId, email),
     onSuccess: (res) => {
+      setInviteError(null)
       setInviteUrl(res.inviteUrl)
       setExpiresAt(res.expiresAt)
       qc.invalidateQueries({ queryKey: ['family-portal-users', clientId] })
+    },
+    onError: () => {
+      setInviteError(t('inviteError'))
     },
   })
 
   const removeMutation = useMutation({
     mutationFn: (fpuId: string) => removeFamilyPortalUser(clientId, fpuId),
     onSuccess: () => {
+      setRemoveError(null)
       setConfirmRemove(null)
       qc.invalidateQueries({ queryKey: ['family-portal-users', clientId] })
+    },
+    onError: () => {
+      setRemoveError(t('removeError'))
     },
   })
 
@@ -1682,6 +1703,10 @@ export default function FamilyPortalTab({ clientId }: Props) {
       navigator.clipboard.writeText(inviteUrl).then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {
+        // Clipboard API unavailable (non-HTTPS or permission denied) —
+        // URL is visible in the box above for manual copy.
+        console.error('Copy failed: clipboard API unavailable')
       })
     }
   }
@@ -1745,6 +1770,9 @@ export default function FamilyPortalTab({ clientId }: Props) {
                 {t('cancel')}
               </button>
             </div>
+            {inviteError && (
+              <p className="text-[12px] text-red-600 mt-1">{inviteError}</p>
+            )}
           ) : (
             <div>
               <div className="bg-surface border border-border p-2 font-mono text-[11px] text-text-primary break-all mb-2">
@@ -1753,7 +1781,7 @@ export default function FamilyPortalTab({ clientId }: Props) {
               <div className="flex items-center gap-2 mb-2">
                 <button
                   onClick={handleCopy}
-                  className="border border-blue text-blue text-[11px] px-3 py-1.5"
+                  className="border border-blue text-blue text-[11px] px-3 py-1.5 min-h-[44px] flex items-center justify-center"
                 >
                   {copied ? t('linkCopied') : t('copyLink')}
                 </button>
@@ -1778,7 +1806,15 @@ export default function FamilyPortalTab({ clientId }: Props) {
       )}
 
       {/* User list */}
-      {users.length === 0 && !formOpen && (
+      {usersLoading && (
+        <div role="status" aria-live="polite" className="text-[13px] text-text-secondary py-2">
+          {t('loading')}
+        </div>
+      )}
+      {usersError && !usersLoading && (
+        <p className="text-[12px] text-red-600 py-2">{t('loadError')}</p>
+      )}
+      {!usersLoading && !usersError && users.length === 0 && !formOpen && (
         <p className="text-[13px] text-text-secondary">{t('noPortalUsers')}</p>
       )}
       <div className="flex flex-col gap-px">
@@ -1819,9 +1855,10 @@ export default function FamilyPortalTab({ clientId }: Props) {
                   <button
                     data-confirm
                     onClick={() => removeMutation.mutate(fpu.id)}
-                    className="bg-dark text-white text-[11px] font-bold px-3 py-1.5"
+                    disabled={removeMutation.isPending}
+                    className="bg-dark text-white text-[11px] font-bold px-3 py-1.5 min-h-[44px] flex items-center justify-center disabled:opacity-50"
                   >
-                    {t('removeConfirm')}
+                    {removeMutation.isPending ? t('removing') : t('removeConfirm')}
                   </button>
                   <button
                     onClick={() => setConfirmRemove(null)}
@@ -1830,6 +1867,9 @@ export default function FamilyPortalTab({ clientId }: Props) {
                     {t('cancel')}
                   </button>
                 </div>
+                {removeError && confirmRemove?.id === fpu.id && (
+                  <p className="text-[12px] text-red-600 mt-1">{removeError}</p>
+                )}
               </div>
             )}
           </div>
