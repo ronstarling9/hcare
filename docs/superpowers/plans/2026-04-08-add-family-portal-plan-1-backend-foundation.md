@@ -28,6 +28,7 @@
 | Modify | `backend/src/main/java/com/hcare/security/UserPrincipal.java` |
 | Modify | `backend/src/main/java/com/hcare/security/JwtAuthenticationFilter.java` |
 | Modify | `backend/src/main/java/com/hcare/config/SecurityConfig.java` |
+| Modify | `backend/src/test/java/com/hcare/security/JwtTokenProviderTest.java` |
 | Create | `backend/src/test/java/com/hcare/security/JwtAuthenticationFilterTest.java` |
 | Modify | `backend/src/test/java/com/hcare/AbstractIntegrationTest.java` |
 
@@ -468,9 +469,15 @@ git commit -m "feat: FamilyPortalToken entity and repository with nightly cleanu
 - Modify: `backend/src/main/java/com/hcare/security/JwtTokenProvider.java`
 - Modify: `backend/src/main/java/com/hcare/security/UserPrincipal.java`
 
-- [ ] **Step 1: Write the failing test for JwtTokenProvider portal token**
+- [ ] **Step 1: Add the new portal tests to the existing `JwtTokenProviderTest.java`**
 
-Create `backend/src/test/java/com/hcare/security/JwtTokenProviderTest.java`:
+> **IMPORTANT — do NOT create a new file.** `backend/src/test/java/com/hcare/security/JwtTokenProviderTest.java` already exists with 9 passing tests. Creating it from scratch would destroy those tests. Instead, **replace the entire file** with the version below, which:
+> - Updates the `@BeforeEach setUp()` to use the new two-arg `JwtTokenProvider(props, portalProps)` constructor
+> - Updates the `validateToken_returnsFalseForExpiredToken` test (line 49 of the original) to use the two-arg constructor for `shortProvider`
+> - Appends the 3 new portal tests at the end of the existing class
+> - Adds the `PortalProperties` and `io.jsonwebtoken.Claims` imports
+
+Replace `backend/src/test/java/com/hcare/security/JwtTokenProviderTest.java` with:
 
 ```java
 package com.hcare.security;
@@ -487,21 +494,99 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JwtTokenProviderTest {
 
     private JwtTokenProvider provider;
-    private final String secret =
-        "test-secret-key-must-be-at-least-256-bits-for-hmac-sha256-algorithm-ok";
+    private PortalProperties portalProps;
+    private static final String SECRET =
+        "test-secret-key-must-be-at-least-256-bits-long-for-hmac-sha256-algorithm";
+    private static final long EXPIRY_MS = 3600_000L;
 
     @BeforeEach
     void setUp() {
         JwtProperties props = new JwtProperties();
-        props.setSecret(secret);
-        props.setExpirationMs(86_400_000L);
+        props.setSecret(SECRET);
+        props.setExpirationMs(EXPIRY_MS);
         // C1 fix: inject PortalProperties (bound to hcare.portal) rather than setting
         // portalExpirationDays on JwtProperties, which is bound to hcare.jwt and would
         // never receive the hcare.portal.jwt.expiration-days value from application.yml.
-        PortalProperties portalProps = new PortalProperties();
+        portalProps = new PortalProperties();
         portalProps.getJwt().setExpirationDays(30);
         provider = new JwtTokenProvider(props, portalProps);
     }
+
+    // ── Existing tests (constructor updated to two-arg form) ───────────────────
+
+    @Test
+    void generateToken_returnsNonBlankString() {
+        UUID userId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        String token = provider.generateToken(userId, agencyId, "ADMIN");
+        assertThat(token).isNotBlank();
+    }
+
+    @Test
+    void validateToken_returnsTrueForValidToken() {
+        String token = provider.generateToken(UUID.randomUUID(), UUID.randomUUID(), "SCHEDULER");
+        assertThat(provider.validateToken(token)).isTrue();
+    }
+
+    @Test
+    void validateToken_returnsFalseForTamperedToken() {
+        String token = provider.generateToken(UUID.randomUUID(), UUID.randomUUID(), "ADMIN");
+        String tampered = token.substring(0, token.length() - 4) + "XXXX";
+        assertThat(provider.validateToken(tampered)).isFalse();
+    }
+
+    @Test
+    void validateToken_returnsFalseForExpiredToken() throws InterruptedException {
+        JwtProperties shortProps = new JwtProperties();
+        shortProps.setSecret(SECRET);
+        shortProps.setExpirationMs(1L);
+        // C6 fix: updated to two-arg constructor — original single-arg call would fail to
+        // compile after Task 5 Step 4 changes the JwtTokenProvider constructor signature.
+        JwtTokenProvider shortProvider = new JwtTokenProvider(shortProps, portalProps);
+        String token = shortProvider.generateToken(UUID.randomUUID(), UUID.randomUUID(), "ADMIN");
+        Thread.sleep(10);
+        assertThat(shortProvider.validateToken(token)).isFalse();
+    }
+
+    @Test
+    void getUserIdFromToken_returnsCorrectUUID() {
+        UUID userId = UUID.randomUUID();
+        String token = provider.generateToken(userId, UUID.randomUUID(), "ADMIN");
+        assertThat(provider.getUserId(token)).isEqualTo(userId);
+    }
+
+    @Test
+    void getAgencyIdFromToken_returnsCorrectUUID() {
+        UUID agencyId = UUID.randomUUID();
+        String token = provider.generateToken(UUID.randomUUID(), agencyId, "SCHEDULER");
+        assertThat(provider.getAgencyId(token)).isEqualTo(agencyId);
+    }
+
+    @Test
+    void getRoleFromToken_returnsCorrectRole() {
+        String token = provider.generateToken(UUID.randomUUID(), UUID.randomUUID(), "CAREGIVER");
+        assertThat(provider.getRole(token)).isEqualTo("CAREGIVER");
+    }
+
+    @Test
+    void parseAndValidate_returns_claims_for_valid_token() {
+        UUID userId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        String token = provider.generateToken(userId, agencyId, "ADMIN");
+        Claims claims = provider.parseAndValidate(token);
+        assertThat(claims).isNotNull();
+        assertThat(claims.getSubject()).isEqualTo(userId.toString());
+        assertThat(claims.get("agencyId", String.class)).isEqualTo(agencyId.toString());
+        assertThat(claims.get("role", String.class)).isEqualTo("ADMIN");
+    }
+
+    @Test
+    void parseAndValidate_returns_null_for_invalid_token() {
+        Claims claims = provider.parseAndValidate("not.a.valid.token");
+        assertThat(claims).isNull();
+    }
+
+    // ── New portal token tests ─────────────────────────────────────────────────
 
     @Test
     void generateFamilyPortalToken_claimsContainRoleAndClientId() {
@@ -723,7 +808,7 @@ public class JwtTokenProvider {
 ```bash
 cd backend && mvn test -Dtest=JwtTokenProviderTest -q 2>&1 | tail -5
 ```
-Expected: Tests run: 3, Failures: 0.
+Expected: Tests run: 12, Failures: 0. (9 existing tests + 3 new portal tests)
 
 - [ ] **Step 6: Update `UserPrincipal` to add nullable `clientId`**
 
@@ -1047,36 +1132,104 @@ cd backend && mvn test -Dtest=JwtAuthenticationFilterTest -q 2>&1 | tail -5
 ```
 Expected: Tests run: 4, Failures: 0. (familyPortalToken_populatesClientIdOnPrincipal, adminToken_leavesClientIdNull, familyPortalToken_missingClientIdClaim_failsClosed, validlySignedToken_missingAgencyIdClaim_noAuthenticationSet)
 
-- [ ] **Step 5: Update `SecurityConfig` to permit the portal verify endpoint**
+- [ ] **Step 5: Update `SecurityConfig` — permit portal verify endpoint AND add portal CORS origin**
 
-Add `POST /api/v1/family/auth/verify` to `permitAll`. The full `filterChain` method:
+Two changes are required in `SecurityConfig`:
+
+1. Add `POST /api/v1/family/auth/verify` to `permitAll`.
+2. Inject `PortalProperties` and add `portalProperties.getBaseUrl()` to `corsConfigurationSource()` so the portal frontend origin (e.g. `https://portal.hcare.app`) is permitted in staging and production. Without this, every pre-flight CORS request from the portal frontend will be blocked outside the dev environment — CORS failures are silent in server logs and only visible in browser network tabs, making them a hard-to-diagnose production blocker.
+
+> **C7 fix:** `corsConfigurationSource()` currently hard-codes `http://localhost:5173`. The portal frontend will run on a different origin in staging/production. Adding `portalProperties.getBaseUrl()` (populated from `${APP_BASE_URL}`) ensures the correct origin is allowed in all environments without any code change.
+
+Replace the full `SecurityConfig.java` with:
 
 ```java
-@Bean
-public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    return http
-        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-        .csrf(csrf -> csrf.disable())
-        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/v1/auth/**").permitAll()
-            .requestMatchers("/api/v1/agencies/register").permitAll()
-            .requestMatchers("/api/v1/family/auth/verify").permitAll()
-            .requestMatchers("/h2-console/**").permitAll()
-            .anyRequest().authenticated()
-        )
-        .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider),
-            UsernamePasswordAuthenticationFilter.class)
-        .exceptionHandling(ex -> ex
-            .authenticationEntryPoint((request, response, authException) -> {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setHeader("WWW-Authenticate", "Bearer");
-                response.setContentType("application/json");
-                response.getWriter().write(
-                    "{\"error\":\"Unauthorized\",\"status\":401}");
-            })
-        )
-        .build();
+package com.hcare.config;
+
+import com.hcare.security.JwtAuthenticationFilter;
+import com.hcare.security.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    private final JwtTokenProvider jwtTokenProvider;
+    // C7 fix: inject PortalProperties so corsConfigurationSource() can permit the portal
+    // frontend origin (hcare.portal.base-url). Without this, pre-flight CORS requests from
+    // the portal domain are rejected in staging/production — this is a silent runtime blocker.
+    private final PortalProperties portalProperties;
+
+    public SecurityConfig(JwtTokenProvider jwtTokenProvider, PortalProperties portalProperties) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.portalProperties = portalProperties;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        return http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/v1/auth/**").permitAll()
+                .requestMatchers("/api/v1/agencies/register").permitAll()
+                .requestMatchers("/api/v1/family/auth/verify").permitAll()
+                .requestMatchers("/h2-console/**").permitAll()
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider),
+                UsernamePasswordAuthenticationFilter.class)
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((request, response, authException) -> {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setHeader("WWW-Authenticate", "Bearer");
+                    response.setContentType("application/json");
+                    response.getWriter().write(
+                        "{\"error\":\"Unauthorized\",\"status\":401}");
+                })
+            )
+            .build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        // C7 fix: include the portal base URL so the portal frontend origin is permitted
+        // in staging and production. portalProperties.getBaseUrl() defaults to
+        // http://localhost:5173 in dev (same as the admin frontend), so there is no
+        // functional change for local development — the list deduplicates to one entry.
+        config.setAllowedOrigins(List.of(
+            "http://localhost:5173",
+            portalProperties.getBaseUrl()
+        ));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 }
 ```
 
@@ -1085,7 +1238,7 @@ public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 ```bash
 cd backend && mvn test -Dtest="JwtTokenProviderTest,JwtAuthenticationFilterTest" -q 2>&1 | tail -5
 ```
-Expected: Tests run: 7, Failures: 0. (3 JwtTokenProviderTest + 4 JwtAuthenticationFilterTest)
+Expected: Tests run: 16, Failures: 0. (12 JwtTokenProviderTest + 4 JwtAuthenticationFilterTest)
 
 - [ ] **Step 7: Commit**
 
