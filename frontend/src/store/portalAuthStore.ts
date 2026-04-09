@@ -10,6 +10,9 @@ interface PortalAuthState {
 }
 
 export const usePortalAuthStore = create<PortalAuthState>()(
+  // localStorage is used intentionally: the 30-day portal JWT must survive tab close/reopen
+  // so family members don't need to request a new invite link each session.
+  // sessionStorage would be cleared on tab close, requiring re-authentication too frequently.
   persist(
     (set) => ({
       token: null,

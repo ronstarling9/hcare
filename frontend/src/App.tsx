@@ -11,7 +11,6 @@ import { EvvStatusPage } from './components/evv/EvvStatusPage'
 import { LoginPage } from './pages/LoginPage'
 import { useAuthStore } from './store/authStore'
 import PortalGuard from './components/portal/PortalGuard'
-import PortalLayout from './components/portal/PortalLayout'
 import PortalVerifyPage from './pages/PortalVerifyPage'
 import PortalDashboardPage from './pages/PortalDashboardPage'
 
@@ -55,9 +54,7 @@ export default function App() {
         path="/portal/dashboard"
         element={
           <PortalGuard>
-            <PortalLayout>
-              <PortalDashboardPage />
-            </PortalLayout>
+            <PortalDashboardPage />
           </PortalGuard>
         }
       />

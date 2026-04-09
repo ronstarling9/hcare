@@ -56,6 +56,7 @@ export default function PortalVerifyPage() {
       .catch(() => {
         setDisplayState('token_invalid')
       })
+  // login and navigate are stable refs (Zustand selector + useNavigate) — intentionally omitted
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
